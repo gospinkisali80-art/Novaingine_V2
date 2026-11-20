@@ -3,22 +3,27 @@ package com.novaingine.v2;
 import android.content.Context;
 import android.opengl.GLSurfaceView;
 import android.view.MotionEvent;
-import java.util.concurrent.atomic.AtomicInteger;
 
-public class EngineSurface extends GLSurfaceView
+public final class EngineSurface extends GLSurfaceView
         implements GLSurfaceView.Renderer {
+
+    private long previousFrameTime;
+    private long fpsStartTime;
+
+    private int fpsFrames;
+    private int currentFps;
 
     private float previousX;
     private float previousY;
     private float previousDistance;
 
-    private boolean multiTouch = false;
+    private boolean multiTouch;
 
-    private long previousFrameTime = 0;
-    private long fpsStartTime = 0;
-    private int fpsFrameCount = 0;
+    private float joystickForward;
+    private float joystickRight;
+    private float verticalMovement;
 
-    private final AtomicInteger currentFps = new AtomicInteger(0);
+    private boolean enginePaused;
 
     public EngineSurface(Context context) {
         super(context);
@@ -27,7 +32,10 @@ public class EngineSurface extends GLSurfaceView
         setPreserveEGLContextOnPause(true);
 
         setRenderer(this);
-        setRenderMode(GLSurfaceView.RENDERMODE_CONTINUOUSLY);
+
+        setRenderMode(
+                GLSurfaceView.RENDERMODE_CONTINUOUSLY
+        );
     }
 
     @Override
@@ -35,11 +43,13 @@ public class EngineSurface extends GLSurfaceView
             javax.microedition.khronos.opengles.GL10 gl,
             javax.microedition.khronos.egl.EGLConfig config) {
 
-        NativeBridge.nativeInit();
-
         previousFrameTime = System.nanoTime();
         fpsStartTime = previousFrameTime;
-        fpsFrameCount = 0;
+
+        fpsFrames = 0;
+        currentFps = 0;
+
+        NativeBridge.nativeInit();
     }
 
     @Override
@@ -58,125 +68,256 @@ public class EngineSurface extends GLSurfaceView
         long currentTime = System.nanoTime();
 
         float deltaTime =
-                (currentTime - previousFrameTime) / 1_000_000_000.0f;
+                (currentTime - previousFrameTime)
+                        / 1_000_000_000.0f;
 
         previousFrameTime = currentTime;
 
-        if (deltaTime <= 0.0f || deltaTime > 0.25f) {
+        if (deltaTime <= 0.0f || deltaTime > 0.1f) {
             deltaTime = 0.016f;
+        }
+
+        if (!enginePaused) {
+
+            NativeBridge.nativeFly(
+                    joystickForward,
+                    joystickRight,
+                    verticalMovement,
+                    deltaTime
+            );
         }
 
         NativeBridge.nativeRender(deltaTime);
 
-        fpsFrameCount++;
+        fpsFrames++;
 
         long elapsed = currentTime - fpsStartTime;
 
         if (elapsed >= 1_000_000_000L) {
-            int fps = (int) (
-                    fpsFrameCount /
+
+            currentFps = (int) (
+                    fpsFrames /
                     (elapsed / 1_000_000_000.0)
             );
 
-            currentFps.set(fps);
-
-            fpsFrameCount = 0;
+            fpsFrames = 0;
             fpsStartTime = currentTime;
         }
     }
 
     public int getFps() {
-        return currentFps.get();
+        return currentFps;
     }
 
     public void setEnginePaused(boolean paused) {
-        queueEvent(() -> NativeBridge.nativeSetPaused(paused));
+
+        enginePaused = paused;
+
+        queueEvent(() ->
+                NativeBridge.nativeSetPaused(paused)
+        );
     }
 
-    public void addCube() {
-        queueEvent(NativeBridge::nativeAddCube);
+    public void setJoystick(
+            float forward,
+            float right) {
+
+        joystickForward = clamp(forward);
+        joystickRight = clamp(right);
+    }
+
+    public void setVerticalMovement(float value) {
+        verticalMovement = clamp(value);
+    }
+
+    public void setCameraSpeed(float speed) {
+
+        queueEvent(() ->
+                NativeBridge.nativeSetCameraSpeed(speed)
+        );
+    }
+
+    public void setViewMode(int mode) {
+
+        queueEvent(() ->
+                NativeBridge.nativeSetViewMode(mode)
+        );
+    }
+
+    public void setCameraView(int view) {
+
+        queueEvent(() ->
+                NativeBridge.nativeSetCameraView(view)
+        );
+    }
+
+    public void setShowFlags(int flags) {
+
+        queueEvent(() ->
+                NativeBridge.nativeSetShowFlags(flags)
+        );
+    }
+
+    public void setTransformMode(int mode) {
+
+        queueEvent(() ->
+                NativeBridge.nativeSetTransformMode(mode)
+        );
+    }
+
+    public void setWorldSpace(boolean worldSpace) {
+
+        queueEvent(() ->
+                NativeBridge.nativeSetWorldSpace(worldSpace)
+        );
+    }
+
+    public void setSnap(
+            boolean enabled,
+            float grid,
+            float rotation,
+            float scale) {
+
+        queueEvent(() ->
+                NativeBridge.nativeSetSnap(
+                        enabled,
+                        grid,
+                        rotation,
+                        scale
+                )
+        );
+    }
+
+    public void selectAt(float x, float y) {
+
+        queueEvent(() ->
+                NativeBridge.nativeSelect(x, y)
+        );
+    }
+
+    public void focusAt(float x, float y) {
+
+        queueEvent(() ->
+                NativeBridge.nativeFocus(x, y)
+        );
+    }
+
+    public void moveSelected(
+            float x,
+            float y,
+            float z) {
+
+        queueEvent(() ->
+                NativeBridge.nativeMoveSelected(x, y, z)
+        );
+    }
+
+    public void resetScene() {
+
+        queueEvent(NativeBridge::nativeResetScene);
+    }
+
+    private float clamp(float value) {
+        return Math.max(-1.0f, Math.min(1.0f, value));
     }
 
     private float calculateDistance(MotionEvent event) {
+
         if (event.getPointerCount() < 2) {
             return 0.0f;
         }
 
-        float x = event.getX(0) - event.getX(1);
-        float y = event.getY(0) - event.getY(1);
+        float dx = event.getX(0) - event.getX(1);
+        float dy = event.getY(0) - event.getY(1);
 
-        return (float) Math.sqrt(x * x + y * y);
+        return (float) Math.sqrt(dx * dx + dy * dy);
     }
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
 
-        int action = event.getActionMasked();
-
-        switch (action) {
+        switch (event.getActionMasked()) {
 
             case MotionEvent.ACTION_DOWN:
-                previousX = event.getX(0);
-                previousY = event.getY(0);
+
+                previousX = event.getX();
+                previousY = event.getY();
+
+                previousDistance = 0.0f;
                 multiTouch = false;
+
                 return true;
 
             case MotionEvent.ACTION_POINTER_DOWN:
+
                 if (event.getPointerCount() >= 2) {
+
                     previousDistance = calculateDistance(event);
+                    previousX = (event.getX(0) + event.getX(1)) * 0.5f;
+                    previousY = (event.getY(0) + event.getY(1)) * 0.5f;
+
                     multiTouch = true;
                 }
+
                 return true;
 
             case MotionEvent.ACTION_MOVE:
 
                 if (event.getPointerCount() >= 2) {
 
-                    float newDistance = calculateDistance(event);
+                    float distance = calculateDistance(event);
 
-                    if (previousDistance > 0.0f &&
-                            newDistance > 0.0f) {
+                    float centerX =
+                            (event.getX(0) + event.getX(1)) * 0.5f;
 
-                        float scale = newDistance / previousDistance;
+                    float centerY =
+                            (event.getY(0) + event.getY(1)) * 0.5f;
+
+                    if (previousDistance > 0.0f && distance > 0.0f) {
+
+                        float scale = distance / previousDistance;
 
                         queueEvent(() ->
                                 NativeBridge.nativeZoom(scale)
                         );
                     }
 
-                    previousDistance = newDistance;
+                    float panX = centerX - previousX;
+                    float panY = centerY - previousY;
+
+                    if (Math.abs(panX) > 0.5f ||
+                            Math.abs(panY) > 0.5f) {
+
+                        queueEvent(() ->
+                                NativeBridge.nativePan(panX, panY)
+                        );
+                    }
+
+                    previousDistance = distance;
+                    previousX = centerX;
+                    previousY = centerY;
+
                     multiTouch = true;
 
                 } else if (!multiTouch) {
 
-                    float x = event.getX(0);
-                    float y = event.getY(0);
+                    float x = event.getX();
+                    float y = event.getY();
 
-                    float deltaX = x - previousX;
-                    float deltaY = y - previousY;
-
-                    queueEvent(() ->
-                            NativeBridge.nativeTouch(deltaX, deltaY)
-                    );
+                    float dx = x - previousX;
+                    float dy = y - previousY;
 
                     previousX = x;
                     previousY = y;
+
+                    queueEvent(() ->
+                            NativeBridge.nativeTouch(dx, dy)
+                    );
                 }
 
                 return true;
 
             case MotionEvent.ACTION_POINTER_UP:
-
-                if (event.getPointerCount() > 1) {
-
-                    int remainingPointer =
-                            event.getActionIndex() == 0 ? 1 : 0;
-
-                    if (remainingPointer < event.getPointerCount()) {
-                        previousX = event.getX(remainingPointer);
-                        previousY = event.getY(remainingPointer);
-                    }
-                }
 
                 previousDistance = 0.0f;
                 multiTouch = true;
@@ -190,8 +331,9 @@ public class EngineSurface extends GLSurfaceView
                 multiTouch = false;
 
                 return true;
-        }
 
-        return true;
+            default:
+                return true;
+        }
     }
 }

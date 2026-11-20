@@ -1,780 +1,760 @@
 #include <jni.h>
-#include <GLES3/gl3.h>
 #include <android/log.h>
 
-#include <cmath>
-#include <vector>
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <mutex>
 
-#define LOG_TAG "NovaingineV2"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+#include "../Camera/Camera.h"
+#include "../Scene/Scene.h"
+#include "../Scene/SceneFactory.h"
+#include "../Renderer/Renderer.h"
+
+#define NOVA_LOG_TAG "NovaEngine"
+#define NOVA_LOG(...) __android_log_print(ANDROID_LOG_INFO, NOVA_LOG_TAG, __VA_ARGS__)
 
 namespace {
 
+std::mutex engineMutex;
+
+Renderer gRenderer;
+nova::Scene gScene;
+nova::Camera gCamera;
+
+bool gInitialized = false;
+bool gPaused = false;
+bool gWorldSpace = true;
+bool gSnapEnabled = true;
+
+int gTransformMode = 0;
+
+float gGridSnap = 10.0f;
+float gRotationSnap = 10.0f;
+float gScaleSnap = 0.25f;
+float gCameraSpeed = 3.0f;
+
+int gViewportWidth = 1;
+int gViewportHeight = 1;
+
 constexpr float PI = 3.14159265358979323846f;
+constexpr float RAD_TO_DEG = 57.29577951308232f;
 
-GLuint program = 0;
-GLuint vertexBuffer = 0;
-GLuint texture = 0;
-
-GLint mvpLocation = -1;
-GLint modelLocation = -1;
-GLint samplerLocation = -1;
-
-int surfaceWidth = 1;
-int surfaceHeight = 1;
-
-float rotationY = 0.0f;
-float rotationX = 0.0f;
-
-float touchRotationX = 0.0f;
-float touchRotationY = 0.0f;
-
-float cameraDistance = 4.0f;
-
-bool paused = false;
-
-struct Vec3 {
-    float x;
-    float y;
-    float z;
-};
-
-std::vector<Vec3> cubes = {
-    {0.0f, 0.0f, 0.0f}
-};
-
-struct Mat4 {
-    float m[16]{};
-};
-
-Mat4 identity() {
-    Mat4 result{};
-
-    result.m[0] = 1.0f;
-    result.m[5] = 1.0f;
-    result.m[10] = 1.0f;
-    result.m[15] = 1.0f;
-
-    return result;
+float radians(float degrees) {
+    return degrees / RAD_TO_DEG;
 }
 
-Mat4 multiply(const Mat4& a, const Mat4& b) {
-    Mat4 result{};
+float snapValue(float value, float step) {
+    if (step <= 0.0001f) {
+        return value;
+    }
 
-    for (int column = 0; column < 4; ++column) {
-        for (int row = 0; row < 4; ++row) {
-            for (int k = 0; k < 4; ++k) {
-                result.m[column * 4 + row] +=
-                    a.m[k * 4 + row] *
-                    b.m[column * 4 + k];
-            }
+    return std::round(value / step) * step;
+}
+
+void applyShowFlags(int flags) {
+    RendererSettings settings = gRenderer.getSettings();
+
+    settings.showGrid = (flags & 1) != 0;
+    settings.showShadows = (flags & 2) != 0;
+    settings.showSky = (flags & 4) != 0;
+    settings.showCharacters = (flags & 8) != 0;
+    settings.showStatistics = (flags & 16) != 0;
+    settings.showBounds = (flags & 32) != 0;
+
+    settings.showSelectionOutline = true;
+
+    gRenderer.setSettings(settings);
+}
+
+void setCameraDirection(const nova::Vec3& direction) {
+    nova::Vec3 dir = nova::normalize(direction);
+
+    if (nova::length(dir) < 0.0001f) {
+        return;
+    }
+
+    gCamera.yaw = std::atan2(dir.z, dir.x) * RAD_TO_DEG;
+    gCamera.pitch = std::asin(
+        std::clamp(dir.y, -1.0f, 1.0f)
+    ) * RAD_TO_DEG;
+
+    gCamera.pitch = std::clamp(
+        gCamera.pitch,
+        -89.0f,
+        89.0f
+    );
+}
+
+bool makeScreenRay(
+    float screenX,
+    float screenY,
+    nova::Vec3& ray
+) {
+    if (gViewportWidth <= 0 || gViewportHeight <= 0) {
+        return false;
+    }
+
+    float nx = (2.0f * screenX / gViewportWidth) - 1.0f;
+    float ny = 1.0f - (2.0f * screenY / gViewportHeight);
+
+    float aspect =
+        static_cast<float>(gViewportWidth) /
+        static_cast<float>(gViewportHeight);
+
+    float tangent = std::tan(radians(gCamera.fieldOfView) * 0.5f);
+
+    nova::Vec3 direction =
+        gCamera.forward() +
+        gCamera.right() * (nx * tangent * aspect) +
+        gCamera.up() * (ny * tangent);
+
+    ray = nova::normalize(direction);
+
+    return nova::length(ray) > 0.0001f;
+}
+
+bool selectObjectAt(float screenX, float screenY) {
+    nova::Vec3 ray;
+
+    if (!makeScreenRay(screenX, screenY, ray)) {
+        return false;
+    }
+
+    float closestDistance = 1000000.0f;
+    uint32_t closestId = 0;
+
+    const nova::Vec3 origin = gCamera.position;
+
+    for (const nova::SceneObject& object : gScene.getObjects()) {
+        if (!object.visible) {
+            continue;
+        }
+
+        nova::Vec3 toObject =
+            object.transform.position - origin;
+
+        float distanceAlongRay = nova::dot(toObject, ray);
+
+        if (distanceAlongRay <= 0.0f) {
+            continue;
+        }
+
+        nova::Vec3 closestPoint =
+            origin + ray * distanceAlongRay;
+
+        nova::Vec3 difference =
+            object.transform.position - closestPoint;
+
+        float radius = std::max({
+            std::fabs(object.transform.scale.x),
+            std::fabs(object.transform.scale.y),
+            std::fabs(object.transform.scale.z)
+        });
+
+        radius = std::max(radius * 0.9f, 0.15f);
+
+        if (nova::length(difference) <= radius &&
+            distanceAlongRay < closestDistance) {
+            closestDistance = distanceAlongRay;
+            closestId = object.id;
         }
     }
 
-    return result;
-}
-
-Mat4 perspective(
-        float fov,
-        float aspect,
-        float nearPlane,
-        float farPlane) {
-
-    Mat4 result{};
-
-    const float f = 1.0f / std::tan(fov * 0.5f);
-
-    result.m[0] = f / aspect;
-    result.m[5] = f;
-
-    result.m[10] =
-            (farPlane + nearPlane) /
-            (nearPlane - farPlane);
-
-    result.m[11] = -1.0f;
-
-    result.m[14] =
-            (2.0f * farPlane * nearPlane) /
-            (nearPlane - farPlane);
-
-    return result;
-}
-
-Mat4 rotationMatrixX(float angle) {
-    Mat4 result = identity();
-
-    const float c = std::cos(angle);
-    const float s = std::sin(angle);
-
-    result.m[5] = c;
-    result.m[6] = s;
-    result.m[9] = -s;
-    result.m[10] = c;
-
-    return result;
-}
-
-Mat4 rotationMatrixY(float angle) {
-    Mat4 result = identity();
-
-    const float c = std::cos(angle);
-    const float s = std::sin(angle);
-
-    result.m[0] = c;
-    result.m[2] = -s;
-    result.m[8] = s;
-    result.m[10] = c;
-
-    return result;
-}
-
-Mat4 translation(float x, float y, float z) {
-    Mat4 result = identity();
-
-    result.m[12] = x;
-    result.m[13] = y;
-    result.m[14] = z;
-
-    return result;
-}
-
-GLuint compileShader(GLenum type, const char* source) {
-
-    GLuint shader = glCreateShader(type);
-
-    if (shader == 0) {
-        LOGE("Could not create shader.");
-        return 0;
+    if (closestId != 0) {
+        return gScene.select(closestId);
     }
 
-    glShaderSource(shader, 1, &source, nullptr);
-    glCompileShader(shader);
-
-    GLint compiled = GL_FALSE;
-
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
-
-    if (compiled != GL_TRUE) {
-
-        GLint length = 0;
-
-        glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &length);
-
-        std::vector<char> log(
-                static_cast<size_t>(std::max(length, 1)),
-                '\0'
-        );
-
-        glGetShaderInfoLog(
-                shader,
-                length,
-                nullptr,
-                log.data()
-        );
-
-        LOGE("Shader compilation failed: %s", log.data());
-
-        glDeleteShader(shader);
-
-        return 0;
-    }
-
-    return shader;
+    gScene.deselect();
+    return false;
 }
 
-GLuint createProgram() {
+void focusSelectedObject() {
+    nova::SceneObject* object = gScene.selected();
 
-    const char* vertexSource = R"(
-        #version 300 es
-        precision highp float;
+    if (object == nullptr) {
+        return;
+    }
 
-        layout(location = 0) in vec3 aPosition;
-        layout(location = 1) in vec3 aNormal;
-        layout(location = 2) in vec2 aUV;
+    nova::Vec3 target = object->transform.position;
 
-        uniform mat4 uMVP;
-        uniform mat4 uModel;
+    float objectSize = std::max({
+        std::fabs(object->transform.scale.x),
+        std::fabs(object->transform.scale.y),
+        std::fabs(object->transform.scale.z)
+    });
 
-        out vec3 vNormal;
-        out vec2 vUV;
+    float distance = std::max(objectSize * 3.5f, 4.0f);
 
-        void main() {
-            gl_Position = uMVP * vec4(aPosition, 1.0);
-            vNormal = mat3(uModel) * aNormal;
-            vUV = aUV;
-        }
-    )";
+    gCamera.position = target + nova::Vec3(
+        distance * 0.55f,
+        distance * 0.45f,
+        distance
+    );
 
-    const char* fragmentSource = R"(
-        #version 300 es
-        precision highp float;
+    setCameraDirection(target - gCamera.position);
+}
 
-        in vec3 vNormal;
-        in vec2 vUV;
+void setCameraPreset(int view) {
+    const float distance = 32.0f;
 
-        uniform sampler2D uTexture;
+    switch (view) {
+        case 0:
+            gCamera.reset();
+            break;
 
-        out vec4 fragColor;
+        case 1:
+            gCamera.position = nova::Vec3(0.0f, distance, 0.0f);
+            gCamera.yaw = -90.0f;
+            gCamera.pitch = -89.0f;
+            break;
 
-        void main() {
+        case 2:
+            gCamera.position = nova::Vec3(0.0f, -distance, 0.0f);
+            gCamera.yaw = -90.0f;
+            gCamera.pitch = 89.0f;
+            break;
 
-            vec3 normal = normalize(vNormal);
+        case 3:
+            gCamera.position = nova::Vec3(-distance, 0.0f, 0.0f);
+            gCamera.yaw = 0.0f;
+            gCamera.pitch = 0.0f;
+            break;
 
-            vec3 lightDirection =
-                    normalize(vec3(-0.5, 0.8, 1.0));
+        case 4:
+            gCamera.position = nova::Vec3(distance, 0.0f, 0.0f);
+            gCamera.yaw = 180.0f;
+            gCamera.pitch = 0.0f;
+            break;
 
-            float diffuse = max(
-                    dot(normal, lightDirection),
-                    0.0
+        case 5:
+            gCamera.position = nova::Vec3(0.0f, 0.0f, distance);
+            gCamera.yaw = -90.0f;
+            gCamera.pitch = 0.0f;
+            break;
+
+        case 6:
+            gCamera.position = nova::Vec3(0.0f, 0.0f, -distance);
+            gCamera.yaw = 90.0f;
+            gCamera.pitch = 0.0f;
+            break;
+
+        default:
+            gCamera.reset();
+            break;
+    }
+}
+
+void moveSelected(
+    float deltaX,
+    float deltaY,
+    float deltaZ
+) {
+    nova::SceneObject* object = gScene.selected();
+
+    if (object == nullptr) {
+        return;
+    }
+
+    nova::Transform& transform = object->transform;
+
+    if (gTransformMode == 3) {
+        transform.scale.x += deltaX;
+        transform.scale.y += deltaY;
+        transform.scale.z += deltaZ;
+
+        if (gSnapEnabled) {
+            transform.scale.x = std::max(
+                0.01f,
+                snapValue(transform.scale.x, gScaleSnap)
             );
 
-            float lighting = 0.25 + diffuse * 0.75;
+            transform.scale.y = std::max(
+                0.01f,
+                snapValue(transform.scale.y, gScaleSnap)
+            );
 
-            vec4 texel = texture(uTexture, vUV);
-
-            fragColor = vec4(
-                    texel.rgb * lighting,
-                    texel.a
+            transform.scale.z = std::max(
+                0.01f,
+                snapValue(transform.scale.z, gScaleSnap)
             );
         }
-    )";
 
-    GLuint vertex =
-            compileShader(GL_VERTEX_SHADER, vertexSource);
+        return;
+    }
 
-    GLuint fragment =
-            compileShader(GL_FRAGMENT_SHADER, fragmentSource);
+    if (gTransformMode == 2) {
+        transform.rotation.x += deltaX;
+        transform.rotation.y += deltaY;
+        transform.rotation.z += deltaZ;
 
-    if (vertex == 0 || fragment == 0) {
+        if (gSnapEnabled) {
+            transform.rotation.x =
+                snapValue(transform.rotation.x, gRotationSnap);
 
-        if (vertex != 0) {
-            glDeleteShader(vertex);
+            transform.rotation.y =
+                snapValue(transform.rotation.y, gRotationSnap);
+
+            transform.rotation.z =
+                snapValue(transform.rotation.z, gRotationSnap);
         }
 
-        if (fragment != 0) {
-            glDeleteShader(fragment);
-        }
-
-        return 0;
+        return;
     }
 
-    GLuint result = glCreateProgram();
+    nova::Vec3 movement(deltaX, deltaY, deltaZ);
 
-    glAttachShader(result, vertex);
-    glAttachShader(result, fragment);
+    if (!gWorldSpace) {
+        float angle = radians(gCamera.yaw);
 
-    glLinkProgram(result);
+        float localX =
+            movement.x * std::cos(angle) -
+            movement.z * std::sin(angle);
 
-    GLint linked = GL_FALSE;
+        float localZ =
+            movement.x * std::sin(angle) +
+            movement.z * std::cos(angle);
 
-    glGetProgramiv(result, GL_LINK_STATUS, &linked);
-
-    if (linked != GL_TRUE) {
-
-        GLint length = 0;
-
-        glGetProgramiv(result, GL_INFO_LOG_LENGTH, &length);
-
-        std::vector<char> log(
-                static_cast<size_t>(std::max(length, 1)),
-                '\0'
-        );
-
-        glGetProgramInfoLog(
-                result,
-                length,
-                nullptr,
-                log.data()
-        );
-
-        LOGE("Program linking failed: %s", log.data());
-
-        glDeleteProgram(result);
-
-        result = 0;
+        movement.x = localX;
+        movement.z = localZ;
     }
 
-    glDeleteShader(vertex);
-    glDeleteShader(fragment);
+    transform.position = transform.position + movement;
 
-    return result;
-}
+    if (gSnapEnabled) {
+        transform.position.x =
+            snapValue(transform.position.x, gGridSnap);
 
-void addFace(
-        std::vector<float>& vertices,
-        const float corners[4][3],
-        float nx,
-        float ny,
-        float nz) {
+        transform.position.y =
+            snapValue(transform.position.y, gGridSnap);
 
-    constexpr float uv[4][2] = {
-        {0.0f, 0.0f},
-        {1.0f, 0.0f},
-        {1.0f, 1.0f},
-        {0.0f, 1.0f}
-    };
-
-    constexpr int indices[6] = {
-        0, 1, 2, 0, 2, 3
-    };
-
-    for (int index : indices) {
-
-        const int i = index;
-
-        vertices.push_back(corners[i][0]);
-        vertices.push_back(corners[i][1]);
-        vertices.push_back(corners[i][2]);
-
-        vertices.push_back(nx);
-        vertices.push_back(ny);
-        vertices.push_back(nz);
-
-        vertices.push_back(uv[i][0]);
-        vertices.push_back(uv[i][1]);
+        transform.position.z =
+            snapValue(transform.position.z, gGridSnap);
     }
-}
-
-void createCube() {
-
-    std::vector<float> vertices;
-
-    vertices.reserve(36 * 8);
-
-    const float faces[6][4][3] = {
-
-        {
-            {-1,-1, 1}, { 1,-1, 1},
-            { 1, 1, 1}, {-1, 1, 1}
-        },
-
-        {
-            { 1,-1,-1}, {-1,-1,-1},
-            {-1, 1,-1}, { 1, 1,-1}
-        },
-
-        {
-            {-1, 1, 1}, { 1, 1, 1},
-            { 1, 1,-1}, {-1, 1,-1}
-        },
-
-        {
-            {-1,-1,-1}, { 1,-1,-1},
-            { 1,-1, 1}, {-1,-1, 1}
-        },
-
-        {
-            { 1,-1, 1}, { 1,-1,-1},
-            { 1, 1,-1}, { 1, 1, 1}
-        },
-
-        {
-            {-1,-1,-1}, {-1,-1, 1},
-            {-1, 1, 1}, {-1, 1,-1}
-        }
-    };
-
-    const float normals[6][3] = {
-
-        { 0, 0, 1},
-        { 0, 0,-1},
-        { 0, 1, 0},
-        { 0,-1, 0},
-        { 1, 0, 0},
-        {-1, 0, 0}
-    };
-
-    for (int face = 0; face < 6; ++face) {
-
-        addFace(
-                vertices,
-                faces[face],
-                normals[face][0],
-                normals[face][1],
-                normals[face][2]
-        );
-    }
-
-    glGenBuffers(1, &vertexBuffer);
-
-    glBindBuffer(
-            GL_ARRAY_BUFFER,
-            vertexBuffer
-    );
-
-    glBufferData(
-            GL_ARRAY_BUFFER,
-            static_cast<GLsizeiptr>(
-                    vertices.size() * sizeof(float)
-            ),
-            vertices.data(),
-            GL_STATIC_DRAW
-    );
-}
-
-void createCheckerTexture() {
-
-    constexpr int size = 64;
-
-    std::vector<unsigned char> pixels(
-            size * size * 4
-    );
-
-    for (int y = 0; y < size; ++y) {
-
-        for (int x = 0; x < size; ++x) {
-
-            const bool light =
-                    ((x / 8) + (y / 8)) % 2 == 0;
-
-            const int offset =
-                    (y * size + x) * 4;
-
-            pixels[offset + 0] = light ? 220 : 35;
-            pixels[offset + 1] = light ? 155 : 65;
-            pixels[offset + 2] = light ? 65 : 125;
-            pixels[offset + 3] = 255;
-        }
-    }
-
-    glGenTextures(1, &texture);
-
-    glBindTexture(
-            GL_TEXTURE_2D,
-            texture
-    );
-
-    glTexParameteri(
-            GL_TEXTURE_2D,
-            GL_TEXTURE_MIN_FILTER,
-            GL_LINEAR
-    );
-
-    glTexParameteri(
-            GL_TEXTURE_2D,
-            GL_TEXTURE_MAG_FILTER,
-            GL_LINEAR
-    );
-
-    glTexParameteri(
-            GL_TEXTURE_2D,
-            GL_TEXTURE_WRAP_S,
-            GL_REPEAT
-    );
-
-    glTexParameteri(
-            GL_TEXTURE_2D,
-            GL_TEXTURE_WRAP_T,
-            GL_REPEAT
-    );
-
-    glTexImage2D(
-            GL_TEXTURE_2D,
-            0,
-            GL_RGBA,
-            size,
-            size,
-            0,
-            GL_RGBA,
-            GL_UNSIGNED_BYTE,
-            pixels.data()
-    );
-}
-
-void configureVertexAttributes() {
-
-    glBindBuffer(
-            GL_ARRAY_BUFFER,
-            vertexBuffer
-    );
-
-    constexpr GLsizei stride =
-            8 * sizeof(float);
-
-    glEnableVertexAttribArray(0);
-
-    glVertexAttribPointer(
-            0,
-            3,
-            GL_FLOAT,
-            GL_FALSE,
-            stride,
-            reinterpret_cast<void*>(0)
-    );
-
-    glEnableVertexAttribArray(1);
-
-    glVertexAttribPointer(
-            1,
-            3,
-            GL_FLOAT,
-            GL_FALSE,
-            stride,
-            reinterpret_cast<void*>(3 * sizeof(float))
-    );
-
-    glEnableVertexAttribArray(2);
-
-    glVertexAttribPointer(
-            2,
-            2,
-            GL_FLOAT,
-            GL_FALSE,
-            stride,
-            reinterpret_cast<void*>(6 * sizeof(float))
-    );
 }
 
 } // namespace
 
-extern "C" JNIEXPORT void JNICALL
+extern "C" {
+
+JNIEXPORT void JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeInit(
-        JNIEnv*, jclass) {
+    JNIEnv*,
+    jclass
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
 
-    glClearColor(
-            0.055f,
-            0.075f,
-            0.11f,
-            1.0f
-    );
-
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LEQUAL);
-
-    glEnable(GL_CULL_FACE);
-    glCullFace(GL_BACK);
-
-    program = createProgram();
-
-    if (program == 0) {
-
-        LOGE("Renderer initialization failed.");
-
+    if (gInitialized) {
         return;
     }
 
-    mvpLocation =
-            glGetUniformLocation(program, "uMVP");
+    NOVA_LOG("Initializing Novaingine V2");
 
-    modelLocation =
-            glGetUniformLocation(program, "uModel");
+    gCamera.reset();
 
-    samplerLocation =
-            glGetUniformLocation(program, "uTexture");
+    nova::SceneFactory::buildDefaultScene(gScene);
 
-    createCube();
-    createCheckerTexture();
-    configureVertexAttributes();
+    if (!gRenderer.initialize()) {
+        NOVA_LOG("Renderer initialization failed");
+        gInitialized = false;
+        return;
+    }
 
-    LOGI("Novaingine V2 GLES3 renderer initialized.");
+    gRenderer.setClearColor(
+        0.12f,
+        0.22f,
+        0.38f,
+        1.0f
+    );
+
+    gRenderer.setViewportEnabled(true);
+    gRenderer.setViewMode(0);
+
+    applyShowFlags(31);
+
+    gInitialized = true;
+
+    NOVA_LOG(
+        "Novaingine initialized. Scene objects: %zu",
+        gScene.objectCount()
+    );
 }
 
-extern "C" JNIEXPORT void JNICALL
+JNIEXPORT void JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeResize(
-        JNIEnv*, jclass, jint width, jint height) {
+    JNIEnv*,
+    jclass,
+    jint width,
+    jint height
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
 
-    surfaceWidth = std::max(
-            1,
-            static_cast<int>(width)
-    );
+    gViewportWidth = std::max(1, static_cast<int>(width));
+    gViewportHeight = std::max(1, static_cast<int>(height));
 
-    surfaceHeight = std::max(
-            1,
-            static_cast<int>(height)
-    );
-
-    glViewport(
-            0,
-            0,
-            surfaceWidth,
-            surfaceHeight
-    );
-}
-
-extern "C" JNIEXPORT void JNICALL
-Java_com_novaingine_v2_NativeBridge_nativeTouch(
-        JNIEnv*, jclass, jfloat deltaX, jfloat deltaY) {
-
-    touchRotationY += deltaX * 0.006f;
-    touchRotationX += deltaY * 0.006f;
-
-    touchRotationX = std::clamp(
-            touchRotationX,
-            -1.2f,
-            1.2f
-    );
-}
-
-extern "C" JNIEXPORT void JNICALL
-Java_com_novaingine_v2_NativeBridge_nativeZoom(
-        JNIEnv*, jclass, jfloat scale) {
-
-    if (!std::isfinite(scale) || scale <= 0.0f) {
-        return;
+    if (gInitialized) {
+        gRenderer.resize(gViewportWidth, gViewportHeight);
     }
-
-    cameraDistance /= scale;
-
-    cameraDistance = std::clamp(
-            cameraDistance,
-            2.5f,
-            12.0f
-    );
 }
 
-extern "C" JNIEXPORT void JNICALL
-Java_com_novaingine_v2_NativeBridge_nativeAddCube(
-        JNIEnv*, jclass) {
-
-    if (cubes.size() >= 100) {
-        LOGI("Cube limit reached.");
-        return;
-    }
-
-    const int index =
-            static_cast<int>(cubes.size());
-
-    const float spacing = 2.5f;
-
-    const int column = index % 3;
-    const int row = (index / 3) % 3;
-    const int layer = index / 9;
-
-    const float x =
-            (static_cast<float>(column) - 1.0f) * spacing;
-
-    const float y =
-            (static_cast<float>(row) - 1.0f) * spacing;
-
-    const float z =
-            -static_cast<float>(layer) * spacing;
-
-    cubes.push_back({x, y, z});
-
-    LOGI("Cube added. Total cubes: %zu", cubes.size());
-}
-
-extern "C" JNIEXPORT void JNICALL
-Java_com_novaingine_v2_NativeBridge_nativeSetPaused(
-        JNIEnv*, jclass, jboolean value) {
-
-    paused = (value == JNI_TRUE);
-
-    LOGI(
-            "Engine animation %s",
-            paused ? "paused" : "playing"
-    );
-}
-
-extern "C" JNIEXPORT void JNICALL
+JNIEXPORT void JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeRender(
-        JNIEnv*, jclass, jfloat deltaTime) {
+    JNIEnv*,
+    jclass,
+    jfloat deltaTime
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
 
-    if (program == 0 ||
-        vertexBuffer == 0 ||
-        texture == 0) {
-
-        glClear(
-                GL_COLOR_BUFFER_BIT |
-                GL_DEPTH_BUFFER_BIT
-        );
-
+    if (!gInitialized) {
         return;
     }
 
-    const float dt = std::clamp(
-            static_cast<float>(deltaTime),
-            0.0f,
-            0.1f
+    float dt = std::clamp(
+        static_cast<float>(deltaTime),
+        0.0f,
+        0.1f
     );
 
-    if (!paused) {
-
-        rotationY += dt * 0.65f;
-        rotationX += dt * 0.25f;
+    if (!gPaused) {
+        // Camera input is processed independently.
+        // The editor scene remains stationary unless edited.
     }
 
-    glClear(
-            GL_COLOR_BUFFER_BIT |
-            GL_DEPTH_BUFFER_BIT
-    );
-
-    glUseProgram(program);
-
-    const float aspect =
-            static_cast<float>(surfaceWidth) /
-            static_cast<float>(surfaceHeight);
-
-    const Mat4 projection = perspective(
-            60.0f * PI / 180.0f,
-            aspect,
-            0.1f,
-            100.0f
-    );
-
-    const Mat4 view = translation(
-            0.0f,
-            0.0f,
-            -cameraDistance
-    );
-
-    const Mat4 rotation = multiply(
-            rotationMatrixY(rotationY + touchRotationY),
-            rotationMatrixX(rotationX + touchRotationX)
-    );
-
-    glActiveTexture(GL_TEXTURE0);
-
-    glBindTexture(
-            GL_TEXTURE_2D,
-            texture
-    );
-
-    glUniform1i(
-            samplerLocation,
-            0
-    );
-
-    configureVertexAttributes();
-
-    for (const Vec3& cube : cubes) {
-
-        const Mat4 position = translation(
-                cube.x,
-                cube.y,
-                cube.z
-        );
-
-        const Mat4 model = multiply(
-                position,
-                rotation
-        );
-
-        const Mat4 mvp = multiply(
-                projection,
-                multiply(view, model)
-        );
-
-        glUniformMatrix4fv(
-                mvpLocation,
-                1,
-                GL_FALSE,
-                mvp.m
-        );
-
-        glUniformMatrix4fv(
-                modelLocation,
-                1,
-                GL_FALSE,
-                model.m
-        );
-
-        glDrawArrays(
-                GL_TRIANGLES,
-                0,
-                36
-        );
-    }
+    gRenderer.beginFrame();
+    gRenderer.render(gScene, gCamera);
+    gRenderer.endFrame();
 }
+
+JNIEXPORT void JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeTouch(
+    JNIEnv*,
+    jclass,
+    jfloat deltaX,
+    jfloat deltaY
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+
+    if (!gInitialized || gPaused) {
+        return;
+    }
+
+    gCamera.rotate(
+        static_cast<float>(deltaX),
+        static_cast<float>(deltaY)
+    );
+}
+
+JNIEXPORT void JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeZoom(
+    JNIEnv*,
+    jclass,
+    jfloat scale
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+
+    if (!gInitialized) {
+        return;
+    }
+
+    gCamera.zoom(static_cast<float>(scale));
+}
+
+JNIEXPORT void JNICALL
+Java_com_novaingine_v2_NativeBridge_nativePan(
+    JNIEnv*,
+    jclass,
+    jfloat deltaX,
+    jfloat deltaY
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+
+    if (!gInitialized || gPaused) {
+        return;
+    }
+
+    float scale = std::max(gCamera.fieldOfView, 20.0f) * 0.0025f;
+
+    gCamera.pan(
+        -static_cast<float>(deltaX) * scale,
+        static_cast<float>(deltaY) * scale
+    );
+}
+
+JNIEXPORT void JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeFly(
+    JNIEnv*,
+    jclass,
+    jfloat forward,
+    jfloat right,
+    jfloat vertical,
+    jfloat deltaTime
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+
+    if (!gInitialized || gPaused) {
+        return;
+    }
+
+    gCamera.movementSpeed = gCameraSpeed;
+
+    gCamera.move(
+        static_cast<float>(forward),
+        static_cast<float>(right),
+        static_cast<float>(vertical),
+        std::clamp(static_cast<float>(deltaTime), 0.0f, 0.1f)
+    );
+}
+
+JNIEXPORT void JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeFocus(
+    JNIEnv*,
+    jclass,
+    jfloat screenX,
+    jfloat screenY
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+
+    if (!gInitialized) {
+        return;
+    }
+
+    if (screenX >= 0.0f && screenY >= 0.0f) {
+        selectObjectAt(
+            static_cast<float>(screenX),
+            static_cast<float>(screenY)
+        );
+    }
+
+    focusSelectedObject();
+}
+
+JNIEXPORT void JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSelect(
+    JNIEnv*,
+    jclass,
+    jfloat screenX,
+    jfloat screenY
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+
+    if (!gInitialized) {
+        return;
+    }
+
+    selectObjectAt(
+        static_cast<float>(screenX),
+        static_cast<float>(screenY)
+    );
+}
+
+JNIEXPORT void JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetViewMode(
+    JNIEnv*,
+    jclass,
+    jint mode
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+
+    if (!gInitialized) {
+        return;
+    }
+
+    int safeMode = std::clamp(
+        static_cast<int>(mode),
+        0,
+        5
+    );
+
+    gRenderer.setViewMode(safeMode);
+}
+
+JNIEXPORT void JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetCameraView(
+    JNIEnv*,
+    jclass,
+    jint view
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+
+    if (!gInitialized) {
+        return;
+    }
+
+    setCameraPreset(static_cast<int>(view));
+}
+
+JNIEXPORT void JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetShowFlags(
+    JNIEnv*,
+    jclass,
+    jint flags
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+
+    if (!gInitialized) {
+        return;
+    }
+
+    applyShowFlags(static_cast<int>(flags));
+}
+
+JNIEXPORT void JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetTransformMode(
+    JNIEnv*,
+    jclass,
+    jint mode
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+
+    gTransformMode = std::clamp(
+        static_cast<int>(mode),
+        0,
+        3
+    );
+}
+
+JNIEXPORT void JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetWorldSpace(
+    JNIEnv*,
+    jclass,
+    jboolean worldSpace
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+
+    gWorldSpace = worldSpace == JNI_TRUE;
+}
+
+JNIEXPORT void JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetSnap(
+    JNIEnv*,
+    jclass,
+    jboolean enabled,
+    jfloat grid,
+    jfloat rotation,
+    jfloat scale
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+
+    gSnapEnabled = enabled == JNI_TRUE;
+
+    gGridSnap = std::max(0.001f, static_cast<float>(grid));
+    gRotationSnap = std::max(0.001f, static_cast<float>(rotation));
+    gScaleSnap = std::max(0.001f, static_cast<float>(scale));
+}
+
+JNIEXPORT void JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeMoveSelected(
+    JNIEnv*,
+    jclass,
+    jfloat deltaX,
+    jfloat deltaY,
+    jfloat deltaZ
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+
+    if (!gInitialized) {
+        return;
+    }
+
+    moveSelected(
+        static_cast<float>(deltaX),
+        static_cast<float>(deltaY),
+        static_cast<float>(deltaZ)
+    );
+}
+
+JNIEXPORT void JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetCameraSpeed(
+    JNIEnv*,
+    jclass,
+    jfloat speed
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+
+    gCameraSpeed = std::clamp(
+        static_cast<float>(speed),
+        0.1f,
+        50.0f
+    );
+
+    gCamera.movementSpeed = gCameraSpeed;
+}
+
+JNIEXPORT void JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetPaused(
+    JNIEnv*,
+    jclass,
+    jboolean paused
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+
+    gPaused = paused == JNI_TRUE;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeGetFps(
+    JNIEnv*,
+    jclass
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+
+    if (!gInitialized) {
+        return 0;
+    }
+
+    return static_cast<jint>(gRenderer.statistics().fps);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeGetDrawCalls(
+    JNIEnv*,
+    jclass
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+
+    if (!gInitialized) {
+        return 0;
+    }
+
+    return static_cast<jint>(
+        gRenderer.statistics().drawCalls
+    );
+}
+
+JNIEXPORT jint JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeGetTriangles(
+    JNIEnv*,
+    jclass
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+
+    if (!gInitialized) {
+        return 0;
+    }
+
+    return static_cast<jint>(
+        gRenderer.statistics().triangles
+    );
+}
+
+JNIEXPORT void JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeResetScene(
+    JNIEnv*,
+    jclass
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+
+    if (!gInitialized) {
+        return;
+    }
+
+    nova::SceneFactory::buildDefaultScene(gScene);
+    gCamera.reset();
+
+    NOVA_LOG(
+        "Scene reset. Objects: %zu",
+        gScene.objectCount()
+    );
+}
+
+} // extern "C"
