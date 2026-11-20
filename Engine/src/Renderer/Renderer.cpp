@@ -1460,7 +1460,6 @@ void Renderer::renderWireframe(
     );
 
     glEnable(GL_DEPTH_TEST);
-    glEnable(GL_POLYGON_OFFSET_LINE);
     glPolygonOffset(-1.0f, -1.0f);
 
     for (const SceneObject& object : scene.getObjects()) {
@@ -1490,7 +1489,6 @@ void Renderer::renderWireframe(
         // A constant orange-gray wireframe is applied by the line shader.
     }
 
-    glDisable(GL_POLYGON_OFFSET_LINE);
     glBindVertexArray(0);
 }
 
