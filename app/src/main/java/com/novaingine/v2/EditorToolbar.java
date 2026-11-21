@@ -528,7 +528,9 @@ public final class EditorToolbar extends LinearLayout {
                 "Wireframe",
                 "Detail Lighting",
                 "Lighting Only",
-                "Normals"
+                "Normals",
+                "Roughness",
+                "Metallic"
         };
 
         for (int i = 0; i < names.length; i++) {

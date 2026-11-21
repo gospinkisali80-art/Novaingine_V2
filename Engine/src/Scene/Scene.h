@@ -39,6 +39,22 @@ struct Color {
         : r(red), g(green), b(blue), a(alpha) {}
 };
 
+struct Material {
+    Vec3 baseColor;
+    float roughness;
+    float metallic;
+
+    Material()
+        : baseColor(1.0f, 1.0f, 1.0f),
+          roughness(0.6f),
+          metallic(0.0f) {}
+
+    explicit Material(const Color& color)
+        : baseColor(color.r, color.g, color.b),
+          roughness(0.6f),
+          metallic(0.0f) {}
+};
+
 struct Transform {
 
     Vec3 position;
@@ -62,6 +78,7 @@ struct SceneObject {
     Transform transform;
 
     Color color;
+    Material material;
 
     bool visible = true;
 
@@ -82,7 +99,8 @@ struct SceneObject {
           name(objectName),
           primitive(objectPrimitive),
           transform(objectTransform),
-          color(objectColor) {}
+          color(objectColor),
+          material(objectColor) {}
 };
 
 class Scene {

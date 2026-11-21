@@ -22,7 +22,29 @@ void addObject(
     transform.rotation = rotation;
     transform.scale = scale;
 
-    scene.addObject(name, primitive, transform, color);
+    const uint32_t objectId =
+        scene.addObject(name, primitive, transform, color);
+
+    SceneObject* object = scene.find(objectId);
+    if (object != nullptr) {
+        object->material.baseColor =
+            Vec3(color.r, color.g, color.b);
+        object->material.roughness = 0.6f;
+        object->material.metallic = 0.0f;
+
+        if (name.find("Yellow") != std::string::npos ||
+            name.find("Platform") != std::string::npos) {
+            object->material.roughness = 0.45f;
+        }
+
+        if (name == "Arena Floor") {
+            object->material.roughness = 0.85f;
+        }
+
+        if (name.find("Wall") != std::string::npos) {
+            object->material.roughness = 0.9f;
+        }
+    }
 }
 
 void addMannequin(Scene& scene, Vec3 origin, const std::string& prefix) {

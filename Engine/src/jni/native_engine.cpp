@@ -562,7 +562,7 @@ Java_com_novaingine_v2_NativeBridge_nativeSetViewMode(
     int safeMode = std::clamp(
         static_cast<int>(mode),
         0,
-        5
+        7
     );
 
     gRenderer.setViewMode(safeMode);
