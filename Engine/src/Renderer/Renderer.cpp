@@ -485,6 +485,16 @@ void main() {
 
     sky = mix(sky, vec3(0.88, 0.92, 0.96), clouds * 0.22);
 
+    // Visible sun disc and atmospheric glow.
+    vec2 sunCenter = vec2(0.78, 0.73);
+    float d = length((vUV - sunCenter) * vec2(1.0, 1.25));
+    float disc = 1.0 - smoothstep(0.026, 0.032, d);
+    float innerGlow = exp(-d * 95.0) * 0.48;
+    float outerGlow = exp(-d * 24.0) * 0.20;
+
+    sky += vec3(1.0, 0.72, 0.40) * (innerGlow + outerGlow);
+    sky = mix(sky, vec3(1.0, 0.97, 0.84), disc);
+
     fragColor = vec4(sky, 1.0);
 }
 )";
