@@ -62,11 +62,11 @@ void addMannequin(Scene& scene, Vec3 origin, const std::string& prefix) {
 void SceneFactory::buildDefaultScene(Scene& scene) {
     scene.clear();
 
-    const Color floor = makeColor(0.55f, 0.55f, 0.55f);
-    const Color wall = makeColor(0.60f, 0.60f, 0.60f);
-    const Color inner = makeColor(0.48f, 0.48f, 0.48f);
+    const Color floor = makeColor(0.5490196f, 0.5490196f, 0.5490196f);
+    const Color wall = makeColor(0.6039216f, 0.6039216f, 0.6039216f);
+    const Color inner = makeColor(0.6039216f, 0.6039216f, 0.6039216f);
     const Color gray = makeColor(0.43f, 0.45f, 0.48f);
-    const Color yellow = makeColor(0.96f, 0.72f, 0.0f);
+    const Color yellow = makeColor(0.9490196f, 0.7176471f, 0.0196078f);
 
     addObject(scene, "Arena Floor", PrimitiveType::Plane,
         {0.0f, -0.08f, 0.0f}, {40.0f, 1.0f, 40.0f}, floor);

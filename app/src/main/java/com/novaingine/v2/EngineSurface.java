@@ -137,6 +137,10 @@ public final class EngineSurface extends GLSurfaceView
         );
     }
 
+    public void setExposure(float exposure) {
+        queueEvent(() -> NativeBridge.nativeSetExposure(exposure));
+    }
+
     public void setViewMode(int mode) {
 
         queueEvent(() ->

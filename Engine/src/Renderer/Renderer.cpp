@@ -210,51 +210,71 @@ float shadowAmount(vec4 position) {
 }
 
 void main() {
-    vec3 normal = normalize(vNormal);
-    vec3 lightDirection = normalize(-uLightDirection);
-    float diffuse = max(dot(normal, lightDirection), 0.0);
-
-    if (uViewMode == 1) {
-        fragColor = vec4(uColor.rgb, uColor.a);
-        return;
-    }
+    vec3 N = normalize(vNormal);
+    vec3 L = normalize(-uLightDirection);
+    float diffuse = max(dot(N, L), 0.0);
 
     if (uViewMode == 5) {
-        fragColor = vec4(normal * 0.5 + 0.5, 1.0);
+        fragColor = vec4(N * 0.5 + 0.5, 1.0);
         return;
     }
 
+    vec3 albedo = pow(uColor.rgb, vec3(2.2));
+
+    vec3 skyColor = pow(
+        vec3(0.4314, 0.6078, 0.8392),
+        vec3(2.2)
+    );
+
+    vec3 groundColor = pow(
+        vec3(0.4784, 0.4549, 0.4078),
+        vec3(2.2)
+    );
+
+    vec3 hemisphere = mix(
+        groundColor,
+        skyColor,
+        N.y * 0.5 + 0.5
+    );
+
+    vec3 ambient = albedo * hemisphere;
+
+    vec3 sunColor = pow(
+        vec3(1.0, 0.9569, 0.8784),
+        vec3(2.2)
+    ) * 3.0;
+
     float shadow = 0.0;
+
     if (uUseShadows == 1) {
         shadow = shadowAmount(vShadowPosition) * uShadowStrength;
     }
 
-    vec3 ambient = uAmbientColor;
-    vec3 direct = uLightColor * diffuse * (1.0 - shadow);
-
-    vec3 viewDirection = normalize(-vWorldPosition);
-    vec3 halfDirection = normalize(lightDirection + viewDirection);
-
-    float specularPower = pow(
-        max(dot(normal, halfDirection), 0.0),
-        32.0
-    );
-
-    vec3 specular = uLightColor * specularPower * 0.12;
+    vec3 direct = albedo * sunColor *
+                  diffuse * (1.0 - shadow);
 
     vec3 result;
 
-    if (uViewMode == 4) {
-        result = ambient + direct;
+    if (uViewMode == 1) {
+        result = albedo;
     } else if (uViewMode == 3) {
         result = vec3(diffuse);
+    } else if (uViewMode == 4) {
+        result = ambient + direct;
     } else {
-        result = uColor.rgb * (ambient + direct) + specular;
+        result = ambient + direct;
     }
 
     result *= uExposure;
-    result = result / (result + vec3(1.0));
-    result = pow(max(result, vec3(0.0)), vec3(1.0 / 2.2));
+
+    result = (
+        result * (2.51 * result + 0.03)
+    ) / (
+        result * (2.43 * result + 0.59) + 0.14
+    );
+
+    result = clamp(result, 0.0, 1.0);
+    result = pow(result, vec3(1.0 / 2.2));
 
     fragColor = vec4(result, uColor.a);
 }

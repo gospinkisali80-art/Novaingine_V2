@@ -88,6 +88,8 @@ public final class NativeBridge {
             float speed
     );
 
+    public static native void nativeSetExposure(float exposure);
+
     public static native void nativeSetPaused(
             boolean paused
     );

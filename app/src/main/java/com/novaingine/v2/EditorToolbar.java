@@ -1,6 +1,7 @@
 package com.novaingine.v2;
 
 import android.content.Context;
+import android.app.AlertDialog;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -572,7 +573,54 @@ public final class EditorToolbar extends LinearLayout {
                 engineSurface.setShowFlags(16)
         );
 
+        addMenuItem(menu, "Exposure", () -> showExposureDialog(context));
+
         menu.show();
+    }
+
+    private void showExposureDialog(Context context) {
+        LinearLayout layout = new LinearLayout(context);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(24, 12, 24, 8);
+
+        TextView label = new TextView(context);
+        label.setTextColor(COLOR_TEXT);
+        label.setText("Exposure: 1.00");
+        layout.addView(label);
+
+        SeekBar slider = new SeekBar(context);
+        slider.setMax(375);
+        slider.setProgress(75);
+        layout.addView(slider);
+
+        slider.setOnSeekBarChangeListener(
+                new SeekBar.OnSeekBarChangeListener() {
+                    @Override
+                    public void onProgressChanged(
+                            SeekBar bar, int progress, boolean fromUser) {
+                        float value = 0.25f + progress * 0.01f;
+                        label.setText(String.format(
+                                java.util.Locale.US,
+                                "Exposure: %.2f", value
+                        ));
+                        if (fromUser) engineSurface.setExposure(value);
+                    }
+
+                    @Override
+                    public void onStartTrackingTouch(SeekBar bar) {}
+
+                    @Override
+                    public void onStopTrackingTouch(SeekBar bar) {}
+                }
+        );
+
+        new AlertDialog.Builder(context)
+                .setTitle("Viewport Exposure")
+                .setView(layout)
+                .setPositiveButton("Done", null)
+                .setNegativeButton("Reset", (dialog, which) ->
+                        engineSurface.setExposure(1.0f))
+                .show();
     }
 
     private void showGridSnapMenu(

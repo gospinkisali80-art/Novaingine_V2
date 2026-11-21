@@ -681,6 +681,23 @@ Java_com_novaingine_v2_NativeBridge_nativeSetCameraSpeed(
 }
 
 JNIEXPORT void JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetExposure(
+    JNIEnv*,
+    jclass,
+    jfloat exposure
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+
+    if (!gInitialized) return;
+
+    RendererSettings settings = gRenderer.getSettings();
+    settings.exposure = std::clamp(
+        static_cast<float>(exposure), 0.25f, 4.0f
+    );
+    gRenderer.setSettings(settings);
+}
+
+JNIEXPORT void JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeSetPaused(
     JNIEnv*,
     jclass,
