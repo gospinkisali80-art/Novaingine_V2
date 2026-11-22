@@ -253,48 +253,81 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0) {
 void main() {
     vec3 N = normalize(vNormal);
     vec3 L = normalize(-uLightDirection);
+    vec3 V = normalize(uCameraPosition - vWorldPosition);
+    vec3 H = normalize(V + L);
 
-    // Scene material colors are authored as sRGB values. Convert once here.
+    float roughness = clamp(uRoughness, 0.04, 1.0);
+    float metallic = clamp(uMetallic, 0.0, 1.0);
+
+    // Material base colors are authored in sRGB; convert once to linear.
     vec3 albedo = pow(
         clamp(uBaseColor, vec3(0.0), vec3(1.0)),
         vec3(2.2)
     );
 
-    // Keep material inspection modes available to the editor.
+    // Material inspection modes bypass lighting and display the raw value.
     if (uViewMode == 5) {
         fragColor = vec4(N * 0.5 + 0.5, 1.0);
         return;
     }
     if (uViewMode == 6) {
-        fragColor = vec4(vec3(clamp(uRoughness, 0.04, 1.0)), 1.0);
+        fragColor = vec4(vec3(roughness), 1.0);
         return;
     }
     if (uViewMode == 7) {
-        fragColor = vec4(vec3(clamp(uMetallic, 0.0, 1.0)), 1.0);
+        fragColor = vec4(vec3(metallic), 1.0);
         return;
     }
 
-    // Hemisphere colors are sRGB #6E9BD6 and #7A7468, converted to linear.
+    // Preserve the Task 1 hemisphere ambient, with reduced diffuse response
+    // on metals and a small ambient specular term so metals remain visible.
     vec3 skyColor = pow(vec3(110.0, 155.0, 214.0) / 255.0, vec3(2.2));
     vec3 groundColor = pow(vec3(122.0, 116.0, 104.0) / 255.0, vec3(2.2));
-    vec3 hemisphere = mix(groundColor, skyColor, N.y * 0.5 + 0.5);
-    vec3 ambient = hemisphere * albedo;
+    vec3 hemiColor = mix(groundColor, skyColor, N.y * 0.5 + 0.5);
 
-    // Direct sunlight: sRGB #FFF4E0 converted to linear, fixed intensity 3.
+    vec3 F0 = mix(vec3(0.04), albedo, metallic);
+    vec3 ambientDiffuse = hemiColor * albedo * (1.0 - metallic);
+    vec3 ambientSpecular = hemiColor * F0 * 0.06;
+    vec3 ambient = ambientDiffuse + ambientSpecular;
+
+    // Cook-Torrance microfacet BRDF: GGX distribution, Schlick-GGX geometry,
+    // and Schlick Fresnel. Safe dot products are used for every divisor.
+    float NdotV = max(dot(N, V), 0.001);
+    float NdotLRaw = max(dot(N, L), 0.0);
+    float NdotL = max(dot(N, L), 0.001);
+    float NdotH = max(dot(N, H), 0.0);
+    float HdotV = max(dot(H, V), 0.0);
+
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float denominator = NdotH * NdotH * (a2 - 1.0) + 1.0;
+    float D = a2 / max(PI * denominator * denominator, 0.000001);
+
+    float k = (roughness + 1.0) * (roughness + 1.0) / 8.0;
+    float Gv = NdotV / max(NdotV * (1.0 - k) + k, 0.001);
+    float Gl = NdotL / max(NdotL * (1.0 - k) + k, 0.001);
+    float G = Gv * Gl;
+
+    vec3 F = F0 + (1.0 - F0) * pow(1.0 - HdotV, 5.0);
+    vec3 specular = (D * G * F) /
+                    max(4.0 * NdotV * NdotL, 0.001);
+
+    vec3 kd = (1.0 - F) * (1.0 - metallic);
     vec3 sunColor = pow(vec3(255.0, 244.0, 224.0) / 255.0, vec3(2.2));
-    float NdotL = max(dot(N, L), 0.0);
-    vec3 sunDiffuse = albedo * sunColor * NdotL * 3.0;
+    const float sunIntensity = 3.0;
+    vec3 direct = (kd * albedo / PI + specular) *
+                  sunColor * sunIntensity * NdotLRaw;
 
-    vec3 result = ambient + sunDiffuse;
+    vec3 result = ambient + direct;
 
-    // Unlit inspection still shares the same final exposure/display transform.
+    // Preserve the existing editor unlit and lighting-only view modes.
     if (uViewMode == 1) {
         result = albedo;
     } else if (uViewMode == 3) {
-        result = vec3(NdotL);
+        result = vec3(NdotLRaw);
     }
 
-    // Exposure, ACES fit, clamp, and exactly one linear-to-sRGB conversion.
+    // Task 1 exposure, ACES fit, clamp, and sRGB output remain unchanged.
     result *= uExposure;
     result = (result * (2.51 * result + 0.03)) /
              (result * (2.43 * result + 0.59) + 0.14);
