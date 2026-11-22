@@ -151,6 +151,17 @@ public final class EngineSurface extends GLSurfaceView
         return NativeBridge.nativeLoadScene(path);
     }
 
+    public boolean createTerrain() {
+        return NativeBridge.nativeCreateTerrain();
+    }
+
+    public boolean sculptTerrain(
+            float centerX, float centerZ, float radius, float strength, int mode) {
+        return NativeBridge.nativeSculptTerrain(
+                centerX, centerZ, radius, strength, mode
+        );
+    }
+
     public String[] getSceneObjects() {
         return NativeBridge.nativeGetSceneObjects();
     }
