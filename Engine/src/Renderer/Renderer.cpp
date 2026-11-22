@@ -193,10 +193,13 @@ float shadowAmount(vec4 position) {
         return 0.0;
     }
 
-    float bias = max(0.0015 * (1.0 - dot(
+    if (position.w <= 0.0) return 0.0;
+
+    float NdotL = max(dot(
         normalize(vNormal),
         normalize(-uLightDirection)
-    )), 0.00025);
+    ), 0.0);
+    float bias = max(0.0018 * (1.0 - NdotL), 0.00045);
 
     vec2 texel = 1.0 / vec2(textureSize(uShadowMap, 0));
     float blocked = 0.0;
@@ -315,8 +318,42 @@ void main() {
     vec3 kd = (1.0 - F) * (1.0 - metallic);
     vec3 sunColor = pow(vec3(255.0, 244.0, 224.0) / 255.0, vec3(2.2));
     const float sunIntensity = 3.0;
+    float shadow = 0.0;
+    if (uUseShadows == 1 && NdotLRaw > 0.0) {
+        shadow = shadowAmount(vShadowPosition);
+    }
+    float shadowVisibility = 1.0 -
+        clamp(shadow * uShadowStrength, 0.0, 0.95);
+
     vec3 direct = (kd * albedo / PI + specular) *
-                  sunColor * sunIntensity * NdotLRaw;
+                  sunColor * sunIntensity * NdotLRaw *
+                  shadowVisibility;
+
+    // World-space concrete tiling: grout, subtle slab variation and fine
+    // mineral grain. Applied to upward-facing neutral rough surfaces only.
+    if (N.y > 0.72 && roughness > 0.78 && metallic < 0.05 &&
+        max(albedo.r, max(albedo.g, albedo.b)) < 0.62) {
+        vec2 tileUV = vWorldPosition.xz * 0.5;
+        vec2 cell = fract(tileUV);
+        vec2 tileId = floor(tileUV);
+        float grout = 1.0 - smoothstep(0.025, 0.055,
+            min(min(cell.x, 1.0 - cell.x),
+                min(cell.y, 1.0 - cell.y)));
+        float slabNoise = fract(sin(dot(tileId, vec2(127.1, 311.7))) *
+                                43758.5453);
+        float grain = fract(sin(dot(vWorldPosition.xz * 43.0,
+                                    vec2(269.5, 183.3))) * 24634.6345);
+        float concreteVariation = 0.965 + slabNoise * 0.045 +
+                                  (grain - 0.5) * 0.025;
+        albedo *= concreteVariation * mix(1.0, 0.72, grout);
+        ambient *= concreteVariation * mix(1.0, 0.78, grout);
+        direct *= mix(1.0, 0.82, grout);
+    }
+
+    // A restrained contact term darkens the immediate surface response
+    // wherever the filtered shadow map detects nearby occlusion.
+    float contact = clamp(shadow * 0.32, 0.0, 0.28);
+    ambient *= 1.0 - contact;
 
     vec3 result = ambient + direct;
 
@@ -485,27 +522,37 @@ void main() {
     );
 
     float height = clamp(ray.y * 0.5 + 0.5, 0.0, 1.0);
-    vec3 horizon = vec3(0.66, 0.80, 0.91);
-    vec3 zenith = vec3(0.20, 0.39, 0.68);
-    vec3 sky = mix(horizon, zenith, smoothstep(0.02, 0.88, height));
+    vec3 horizon = vec3(0.72, 0.82, 0.91);
+    vec3 zenith = vec3(0.16, 0.34, 0.62);
+    float skyGradient = smoothstep(-0.02, 0.92, ray.y);
+    vec3 sky = mix(horizon, zenith, skyGradient);
 
-    // Evaluate cloud forms from the camera's world-space ray. They remain
-    // anchored to the sky as the editor camera moves and rotates.
-    float cloudHeight = max(ray.y + 0.22, 0.12);
+    // Rayleigh-like horizon haze and a warmer band around the sun.
+    float horizonHaze = exp(-max(ray.y, 0.0) * 7.0);
+    sky = mix(sky, vec3(0.79, 0.85, 0.91), horizonHaze * 0.24);
+
+    // Two broad world-direction cloud layers with soft multi-octave edges.
+    float cloudHeight = max(ray.y + 0.19, 0.10);
     vec2 cloudPlane = ray.xz / cloudHeight;
-    float cloudNoise = cloudFbm(vec3(cloudPlane * 1.35, 2.4));
-    float cloudMask = smoothstep(0.53, 0.72, cloudNoise);
-    cloudMask *= smoothstep(-0.02, 0.24, ray.y);
-    float cloudLight = clamp(0.82 + ray.y * 0.18, 0.72, 1.0);
-    sky = mix(sky, vec3(0.91, 0.94, 0.97) * cloudLight,
-              cloudMask * 0.72);
+    float broadClouds = cloudFbm(vec3(cloudPlane * 0.72, 1.8));
+    float fineClouds = cloudFbm(vec3(cloudPlane * 1.85, 4.7));
+    float cloudField = broadClouds * 0.72 + fineClouds * 0.28;
+    float cloudMask = smoothstep(0.48, 0.68, cloudField);
+    cloudMask *= smoothstep(-0.035, 0.20, ray.y);
+    float underside = clamp(0.78 + ray.y * 0.38, 0.62, 1.0);
+    vec3 cloudColor = mix(vec3(0.67, 0.72, 0.79),
+                          vec3(0.98, 0.985, 1.0), underside);
+    sky = mix(sky, cloudColor, cloudMask * 0.82);
 
-    float sunDot = dot(ray, normalize(uSunDirection));
-    float sunDisc = smoothstep(cos(0.012), cos(0.006), sunDot);
-    float sunGlow = pow(max(sunDot, 0.0), 48.0) * 0.24;
-    float atmosphere = pow(max(sunDot, 0.0), 7.0) * 0.10;
-    sky += vec3(1.0, 0.78, 0.52) * (sunGlow + atmosphere);
-    sky = mix(sky, vec3(1.0, 0.97, 0.86), sunDisc);
+    vec3 sunDirection = normalize(uSunDirection);
+    float sunDot = dot(ray, sunDirection);
+    float sunDisc = smoothstep(cos(0.010), cos(0.004), sunDot);
+    float halo = pow(max(sunDot, 0.0), 22.0) * 0.16;
+    float glare = pow(max(sunDot, 0.0), 5.0) * 0.055;
+    float warmHorizon = pow(max(sunDot, 0.0), 3.0) *
+                        horizonHaze * 0.09;
+    sky += vec3(1.0, 0.72, 0.46) * (halo + glare + warmHorizon);
+    sky = mix(sky, vec3(1.0, 0.97, 0.88), sunDisc);
 
     fragColor = vec4(sky, 1.0);
 }
@@ -828,8 +875,8 @@ bool Renderer::createShadowTarget() {
         0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr
     );
 
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_NONE);
@@ -1264,6 +1311,8 @@ void Renderer::renderShadowMap(
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
     glCullFace(GL_FRONT);
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(2.0f, 4.0f);
 
     shadowProgram_.use();
 
@@ -1295,6 +1344,7 @@ void Renderer::renderShadowMap(
     }
 
     glBindVertexArray(0);
+    glDisable(GL_POLYGON_OFFSET_FILL);
     glCullFace(GL_BACK);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
