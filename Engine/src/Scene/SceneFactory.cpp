@@ -84,99 +84,111 @@ void addMannequin(Scene& scene, Vec3 origin, const std::string& prefix) {
 void SceneFactory::buildDefaultScene(Scene& scene) {
     scene.clear();
 
-    const Color concrete = makeColor(0.57f, 0.58f, 0.60f);
-    const Color concreteDark = makeColor(0.39f, 0.42f, 0.46f);
-    const Color concreteLight = makeColor(0.68f, 0.69f, 0.70f);
-    const Color orange = makeColor(0.96f, 0.43f, 0.045f);
-    const Color orangeDark = makeColor(0.72f, 0.25f, 0.025f);
-    const Color trim = makeColor(0.27f, 0.30f, 0.34f);
+    const Color floor = makeColor(0.56f, 0.57f, 0.59f);
+    const Color wall = makeColor(0.60f, 0.61f, 0.63f);
+    const Color wallSide = makeColor(0.43f, 0.46f, 0.50f);
+    const Color wallTrim = makeColor(0.30f, 0.33f, 0.37f);
+    const Color yellow = makeColor(0.96f, 0.72f, 0.025f);
+    const Color yellowSide = makeColor(0.78f, 0.48f, 0.015f);
+    const Color yellowLight = makeColor(1.0f, 0.84f, 0.08f);
 
-    // Long first-person test corridor, with an open roof so the sky and
-    // directional sun remain visible from the editor camera.
-    addObject(scene, "Tiled Concrete Corridor Floor", PrimitiveType::Plane,
-        {0.0f, -0.06f, -8.0f}, {18.0f, 1.0f, 60.0f}, concrete);
+    // Open rectangular architectural arena viewed from human eye height.
+    addObject(scene, "Arena Floor", PrimitiveType::Plane,
+        {0.0f, -0.08f, -4.0f}, {34.0f, 1.0f, 34.0f}, floor);
 
-    addObject(scene, "Left Concrete Boundary Wall", PrimitiveType::Cube,
-        {-9.15f, 3.4f, -8.0f}, {0.55f, 6.8f, 60.0f}, concrete);
-    addObject(scene, "Right Concrete Boundary Wall", PrimitiveType::Cube,
-        {9.15f, 3.4f, -8.0f}, {0.55f, 6.8f, 60.0f}, concreteDark);
-    addObject(scene, "Far Corridor Wall", PrimitiveType::Cube,
-        {0.0f, 3.4f, -38.0f}, {18.8f, 6.8f, 0.55f}, concreteDark);
+    // Low perimeter walls preserve the open sky and first-person sightlines.
+    addObject(scene, "Rear Boundary Wall", PrimitiveType::Cube,
+        {0.0f, 1.35f, -21.0f}, {34.0f, 2.7f, 0.65f}, wallSide);
+    addObject(scene, "Left Boundary Wall", PrimitiveType::Cube,
+        {-17.0f, 1.35f, -4.0f}, {0.65f, 2.7f, 34.0f}, wall);
+    addObject(scene, "Right Boundary Wall", PrimitiveType::Cube,
+        {17.0f, 1.35f, -4.0f}, {0.65f, 2.7f, 34.0f}, wall);
+    addObject(scene, "Front Boundary Wall", PrimitiveType::Cube,
+        {0.0f, 1.35f, 13.0f}, {34.0f, 2.7f, 0.65f}, wall);
 
-    // Wall footing and top coping create visible architectural edge detail.
+    addObject(scene, "Rear Wall Footing", PrimitiveType::Cube,
+        {0.0f, 0.22f, -20.62f}, {34.0f, 0.44f, 0.18f}, wallTrim);
     addObject(scene, "Left Wall Footing", PrimitiveType::Cube,
-        {-8.78f, 0.32f, -8.0f}, {0.22f, 0.64f, 60.0f}, trim);
+        {-16.62f, 0.22f, -4.0f}, {0.18f, 0.44f, 34.0f}, wallTrim);
     addObject(scene, "Right Wall Footing", PrimitiveType::Cube,
-        {8.78f, 0.32f, -8.0f}, {0.22f, 0.64f, 60.0f}, trim);
+        {16.62f, 0.22f, -4.0f}, {0.18f, 0.44f, 34.0f}, wallTrim);
+    addObject(scene, "Rear Wall Coping", PrimitiveType::Cube,
+        {0.0f, 2.78f, -21.0f}, {34.2f, 0.16f, 0.82f}, wall);
     addObject(scene, "Left Wall Coping", PrimitiveType::Cube,
-        {-9.15f, 6.88f, -8.0f}, {0.72f, 0.20f, 60.0f}, concreteLight);
+        {-17.0f, 2.78f, -4.0f}, {0.82f, 0.16f, 34.2f}, wall);
     addObject(scene, "Right Wall Coping", PrimitiveType::Cube,
-        {9.15f, 6.88f, -8.0f}, {0.72f, 0.20f, 60.0f}, concreteLight);
+        {17.0f, 2.78f, -4.0f}, {0.82f, 0.16f, 34.2f}, wall);
 
-    // Repeated orange structural pillars with dark inset bases and caps.
-    for (int i = 0; i < 5; ++i) {
-        float z = 10.0f - static_cast<float>(i) * 9.0f;
-        float side = (i % 2 == 0) ? -1.0f : 1.0f;
-        float x = side * 6.7f;
+    // Stepped circular centerpiece.
+    addObject(scene, "Central Pedestal Base", PrimitiveType::Cylinder,
+        {0.0f, 0.32f, -4.0f}, {2.25f, 0.64f, 2.25f}, wallSide);
+    addObject(scene, "Central Yellow Pedestal Band", PrimitiveType::Cylinder,
+        {0.0f, 0.70f, -4.0f}, {2.12f, 0.22f, 2.12f}, yellowSide);
+    addObject(scene, "Central Yellow Pedestal Top", PrimitiveType::Cylinder,
+        {0.0f, 0.91f, -4.0f}, {2.18f, 0.20f, 2.18f}, yellowLight);
 
-        addObject(scene, "Orange Structural Pillar " + std::to_string(i + 1),
-            PrimitiveType::Cube, {x, 2.1f, z},
-            {1.55f, 4.2f, 1.35f}, orange);
-        addObject(scene, "Pillar Base " + std::to_string(i + 1),
-            PrimitiveType::Cube, {x, 0.22f, z},
-            {1.72f, 0.44f, 1.52f}, orangeDark);
-        addObject(scene, "Pillar Cap " + std::to_string(i + 1),
-            PrimitiveType::Cube, {x, 4.25f, z},
-            {1.68f, 0.22f, 1.48f}, orangeDark);
+    // Yellow columns distributed around the arena, leaving a clear center route.
+    const Vec3 columnPositions[] = {
+        {-12.0f, 0.0f, -14.0f}, {-12.0f, 0.0f, -3.0f},
+        {12.0f, 0.0f, -13.0f}, {12.0f, 0.0f, -1.0f},
+        {-6.0f, 0.0f, -18.0f}, {7.0f, 0.0f, -18.0f},
+        {-7.0f, 0.0f, 7.0f}, {8.0f, 0.0f, 7.0f}
+    };
+    for (int i = 0; i < 8; ++i) {
+        const Vec3 p = columnPositions[i];
+        addObject(scene, "Yellow Architectural Column " + std::to_string(i + 1),
+            PrimitiveType::Cube, {p.x, 1.55f, p.z},
+            {1.8f, 3.1f, 1.8f}, yellow);
+        addObject(scene, "Yellow Column Foot " + std::to_string(i + 1),
+            PrimitiveType::Cube, {p.x, 0.16f, p.z},
+            {2.0f, 0.32f, 2.0f}, yellowSide);
+        addObject(scene, "Yellow Column Cap " + std::to_string(i + 1),
+            PrimitiveType::Cube, {p.x, 3.16f, p.z},
+            {1.95f, 0.18f, 1.95f}, yellowLight);
     }
 
-    // Raised side platforms and concrete retaining faces.
-    addObject(scene, "Left Raised Walkway", PrimitiveType::Cube,
-        {-6.4f, 0.62f, -10.0f}, {3.0f, 1.25f, 35.0f}, concreteLight);
-    addObject(scene, "Right Raised Walkway", PrimitiveType::Cube,
-        {6.4f, 0.62f, -17.0f}, {3.0f, 1.25f, 24.0f}, concrete);
-    addObject(scene, "Left Walkway Retaining Face", PrimitiveType::Cube,
-        {-4.85f, 0.62f, -10.0f}, {0.18f, 1.25f, 35.0f}, concreteDark);
-    addObject(scene, "Right Walkway Retaining Face", PrimitiveType::Cube,
-        {4.85f, 0.62f, -17.0f}, {0.18f, 1.25f, 24.0f}, concreteDark);
-
-    // A broad sloped ramp and a short stair set make the corridor navigable.
-    addObject(scene, "Main Concrete Ramp", PrimitiveType::Ramp,
-        {-3.35f, 0.72f, -4.0f}, {3.1f, 1.45f, 7.0f}, concreteLight,
+    // Raised architectural platforms with sloped access ramps.
+    addObject(scene, "Left Raised Platform", PrimitiveType::Cube,
+        {-11.0f, 0.48f, 4.0f}, {5.0f, 0.96f, 8.0f}, wall);
+    addObject(scene, "Left Platform Yellow Ramp", PrimitiveType::Ramp,
+        {-7.5f, 0.55f, 4.0f}, {2.4f, 1.1f, 5.0f}, yellow,
         {0.0f, 0.0f, -12.0f});
-    for (int step = 0; step < 5; ++step) {
-        float height = 0.22f + step * 0.24f;
-        float z = -20.0f - step * 0.78f;
-        addObject(scene, "Concrete Stair " + std::to_string(step + 1),
-            PrimitiveType::Cube, {3.25f, height, z},
-            {2.6f, 0.44f + step * 0.48f, 0.82f}, concreteLight);
-    }
+    addObject(scene, "Right Raised Platform", PrimitiveType::Cube,
+        {11.0f, 0.48f, -9.0f}, {5.0f, 0.96f, 8.0f}, wallSide);
+    addObject(scene, "Right Platform Yellow Ramp", PrimitiveType::Ramp,
+        {7.5f, 0.55f, -9.0f}, {2.4f, 1.1f, 5.0f}, yellow,
+        {0.0f, 0.0f, 12.0f});
 
-    // Low cover blocks, inset panels and wall buttresses provide scale.
+    // Broad geometric wedges and low yellow platforms.
+    addObject(scene, "Rear Left Yellow Wedge", PrimitiveType::Ramp,
+        {-8.5f, 0.95f, -14.5f}, {4.2f, 1.9f, 4.8f}, yellow,
+        {0.0f, 0.0f, -18.0f});
+    addObject(scene, "Rear Right Yellow Wedge", PrimitiveType::Ramp,
+        {8.5f, 0.95f, -14.5f}, {4.2f, 1.9f, 4.8f}, yellow,
+        {0.0f, 0.0f, 18.0f});
+    addObject(scene, "Front Left Yellow Platform", PrimitiveType::Cube,
+        {-5.5f, 0.30f, 8.0f}, {5.0f, 0.60f, 3.8f}, yellow);
+    addObject(scene, "Front Right Yellow Platform", PrimitiveType::Cube,
+        {5.5f, 0.30f, 8.0f}, {5.0f, 0.60f, 3.8f}, yellowLight);
+
+    // Concrete access steps beside the centerpiece.
     for (int i = 0; i < 4; ++i) {
-        float z = 5.0f - i * 10.0f;
-        float x = (i % 2 == 0) ? 2.0f : -2.0f;
-        addObject(scene, "Concrete Cover Block " + std::to_string(i + 1),
-            PrimitiveType::Cube, {x, 0.72f, z},
-            {2.2f, 1.45f, 1.35f}, concrete);
+        float h = 0.18f + i * 0.16f;
+        addObject(scene, "Central Access Step " + std::to_string(i + 1),
+            PrimitiveType::Cube, {3.8f, h, -4.0f - i * 0.82f},
+            {1.9f, 0.36f + i * 0.32f, 0.86f}, wall);
     }
 
-    for (int i = 0; i < 6; ++i) {
-        float z = 15.0f - i * 9.5f;
-        addObject(scene, "Left Wall Buttress " + std::to_string(i + 1),
-            PrimitiveType::Cube, {-8.72f, 3.35f, z},
-            {0.38f, 6.3f, 0.95f}, concreteLight);
-        addObject(scene, "Right Wall Buttress " + std::to_string(i + 1),
-            PrimitiveType::Cube, {8.72f, 3.35f, z},
-            {0.38f, 6.3f, 0.95f}, concrete);
+    // Repeated wall piers add scale and architectural rhythm.
+    for (int i = 0; i < 5; ++i) {
+        float z = -17.0f + i * 6.0f;
+        addObject(scene, "Left Wall Pier " + std::to_string(i + 1),
+            PrimitiveType::Cube, {-16.55f, 1.38f, z},
+            {0.42f, 2.76f, 0.55f}, wall);
+        addObject(scene, "Right Wall Pier " + std::to_string(i + 1),
+            PrimitiveType::Cube, {16.55f, 1.38f, z},
+            {0.42f, 2.76f, 0.55f}, wallSide);
     }
-
-    // Orange wall panels add deliberate color blocking without cluttering
-    // the playable centerline.
-    addObject(scene, "Far Orange Feature Panel", PrimitiveType::Cube,
-        {0.0f, 2.5f, -37.55f}, {5.0f, 3.0f, 0.18f}, orangeDark);
-    addObject(scene, "Right Orange Feature Panel", PrimitiveType::Cube,
-        {8.72f, 2.6f, -26.0f}, {0.18f, 3.2f, 5.0f}, orange);
 
     scene.deselect();
 }
