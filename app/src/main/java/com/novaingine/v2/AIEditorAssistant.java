@@ -51,7 +51,7 @@ public final class AIEditorAssistant {
         JSONObject system = new JSONObject();
         try {
             system.put("role", "system");
-            system.put("content", "You are Novaingine AI, an expert 3D game-engine editor assistant. You can inspect and modify the user's current scene using the supplied tools. Prefer taking concrete scene actions when requested. Ask a short clarification only when essential. Never claim an action succeeded unless its tool returned success. Keep mobile performance in mind. Scene coordinates use X, Y up, Z. Default arena is near X=0, Z=-4. Explain each change briefly.");
+            system.put("content", "You are NOVA AI, a professional real-time 3D world-building agent inside Novaingine, inspired by the workflow and quality expectations of Unreal Editor. You MUST build requested creations by executing scene tools, not merely describe them. Think like a level artist and modular environment artist. For a house, create a coherent complete structure: raised foundation, floor slab, separate walls, roof sections, door, window frames and glass, trim, steps and tasteful details. Use multiple accurately positioned and scaled primitives; avoid a pile of random cubes. Keep parts aligned, intersecting slightly where needed to avoid gaps, use consistent dimensions, complementary colors and sensible materials. For roads, bridges, towers and other assets, decompose into logical structural parts and details. Inspect the scene first when placement matters, build around existing objects without destroying them, and explain the layout. Coordinates use X horizontal, Y up, Z depth; default arena center is near X=0, Z=-4. Use sensible human-scale proportions (door about 1.0 wide x 2.1 high; storey about 3 units). Place requested assets beside the arena if asked, not on top of it. Use many tool calls in a single response when needed, but stay under the operation limit. After building, inspect the scene and report what was actually created. Use create_primitive repeatedly for compound assets; use select_object before transform tools. Rotate values are radians. Never claim an action succeeded unless its tool reports success. Preserve existing scene content unless the user asks to remove it. Keep mobile performance in mind.");
             history.put(system);
         } catch (Exception ignored) {}
     }
@@ -175,7 +175,8 @@ public final class AIEditorAssistant {
 
     private String runAgent() throws Exception {
         JSONArray tools = buildTools();
-        for (int step = 0; step < 6; step++) {
+        int operationCount = 0;
+        for (int step = 0; step < 12; step++) {
             JSONObject body = new JSONObject();
             body.put("model", MODEL);
             body.put("messages", history);
@@ -204,6 +205,7 @@ public final class AIEditorAssistant {
                 JSONObject fn = call.getJSONObject("function");
                 String name = fn.getString("name");
                 JSONObject args = new JSONObject(fn.optString("arguments", "{}"));
+                if (++operationCount > 48) return "I reached the safe 48-operation limit. The scene contains the completed operations so far; give me another instruction to continue.";
                 String result = executeTool(name, args);
                 JSONObject toolMessage = new JSONObject();
                 toolMessage.put("role", "tool");
@@ -254,7 +256,10 @@ public final class AIEditorAssistant {
         tools.put(tool("sculpt_terrain", "Sculpt terrain. mode is raise, lower, smooth or flatten.", "{\"type\":\"object\",\"properties\":{\"x\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"},\"radius\":{\"type\":\"number\"},\"strength\":{\"type\":\"number\"},\"mode\":{\"type\":\"string\",\"enum\":[\"raise\",\"lower\",\"smooth\",\"flatten\"]}},\"required\":[\"x\",\"z\",\"radius\",\"strength\",\"mode\"]}"));
         tools.put(tool("paint_foliage", "Paint trees or bushes around world X/Z. kind is tree or bush. Count is limited for mobile performance.", "{\"type\":\"object\",\"properties\":{\"x\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"},\"radius\":{\"type\":\"number\"},\"count\":{\"type\":\"integer\"},\"kind\":{\"type\":\"string\",\"enum\":[\"tree\",\"bush\"]}},\"required\":[\"x\",\"z\",\"radius\",\"count\",\"kind\"]}"));
         tools.put(tool("clear_foliage", "Remove all generated foliage objects.", "{\"type\":\"object\",\"properties\":{}}"));
+        tools.put(tool("select_object", "Select an existing scene object by its numeric ID from inspect_scene.", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"integer\"}},\"required\":[\"id\"]}"));
         tools.put(tool("move_selected", "Move the currently selected object by a world-space offset.", "{\"type\":\"object\",\"properties\":{\"dx\":{\"type\":\"number\"},\"dy\":{\"type\":\"number\"},\"dz\":{\"type\":\"number\"}},\"required\":[\"dx\",\"dy\",\"dz\"]}"));
+        tools.put(tool("rotate_selected", "Rotate the selected object by radians around X, Y and Z.", "{\"type\":\"object\",\"properties\":{\"rx\":{\"type\":\"number\"},\"ry\":{\"type\":\"number\"},\"rz\":{\"type\":\"number\"}},\"required\":[\"rx\",\"ry\",\"rz\"]}"));
+        tools.put(tool("scale_selected", "Scale the selected object by multipliers on X, Y and Z. Use values such as 1.2 to enlarge or 0.8 to shrink.", "{\"type\":\"object\",\"properties\":{\"sx\":{\"type\":\"number\"},\"sy\":{\"type\":\"number\"},\"sz\":{\"type\":\"number\"}},\"required\":[\"sx\",\"sy\",\"sz\"]}"));
         tools.put(tool("undo", "Undo the last supported scene change.", "{\"type\":\"object\",\"properties\":{}}"));
         tools.put(tool("redo", "Redo the last undone scene change.", "{\"type\":\"object\",\"properties\":{}}"));
         return tools;
@@ -311,12 +316,34 @@ public final class AIEditorAssistant {
                 case "clear_foliage":
                     int removed = runOnRenderThread(() -> NativeBridge.nativeClearFoliage());
                     return "Removed " + removed + " foliage scene objects.";
+                case "select_object": {
+                    int id = a.optInt("id", 0);
+                    if (id <= 0) return "Invalid scene object ID.";
+                    runOnRenderThread(() -> { NativeBridge.nativeSelectObjectById(id); return true; });
+                    return "Selected scene object ID " + id + ".";
+                }
                 case "move_selected": {
                     float[] t=engine.getSelectedTransform();
                     if(t==null || t.length<9) return "Could not read selected transform.";
                     t[0]+=number(a,"dx",0); t[1]+=number(a,"dy",0); t[2]+=number(a,"dz",0);
-                    engine.setSelectedTransform(t);
-                    return "Selected object movement submitted.";
+                    runOnRenderThread(() -> { NativeBridge.nativeSetSelectedTransform(t); return true; });
+                    return "Selected object moved to (" + t[0] + ", " + t[1] + ", " + t[2] + ").";
+                }
+                case "rotate_selected": {
+                    float[] t=engine.getSelectedTransform();
+                    if(t==null || t.length<9) return "Could not read selected transform.";
+                    t[3]+=number(a,"rx",0); t[4]+=number(a,"ry",0); t[5]+=number(a,"rz",0);
+                    runOnRenderThread(() -> { NativeBridge.nativeSetSelectedTransform(t); return true; });
+                    return "Selected object rotation updated (radians).";
+                }
+                case "scale_selected": {
+                    float[] t=engine.getSelectedTransform();
+                    if(t==null || t.length<9) return "Could not read selected transform.";
+                    t[6]=Math.max(0.05f, Math.min(50f, t[6]*number(a,"sx",1)));
+                    t[7]=Math.max(0.05f, Math.min(50f, t[7]*number(a,"sy",1)));
+                    t[8]=Math.max(0.05f, Math.min(50f, t[8]*number(a,"sz",1)));
+                    runOnRenderThread(() -> { NativeBridge.nativeSetSelectedTransform(t); return true; });
+                    return "Selected object scale updated to (" + t[6] + ", " + t[7] + ", " + t[8] + ").";
                 }
                 case "undo":
                     boolean undone = runOnRenderThread(() -> NativeBridge.nativeUndo()); return undone ? "Undo completed." : "Nothing available to undo.";
