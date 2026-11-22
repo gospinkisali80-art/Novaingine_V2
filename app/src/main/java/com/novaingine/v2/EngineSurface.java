@@ -22,6 +22,8 @@ public final class EngineSurface extends GLSurfaceView
     private float joystickForward;
     private float joystickRight;
     private float verticalMovement;
+    private volatile float lookHorizontal;
+    private volatile float lookVertical;
 
     private boolean enginePaused;
 
@@ -85,6 +87,12 @@ public final class EngineSurface extends GLSurfaceView
                     verticalMovement,
                     deltaTime
             );
+
+            // Independent right-stick camera look runs alongside movement.
+            NativeBridge.nativeTouch(
+                    lookHorizontal * 120.0f * deltaTime,
+                    lookVertical * 120.0f * deltaTime
+            );
         }
 
         NativeBridge.nativeRender(deltaTime);
@@ -128,6 +136,11 @@ public final class EngineSurface extends GLSurfaceView
 
     public void setVerticalMovement(float value) {
         verticalMovement = clamp(value);
+    }
+
+    public void setLookJoystick(float horizontal, float vertical) {
+        lookHorizontal = clamp(horizontal);
+        lookVertical = clamp(vertical);
     }
 
     public boolean saveScene(String path) {
