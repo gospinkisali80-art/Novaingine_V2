@@ -33,7 +33,10 @@ import java.util.concurrent.Executors;
 public final class AIEditorAssistant {
     private static final String PREFS = "nova_ai_settings";
     private static final String KEY = "groq_api_key";
-    private static final String MODEL = "openai/gpt-oss-20b";
+    private static final String MODEL_20B = "openai/gpt-oss-20b";
+    private static final String MODEL_120B = "openai/gpt-oss-120b";
+    private static final String MODEL_PREF = "groq_model";
+    private TextView modelInfo;
     private final Activity activity;
     private final EngineSurface engine;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -70,17 +73,21 @@ public final class AIEditorAssistant {
         title.setTextSize(16);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         top.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+        Button modelButton = new Button(activity);
+        modelButton.setText("MODEL");
+        modelButton.setOnClickListener(v -> showModelDialog());
+        top.addView(modelButton);
         Button keyButton = new Button(activity);
         keyButton.setText("API KEY");
         keyButton.setOnClickListener(v -> showKeyDialog());
         top.addView(keyButton);
         root.addView(top);
 
-        TextView model = new TextView(activity);
-        model.setText("Model: " + MODEL + "  |  Tool-enabled scene assistant");
-        model.setTextColor(0xFF9EADBE);
-        model.setTextSize(10);
-        root.addView(model);
+        modelInfo = new TextView(activity);
+        updateModelInfo();
+        modelInfo.setTextColor(0xFF9EADBE);
+        modelInfo.setTextSize(10);
+        root.addView(modelInfo);
 
         scroll = new ScrollView(activity);
         scroll.setFillViewport(true);
@@ -120,6 +127,41 @@ public final class AIEditorAssistant {
                 Math.min(activity.getResources().getDisplayMetrics().heightPixels - dp(40), dp(520))
         );
         if (getKey().isEmpty()) showKeyDialog();
+    }
+
+
+    private String getModel() {
+        return activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE)
+                .getString(MODEL_PREF, MODEL_120B);
+    }
+
+    private void updateModelInfo() {
+        if (modelInfo != null) {
+            String selected = getModel();
+            String label = selected.equals(MODEL_120B) ? "GPT-OSS 120B" : "GPT-OSS 20B";
+            modelInfo.setText("Provider: Groq  |  Model: " + label + " (" + selected + ")  |  Tool-enabled scene assistant");
+        }
+    }
+
+    private void showModelDialog() {
+        String[] labels = {
+                "GPT-OSS 120B — Recommended, stronger reasoning",
+                "GPT-OSS 20B — Keep as a faster alternative"
+        };
+        String current = getModel();
+        int checked = current.equals(MODEL_20B) ? 1 : 0;
+        new AlertDialog.Builder(activity)
+                .setTitle("Choose Groq model")
+                .setSingleChoiceItems(labels, checked, (d, which) -> {
+                    String selected = which == 0 ? MODEL_120B : MODEL_20B;
+                    activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE)
+                            .edit().putString(MODEL_PREF, selected).apply();
+                    updateModelInfo();
+                    append("\\n[Groq model set to " + selected + ". Your Groq API key is unchanged.]\\n");
+                    d.dismiss();
+                })
+                .setNegativeButton("CANCEL", null)
+                .show();
     }
 
     private void showKeyDialog() {
@@ -178,7 +220,7 @@ public final class AIEditorAssistant {
         int operationCount = 0;
         for (int step = 0; step < 12; step++) {
             JSONObject body = new JSONObject();
-            body.put("model", MODEL);
+            body.put("model", getModel());
             body.put("messages", history);
             body.put("tools", tools);
             body.put("tool_choice", "auto");
