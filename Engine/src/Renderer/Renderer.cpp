@@ -433,35 +433,79 @@ void main() {
 const char* skyFragmentShader = R"(
 #version 300 es
 precision highp float;
+
 in vec2 vUV;
+uniform mat4 uViewProjection;
+uniform vec3 uCameraPosition;
+uniform vec3 uSunDirection;
 out vec4 fragColor;
 
+float hash31(vec3 p) {
+    p = fract(p * 0.1031);
+    p += dot(p, p.yzx + 33.33);
+    return fract((p.x + p.y) * p.z);
+}
+
+float noise3(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float n000 = hash31(i);
+    float n100 = hash31(i + vec3(1.0, 0.0, 0.0));
+    float n010 = hash31(i + vec3(0.0, 1.0, 0.0));
+    float n110 = hash31(i + vec3(1.0, 1.0, 0.0));
+    float n001 = hash31(i + vec3(0.0, 0.0, 1.0));
+    float n101 = hash31(i + vec3(1.0, 0.0, 1.0));
+    float n011 = hash31(i + vec3(0.0, 1.0, 1.0));
+    float n111 = hash31(i + vec3(1.0, 1.0, 1.0));
+    float x00 = mix(n000, n100, f.x);
+    float x10 = mix(n010, n110, f.x);
+    float x01 = mix(n001, n101, f.x);
+    float x11 = mix(n011, n111, f.x);
+    return mix(mix(x00, x10, f.y), mix(x01, x11, f.y), f.z);
+}
+
+float cloudFbm(vec3 p) {
+    float value = 0.0;
+    float amplitude = 0.55;
+    for (int octave = 0; octave < 4; ++octave) {
+        value += noise3(p) * amplitude;
+        p = p * 2.03 + vec3(7.1, 3.7, 5.3);
+        amplitude *= 0.5;
+    }
+    return value;
+}
+
 void main() {
-    float height = clamp(vUV.y, 0.0, 1.0);
+    vec2 ndc = vUV * 2.0 - 1.0;
+    mat4 inverseViewProjection = inverse(uViewProjection);
+    vec4 farPoint = inverseViewProjection * vec4(ndc, 1.0, 1.0);
+    vec3 ray = normalize(
+        farPoint.xyz / max(abs(farPoint.w), 0.00001) - uCameraPosition
+    );
 
+    float height = clamp(ray.y * 0.5 + 0.5, 0.0, 1.0);
     vec3 horizon = vec3(0.66, 0.80, 0.91);
-    vec3 zenith = vec3(0.16, 0.34, 0.62);
+    vec3 zenith = vec3(0.20, 0.39, 0.68);
+    vec3 sky = mix(horizon, zenith, smoothstep(0.02, 0.88, height));
 
-    vec3 sky = mix(horizon, zenith, smoothstep(0.0, 1.0, height));
+    // Evaluate cloud forms from the camera's world-space ray. They remain
+    // anchored to the sky as the editor camera moves and rotates.
+    float cloudHeight = max(ray.y + 0.22, 0.12);
+    vec2 cloudPlane = ray.xz / cloudHeight;
+    float cloudNoise = cloudFbm(vec3(cloudPlane * 1.35, 2.4));
+    float cloudMask = smoothstep(0.53, 0.72, cloudNoise);
+    cloudMask *= smoothstep(-0.02, 0.24, ray.y);
+    float cloudLight = clamp(0.82 + ray.y * 0.18, 0.72, 1.0);
+    sky = mix(sky, vec3(0.91, 0.94, 0.97) * cloudLight,
+              cloudMask * 0.72);
 
-    float cloudNoise =
-        sin(vUV.x * 18.0 + sin(vUV.y * 8.0)) *
-        sin(vUV.y * 22.0 + vUV.x * 5.0);
-
-    float clouds = smoothstep(0.62, 0.92, cloudNoise) *
-                   smoothstep(0.20, 0.75, height);
-
-    sky = mix(sky, vec3(0.88, 0.92, 0.96), clouds * 0.22);
-
-    // Visible sun disc and atmospheric glow.
-    vec2 sunCenter = vec2(0.78, 0.73);
-    float d = length((vUV - sunCenter) * vec2(1.0, 1.25));
-    float disc = 1.0 - smoothstep(0.026, 0.032, d);
-    float innerGlow = exp(-d * 95.0) * 0.48;
-    float outerGlow = exp(-d * 24.0) * 0.20;
-
-    sky += vec3(1.0, 0.72, 0.40) * (innerGlow + outerGlow);
-    sky = mix(sky, vec3(1.0, 0.97, 0.84), disc);
+    float sunDot = dot(ray, normalize(uSunDirection));
+    float sunDisc = smoothstep(cos(0.012), cos(0.006), sunDot);
+    float sunGlow = pow(max(sunDot, 0.0), 48.0) * 0.24;
+    float atmosphere = pow(max(sunDot, 0.0), 7.0) * 0.10;
+    sky += vec3(1.0, 0.78, 0.52) * (sunGlow + atmosphere);
+    sky = mix(sky, vec3(1.0, 0.97, 0.86), sunDisc);
 
     fragColor = vec4(sky, 1.0);
 }
@@ -1256,18 +1300,33 @@ void Renderer::renderShadowMap(
 }
 
 void Renderer::renderSky(const Camera& camera) {
-    (void)camera;
-
     if (!settings_.showSky) {
         glClearColor(0.66f, 0.80f, 0.91f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         return;
     }
 
+    Mat4 viewProjection = multiplyMatrix(
+        camera.projectionMatrix(
+            static_cast<float>(width_) / static_cast<float>(height_)
+        ),
+        camera.viewMatrix()
+    );
+
     glDisable(GL_DEPTH_TEST);
     glDepthMask(GL_FALSE);
 
     skyProgram_.use();
+    setMatrixUniform(skyProgram_, "uViewProjection", viewProjection);
+    setVec3Uniform(
+        skyProgram_, "uCameraPosition",
+        camera.position.x, camera.position.y, camera.position.z
+    );
+    setVec3Uniform(
+        skyProgram_, "uSunDirection",
+        -lightDirection_[0], -lightDirection_[1], -lightDirection_[2]
+    );
+
     glBindVertexArray(fullscreenVAO_);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
