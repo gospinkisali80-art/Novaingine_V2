@@ -206,18 +206,18 @@ public:
 
     Camera() {
 
-        position = Vec3(0.0f, 18.0f, 28.0f);
-        target = Vec3(0.0f, 0.0f, 0.0f);
+        position = Vec3(0.0f, 2.0f, 18.0f);
+        target = Vec3(0.0f, 1.5f, 8.0f);
 
         yaw = -90.0f;
-        pitch = -35.0f;
+        pitch = -3.0f;
 
-        fieldOfView = 60.0f;
+        fieldOfView = 72.0f;
 
-        nearPlane = 0.1f;
-        farPlane = 500.0f;
+        nearPlane = 0.05f;
+        farPlane = 180.0f;
 
-        movementSpeed = 3.0f;
+        movementSpeed = 7.5f;
     }
 
     Vec3 forward() const {
@@ -338,14 +338,14 @@ public:
 
     void reset() {
 
-        position = Vec3(0.0f, 18.0f, 28.0f);
+        position = Vec3(0.0f, 2.0f, 18.0f);
 
         yaw = -90.0f;
-        pitch = -35.0f;
+        pitch = -3.0f;
 
-        fieldOfView = 60.0f;
+        fieldOfView = 72.0f;
 
-        target = Vec3(0.0f, 0.0f, 0.0f);
+        target = Vec3(0.0f, 1.5f, 8.0f);
     }
 };
 
