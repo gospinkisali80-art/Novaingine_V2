@@ -183,6 +183,10 @@ public final class AIEditorAssistant {
             body.put("tools", tools);
             body.put("tool_choice", "auto");
             body.put("temperature", 0.2);
+            body.put("max_completion_tokens", 4096);
+            body.put("reasoning_effort", "low");
+            body.put("include_reasoning", false);
+            body.put("parallel_tool_calls", false);
             JSONObject response = postGroq(body);
             JSONObject message = response.getJSONArray("choices").getJSONObject(0).getJSONObject("message");
             JSONArray calls = message.optJSONArray("tool_calls");
@@ -192,7 +196,16 @@ public final class AIEditorAssistant {
                 assistant.put("role", "assistant");
                 assistant.put("content", content);
                 history.put(assistant);
-                return content.isEmpty() ? "The model returned an empty response." : content;
+                if (content.isEmpty()) {
+                    String lastRequest = history.optJSONObject(history.length() - 1) == null ? ""
+                            : history.optJSONObject(history.length() - 1).optString("content", "");
+                    if (looksLikeHouseRequest(lastRequest)) {
+                        String built = buildModernHouse(8.0f, -4.0f, 1.0f);
+                        return "Groq returned an empty completion, so the local construction fallback ran. " + built;
+                    }
+                    return "Groq returned no text or scene-tool calls. No scene changes were made. Please retry.";
+                }
+                return content;
             }
             JSONObject assistant = new JSONObject();
             assistant.put("role", "assistant");
@@ -216,7 +229,7 @@ public final class AIEditorAssistant {
                 main.post(() -> append(status));
             }
         }
-        return "I stopped after six tool steps to keep the editor responsive. You can give me the next instruction.";
+        return "I stopped after 12 tool steps to keep the editor responsive. You can give me the next instruction.";
     }
 
     private JSONObject postGroq(JSONObject body) throws Exception {
@@ -250,6 +263,7 @@ public final class AIEditorAssistant {
 
     private JSONArray buildTools() throws Exception {
         JSONArray tools = new JSONArray();
+        tools.put(tool("build_house", "Construct a detailed two-storey modern house from real native scene objects. Use for house, home, villa or cottage requests. Optional center x, z and scale.", "{\"type\":\"object\",\"properties\":{\"x\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"},\"scale\":{\"type\":\"number\"}}}"));
         tools.put(tool("create_primitive", "Create a 3D object in the current scene. primitive: cube, sphere, cylinder, plane, ramp or wedge.", "{\"type\":\"object\",\"properties\":{\"primitive\":{\"type\":\"string\",\"enum\":[\"cube\",\"sphere\",\"cylinder\",\"plane\",\"ramp\",\"wedge\"]},\"name\":{\"type\":\"string\"},\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"},\"sx\":{\"type\":\"number\"},\"sy\":{\"type\":\"number\"},\"sz\":{\"type\":\"number\"},\"r\":{\"type\":\"number\"},\"g\":{\"type\":\"number\"},\"b\":{\"type\":\"number\"}},\"required\":[\"primitive\",\"name\",\"x\",\"y\",\"z\",\"sx\",\"sy\",\"sz\"]}"));
         tools.put(tool("inspect_scene", "List scene object IDs and names, and the selected object's transform.", "{\"type\":\"object\",\"properties\":{}}"));
         tools.put(tool("create_terrain", "Generate or replace the editable terrain patch.", "{\"type\":\"object\",\"properties\":{}}"));
@@ -275,6 +289,8 @@ public final class AIEditorAssistant {
     private String executeTool(String name, JSONObject a) {
         try {
             switch (name) {
+                case "build_house":
+                    return buildModernHouse(number(a,"x",8.0f), number(a,"z",-4.0f), number(a,"scale",1.0f));
                 case "create_primitive": {
                     String primitive = a.optString("primitive", "cube");
                     int type = primitive.equals("cylinder") ? 1 : primitive.equals("ramp") ? 2
@@ -352,6 +368,77 @@ public final class AIEditorAssistant {
                 default: return "Unknown tool. No action performed.";
             }
         } catch (Exception ex) { return "Tool error: " + safeMessage(ex); }
+    }
+
+
+    private boolean looksLikeHouseRequest(String text) {
+        if (text == null) return false;
+        String s = text.toLowerCase(java.util.Locale.ROOT);
+        return s.contains("house") || s.contains("home") || s.contains("villa") || s.contains("cottage");
+    }
+
+    /** Creates a complete modular house using native scene objects, not a text-only model response. */
+    private String buildModernHouse(float cx, float cz, float requestedScale) {
+        final float k = Math.max(0.7f, Math.min(1.6f, requestedScale));
+        // Each row: x, y, z, width, height, depth, red, green, blue.
+        final float[][] p = {
+            {0,.18f,0,6.8f,.36f,5.8f,.25f,.27f,.30f},
+            {0,.43f,0,6.3f,.16f,5.3f,.72f,.70f,.64f},
+            {0,3.02f,0,6.1f,.18f,5.1f,.30f,.32f,.36f},
+            {-2.92f,1.72f,0,.28f,2.55f,5,.88f,.84f,.75f},
+            {2.92f,1.72f,0,.28f,2.55f,5,.88f,.84f,.75f},
+            {0,1.72f,-2.36f,5.55f,2.55f,.28f,.88f,.84f,.75f},
+            {-1.85f,1.72f,2.36f,1.85f,2.55f,.28f,.88f,.84f,.75f},
+            {1.85f,1.72f,2.36f,1.85f,2.55f,.28f,.88f,.84f,.75f},
+            {0,2.82f,2.36f,1.85f,.34f,.28f,.88f,.84f,.75f},
+            {-2.82f,4.28f,0,.28f,2.35f,4.95f,.90f,.88f,.81f},
+            {2.82f,4.28f,0,.28f,2.35f,4.95f,.90f,.88f,.81f},
+            {0,4.28f,-2.34f,5.45f,2.35f,.28f,.90f,.88f,.81f},
+            {-1.78f,4.28f,2.34f,1.8f,2.35f,.28f,.90f,.88f,.81f},
+            {1.78f,4.28f,2.34f,1.8f,2.35f,.28f,.90f,.88f,.81f},
+            {0,5.55f,0,6.8f,.22f,5.9f,.12f,.15f,.19f},
+            {-1.62f,5.72f,0,3.55f,.20f,6.0f,.16f,.19f,.23f},
+            {1.62f,5.72f,0,3.55f,.20f,6.0f,.16f,.19f,.23f},
+            {0,1.48f,2.57f,1.02f,2.08f,.12f,.20f,.12f,.08f},
+            {-2.0f,1.75f,2.57f,1.15f,1.25f,.08f,.20f,.48f,.66f},
+            {2.0f,1.75f,2.57f,1.15f,1.25f,.08f,.20f,.48f,.66f},
+            {-1.72f,4.30f,2.54f,1.20f,1.35f,.08f,.20f,.48f,.66f},
+            {1.72f,4.30f,2.54f,1.20f,1.35f,.08f,.20f,.48f,.66f},
+            {0,3.18f,3.05f,3.0f,.16f,1.15f,.28f,.30f,.33f},
+            {-1.42f,3.70f,3.56f,.10f,.95f,.10f,.20f,.23f,.26f},
+            {1.42f,3.70f,3.56f,.10f,.95f,.10f,.20f,.23f,.26f},
+            {0,4.16f,3.56f,2.95f,.10f,.10f,.20f,.23f,.26f},
+            {0,.55f,3.15f,1.65f,.18f,.65f,.60f,.59f,.54f},
+            {0,.40f,3.58f,1.95f,.14f,.55f,.60f,.59f,.54f},
+            {-1.42f,1.55f,2.92f,.16f,2.25f,.16f,.80f,.78f,.70f},
+            {1.42f,1.55f,2.92f,.16f,2.25f,.16f,.80f,.78f,.70f}
+        };
+        final String[] names = {
+            "House Foundation","House Ground Floor","House Upper Floor",
+            "House Lower Left Wall","House Lower Right Wall","House Lower Rear Wall",
+            "House Lower Front Left","House Lower Front Right","House Front Lintel",
+            "House Upper Left Wall","House Upper Right Wall","House Upper Rear Wall",
+            "House Upper Front Left","House Upper Front Right","House Roof Cap",
+            "House Roof Wing Left","House Roof Wing Right","House Front Door",
+            "House Ground Window Left","House Ground Window Right","House Upper Window Left",
+            "House Upper Window Right","House Balcony Slab","House Balcony Rail Left",
+            "House Balcony Rail Right","House Balcony Top Rail","House Front Step",
+            "House Porch Step","House Porch Column Left","House Porch Column Right"
+        };
+        int count = runOnRenderThread(() -> {
+            int made = 0;
+            for (int i=0; i<p.length; i++) {
+                float[] a = p[i];
+                int id = NativeBridge.nativeAddPrimitive(0, names[i],
+                    cx+a[0]*k, a[1]*k, cz+a[2]*k,
+                    a[3]*k, a[4]*k, a[5]*k, a[6], a[7], a[8]);
+                if (id > 0) made++;
+            }
+            return made;
+        });
+        return count == p.length
+            ? "Created a two-storey modern house with " + count + " real scene parts: foundation, floors, walls, roof, door, glass windows, balcony, steps and columns."
+            : "House creation incomplete: " + count + " of " + p.length + " parts were created.";
     }
 
     private interface RenderCall<T> { T run(); }
