@@ -162,6 +162,7 @@ public final class AIEditorAssistant {
         if (text.isEmpty()) return;
         if (getKey().isEmpty()) { showKeyDialog(); return; }
         prompt.setText("");
+        compactHistoryForNextTurn();
         append("\nYOU: " + text + "\n");
         busy = true;
         append("NOVA AI: Thinking and checking available scene tools...\n");
@@ -195,7 +196,7 @@ public final class AIEditorAssistant {
             body.put("tools", tools);
             body.put("tool_choice", "auto");
             body.put("temperature", 1.0);
-            body.put("max_completion_tokens", 8192);
+            body.put("max_completion_tokens", 2048);
             body.put("reasoning_effort", "medium");
             body.put("reasoning_format", "hidden");
             body.put("parallel_tool_calls", false);
@@ -239,32 +240,124 @@ public final class AIEditorAssistant {
     }
 
     private JSONObject postGroq(JSONObject body) throws Exception {
-        HttpURLConnection connection = (HttpURLConnection) new URL(
-                "https://api.groq.com/openai/v1/chat/completions").openConnection();
-        connection.setRequestMethod("POST");
-        connection.setConnectTimeout(20000);
-        connection.setReadTimeout(60000);
-        connection.setDoOutput(true);
-        connection.setRequestProperty("Authorization", "Bearer " + getKey());
-        connection.setRequestProperty("Content-Type", "application/json");
-        byte[] data = body.toString().getBytes(StandardCharsets.UTF_8);
-        try (OutputStream out = connection.getOutputStream()) { out.write(data); }
-        int code = connection.getResponseCode();
-        java.io.InputStream stream = code >= 200 && code < 300
-                ? connection.getInputStream() : connection.getErrorStream();
-        StringBuilder result = new StringBuilder();
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) result.append(line);
-        }
-        connection.disconnect();
-        JSONObject json = new JSONObject(result.toString());
-        if (code < 200 || code >= 300) {
+        final int maxRetries = 3;
+        for (int attempt = 0; ; attempt++) {
+            HttpURLConnection connection = (HttpURLConnection) new URL(
+                    "https://api.groq.com/openai/v1/chat/completions").openConnection();
+            connection.setRequestMethod("POST");
+            connection.setConnectTimeout(20000);
+            connection.setReadTimeout(60000);
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Authorization", "Bearer " + getKey());
+            connection.setRequestProperty("Content-Type", "application/json");
+            byte[] data = body.toString().getBytes(StandardCharsets.UTF_8);
+            int code;
+            String responseText;
+            String retryAfter;
+            String resetTokens;
+            try {
+                try (OutputStream out = connection.getOutputStream()) { out.write(data); }
+                code = connection.getResponseCode();
+                retryAfter = connection.getHeaderField("Retry-After");
+                resetTokens = connection.getHeaderField("x-ratelimit-reset-tokens");
+                java.io.InputStream stream = code >= 200 && code < 300
+                        ? connection.getInputStream() : connection.getErrorStream();
+                StringBuilder result = new StringBuilder();
+                if (stream != null) {
+                    try (BufferedReader reader = new BufferedReader(
+                            new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+                        String line;
+                        while ((line = reader.readLine()) != null) result.append(line);
+                    }
+                }
+                responseText = result.toString();
+            } finally {
+                connection.disconnect();
+            }
+
+            JSONObject json;
+            try {
+                json = new JSONObject(responseText);
+            } catch (Exception parseError) {
+                if (code >= 200 && code < 300) throw new Exception("Groq returned an unreadable response.");
+                throw new Exception("Groq HTTP " + code + ": " + responseText);
+            }
+
+            if (code >= 200 && code < 300) return json;
             String message = json.optJSONObject("error") == null ? json.toString()
                     : json.getJSONObject("error").optString("message", json.toString());
+
+            if (code == 429 && attempt < maxRetries) {
+                long delayMs = retryDelayMillis(retryAfter, resetTokens, message, attempt);
+                final long shownDelay = delayMs;
+                main.post(() -> append("NOVA AI: Groq rate limit reached. Retrying automatically in "
+                        + String.format(java.util.Locale.US, "%.1f", shownDelay / 1000.0)
+                        + " seconds...\n"));
+                try {
+                    Thread.sleep(delayMs);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new Exception("Automatic retry was interrupted. Your prompt was not discarded.");
+                }
+                continue;
+            }
+            if (code == 429) {
+                throw new Exception("Groq HTTP 429: Rate limit still active after automatic retries. "
+                        + message + " Your prompt is preserved; try again when the limit resets.");
+            }
             throw new Exception("Groq HTTP " + code + ": " + message);
         }
-        return json;
+    }
+
+    private long retryDelayMillis(String retryAfter, String resetTokens, String message, int attempt) {
+        long delay = parseDelayMillis(retryAfter, true);
+        if (delay <= 0) delay = parseDelayMillis(resetTokens, false);
+        if (delay <= 0) delay = parseDelayMillis(message, false);
+        if (delay <= 0) delay = 1000L * (1L << Math.min(attempt, 5));
+        return Math.max(500L, Math.min(delay + 250L, 60000L));
+    }
+
+    private long parseDelayMillis(String value, boolean plainNumberIsSeconds) {
+        if (value == null || value.trim().isEmpty()) return -1L;
+        String text = value.trim();
+        if (plainNumberIsSeconds) {
+            try { return (long)(Double.parseDouble(text) * 1000.0); }
+            catch (NumberFormatException ignored) {}
+        }
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("(?i)([0-9]+(?:\\.[0-9]+)?)\\s*(milliseconds?|ms|seconds?|secs?|s|minutes?|mins?|m)")
+                .matcher(text);
+        if (matcher.find()) {
+            double amount = Double.parseDouble(matcher.group(1));
+            String unit = matcher.group(2).toLowerCase(java.util.Locale.US);
+            double multiplier = unit.equals("ms") || unit.startsWith("millisecond") ? 1.0
+                    : (unit.startsWith("m") ? 60000.0 : 1000.0);
+            return (long)(amount * multiplier);
+        }
+        return -1L;
+    }
+
+    private void compactHistoryForNextTurn() {
+        if (history.length() <= 9) return;
+        JSONArray compact = new JSONArray();
+        try {
+            compact.put(history.getJSONObject(0));
+            int kept = 0;
+            for (int i = history.length() - 1; i >= 1 && kept < 8; i--) {
+                JSONObject item = history.getJSONObject(i);
+                if ("user".equals(item.optString("role", ""))) {
+                    compact.put(item);
+                    kept++;
+                }
+            }
+            JSONArray ordered = new JSONArray();
+            ordered.put(compact.getJSONObject(0));
+            for (int i = compact.length() - 1; i >= 1; i--) ordered.put(compact.get(i));
+            while (history.length() > 0) history.remove(history.length() - 1);
+            for (int i = 0; i < ordered.length(); i++) history.put(ordered.get(i));
+        } catch (Exception ignored) {
+            // Preserve the current history if compaction cannot be completed.
+        }
     }
 
     private JSONArray buildTools() throws Exception {
