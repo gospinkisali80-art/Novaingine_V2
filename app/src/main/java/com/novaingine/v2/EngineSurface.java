@@ -130,6 +130,10 @@ public final class EngineSurface extends GLSurfaceView
         verticalMovement = clamp(value);
     }
 
+    public void setPhysicsEnabled(boolean enabled) {
+        queueEvent(() -> NativeBridge.nativeSetPhysicsEnabled(enabled));
+    }
+
     public void setCameraSpeed(float speed) {
 
         queueEvent(() ->
