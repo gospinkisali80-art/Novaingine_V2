@@ -39,6 +39,7 @@ public final class EditorToolbar extends LinearLayout {
     private float scaleSnap = 0.25f;
 
     private int transformMode = 0;
+    private boolean physicsEnabled = false;
 
     private final TextView[] transformButtons = new TextView[4];
 
@@ -395,6 +396,26 @@ public final class EditorToolbar extends LinearLayout {
     private void buildCameraControls(
             Context context,
             LinearLayout parent) {
+
+        addButton(
+                context,
+                parent,
+                "Physics: OFF",
+                "Toggle first-person physics, gravity and collision",
+                () -> {
+                    physicsEnabled = !physicsEnabled;
+                    engineSurface.setPhysicsEnabled(physicsEnabled);
+                    View button = parent.getChildAt(parent.getChildCount() - 1);
+                    if (button instanceof TextView) {
+                        ((TextView) button).setText(
+                                physicsEnabled ? "Physics: ON" : "Physics: OFF"
+                        );
+                        ((TextView) button).setTextColor(
+                                physicsEnabled ? COLOR_ACCENT : COLOR_TEXT
+                        );
+                    }
+                }
+        );
 
         TextView label = new TextView(context);
 
