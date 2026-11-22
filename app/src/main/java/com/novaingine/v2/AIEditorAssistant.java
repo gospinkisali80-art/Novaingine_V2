@@ -88,11 +88,7 @@ public final class AIEditorAssistant {
         transcript.setTextColor(Color.WHITE);
         transcript.setTextSize(13);
         transcript.setPadding(dp(10), dp(10), dp(10), dp(10));
-        transcript.setText("Novaingine AI is ready.
-
-Try: “Create a large platform beside the central pedestal” or “Plant 12 trees around the arena.”
-
-Set your Groq API key using API KEY to connect the model.");
+        transcript.setText("Novaingine AI is ready.\n\nTry: “Create a large platform beside the central pedestal” or “Plant 12 trees around the arena.”\n\nSet your Groq API key using API KEY to connect the model.");
         scroll.addView(transcript);
         LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1);
         scrollParams.topMargin = dp(8);
