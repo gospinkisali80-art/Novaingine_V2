@@ -345,7 +345,9 @@ public final class AIEditorAssistant {
             int kept = 0;
             for (int i = history.length() - 1; i >= 1 && kept < 8; i--) {
                 JSONObject item = history.getJSONObject(i);
-                if ("user".equals(item.optString("role", ""))) {
+                String role = item.optString("role", "");
+                if (("user".equals(role) || "assistant".equals(role))
+                        && !item.has("tool_calls")) {
                     compact.put(item);
                     kept++;
                 }
