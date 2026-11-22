@@ -346,7 +346,8 @@ public final class AIEditorAssistant {
         }
     }
 
-    private float number(JSONObject o, String key, float fallback) { return (float)o.optDouble(key, fallback); }\n    private float clamp(float n) { return Math.max(0f, Math.min(1f, n)); }
+    private float number(JSONObject o, String key, float fallback) { return (float)o.optDouble(key, fallback); }
+    private float clamp(float n) { return Math.max(0f, Math.min(1f, n)); }
     private String safeMessage(Exception e) { return e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage(); }
 
     private void append(String text) {
