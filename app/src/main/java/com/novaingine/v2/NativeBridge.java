@@ -98,6 +98,10 @@ public final class NativeBridge {
             boolean paused
     );
 
+    public static native String[] nativeGetSceneObjects();
+    public static native void nativeSelectObjectById(int objectId);
+    public static native float[] nativeGetSelectedTransform();
+    public static native void nativeSetSelectedTransform(float[] values);
     public static native int nativeGetFps();
 
     public static native int nativeGetDrawCalls();
