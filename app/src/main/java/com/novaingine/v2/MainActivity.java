@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.pm.ActivityInfo;
 import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
@@ -12,6 +13,7 @@ import android.widget.FrameLayout;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.ScrollView;
 
 public final class MainActivity extends Activity
         implements EditorToolbar.ViewportActions {
@@ -26,6 +28,9 @@ public final class MainActivity extends Activity
     private TextView statisticsText;
 
     private boolean viewportMaximized;
+    private View toolsScrim;
+    private LinearLayout toolsDrawer;
+    private boolean toolsDrawerOpen;
 
     private int normalToolbarHeight;
     private int normalInputHeight;
@@ -233,6 +238,196 @@ public final class MainActivity extends Activity
         );
         params.setMargins(0, dp(55), dp(8), 0);
         rootLayout.addView(panel, params);
+    }
+
+
+    @Override
+    public void onOpenToolsDrawer() {
+        if (toolsDrawerOpen) {
+            closeToolsDrawer();
+        } else {
+            openToolsDrawer();
+        }
+    }
+
+    private void openToolsDrawer() {
+        if (toolsDrawerOpen || rootLayout == null) return;
+        toolsDrawerOpen = true;
+
+        toolsScrim = new View(this);
+        toolsScrim.setBackgroundColor(0x99000000);
+        toolsScrim.setAlpha(0.0f);
+        toolsScrim.setOnClickListener(view -> closeToolsDrawer());
+        rootLayout.addView(toolsScrim, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+        ));
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setBackgroundColor(0xFF171A20);
+
+        toolsDrawer = new LinearLayout(this);
+        toolsDrawer.setOrientation(LinearLayout.VERTICAL);
+        toolsDrawer.setPadding(dp(16), dp(18), dp(16), dp(24));
+        toolsDrawer.setBackground(new GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[]{0xFF242A33, 0xFF15191F}
+        ));
+        scroll.addView(toolsDrawer);
+
+        addDrawerHeader("NOVAINGINE TOOLS", "EDITOR CONTROL CENTER");
+        addDrawerSection("SCENE");
+        addDrawerItem("World Outliner", "Browse and select scene objects", this::showWorldOutliner);
+        addDrawerItem("Details Inspector", "Edit position, rotation and scale", this::showDetailsInspector);
+        addDrawerItem("Save Scene", "Save the current .nova scene", this::saveCurrentScene);
+        addDrawerItem("Load Scene", "Load the saved .nova scene", this::loadCurrentScene);
+        addDrawerItem("Undo", "Undo the latest supported scene edit", () -> engineSurface.undoScene());
+        addDrawerItem("Redo", "Redo the last undone scene edit", () -> engineSurface.redoScene());
+
+        addDrawerSection("WORLD BUILDING");
+        addDrawerItem("Terrain Sculpting", "Terrain height and brush tools", () -> showToolStatus("Terrain Sculpting"));
+        addDrawerItem("Foliage Painting", "Place and paint vegetation", () -> showToolStatus("Foliage Painting"));
+        addDrawerItem("Asset Importing", "Import 3D models and textures", () -> showToolStatus("Asset Importing"));
+
+        addDrawerSection("RENDERING");
+        addDrawerItem("Global Illumination", "Indirect lighting controls", () -> showToolStatus("Global Illumination"));
+        addDrawerItem("Reflections", "Environment and surface reflections", () -> showToolStatus("Reflections"));
+
+        addDrawerSection("GAME SYSTEMS");
+        addDrawerItem("Animation", "Keyframes and playback", () -> showToolStatus("Animation"));
+        addDrawerItem("Audio", "Sound sources and audio controls", () -> showToolStatus("Audio"));
+        addDrawerItem("AI / Navigation", "Navigation and agent behaviour", () -> showToolStatus("AI / Navigation"));
+        addDrawerItem("Visual Scripting", "Node-based gameplay logic", () -> showToolStatus("Visual Scripting"));
+
+        addDrawerSection("EDITOR");
+        addDrawerItem("Physics", "Toggle collision and gravity", () -> showToolStatus("Physics settings are available from the toolbar"));
+        addDrawerItem("Reset Scene", "Restore the default arena", () -> {
+            engineSurface.resetScene();
+            closeToolsDrawer();
+        });
+        addDrawerItem("Close Menu", "Return to the viewport", this::closeToolsDrawer);
+
+        FrameLayout.LayoutParams drawerParams = new FrameLayout.LayoutParams(
+                Math.min(dp(340), (int)(getResources().getDisplayMetrics().widthPixels * 0.86f)),
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                Gravity.END
+        );
+        rootLayout.addView(scroll, drawerParams);
+        scroll.setTranslationX(drawerParams.width);
+        toolsDrawer = (LinearLayout) scroll.getChildAt(0);
+
+        toolsScrim.animate().alpha(1.0f).setDuration(180).start();
+        scroll.animate().translationX(0).setDuration(220).start();
+    }
+
+    private void closeToolsDrawer() {
+        if (!toolsDrawerOpen) return;
+        toolsDrawerOpen = false;
+        View drawer = toolsDrawer == null ? null : (View) toolsDrawer.getParent();
+        if (drawer == null) {
+            if (toolsScrim != null) rootLayout.removeView(toolsScrim);
+            toolsScrim = null;
+            toolsDrawer = null;
+            return;
+        }
+        final View panel = drawer;
+        panel.animate().translationX(panel.getWidth()).setDuration(180)
+                .withEndAction(() -> rootLayout.removeView(panel)).start();
+        if (toolsScrim != null) {
+            View scrim = toolsScrim;
+            scrim.animate().alpha(0.0f).setDuration(160)
+                    .withEndAction(() -> rootLayout.removeView(scrim)).start();
+        }
+        toolsScrim = null;
+        toolsDrawer = null;
+    }
+
+    private void addDrawerHeader(String title, String subtitle) {
+        TextView heading = new TextView(this);
+        heading.setText(title);
+        heading.setTextColor(0xFFFFA52B);
+        heading.setTextSize(18);
+        heading.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        heading.setPadding(0, 0, 0, dp(4));
+        toolsDrawer.addView(heading);
+
+        TextView sub = new TextView(this);
+        sub.setText(subtitle);
+        sub.setTextColor(0xFF9BA7B5);
+        sub.setTextSize(10);
+        sub.setPadding(0, 0, 0, dp(16));
+        toolsDrawer.addView(sub);
+    }
+
+    private void addDrawerSection(String name) {
+        TextView section = new TextView(this);
+        section.setText(name);
+        section.setTextColor(0xFFFFB45C);
+        section.setTextSize(10);
+        section.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        section.setPadding(0, dp(15), 0, dp(6));
+        toolsDrawer.addView(section);
+    }
+
+    private void addDrawerItem(String title, String subtitle, Runnable action) {
+        LinearLayout item = new LinearLayout(this);
+        item.setOrientation(LinearLayout.VERTICAL);
+        item.setPadding(dp(11), dp(9), dp(11), dp(9));
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(0xFF303844);
+        background.setCornerRadius(dp(7));
+        item.setBackground(background);
+
+        TextView name = new TextView(this);
+        name.setText(title);
+        name.setTextColor(Color.WHITE);
+        name.setTextSize(13);
+        name.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        item.addView(name);
+
+        TextView description = new TextView(this);
+        description.setText(subtitle);
+        description.setTextColor(0xFFB3BDC9);
+        description.setTextSize(10);
+        item.addView(description);
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        params.setMargins(0, dp(3), 0, dp(3));
+        toolsDrawer.addView(item, params);
+        item.setOnClickListener(view -> action.run());
+    }
+
+    private void showToolStatus(String toolName) {
+        closeToolsDrawer();
+        new AlertDialog.Builder(this)
+                .setTitle(toolName)
+                .setMessage("This system is listed in the Tools drawer, but its engine implementation is not complete yet. It will be added and build-tested in a separate stage.")
+                .setPositiveButton("OK", null)
+                .show();
+    }
+
+    private java.io.File sceneFile() {
+        return new java.io.File(getFilesDir(), "NovaingineScene.nova");
+    }
+
+    private void saveCurrentScene() {
+        boolean saved = engineSurface.saveScene(sceneFile().getAbsolutePath());
+        closeToolsDrawer();
+        android.widget.Toast.makeText(this,
+                saved ? "Scene saved" : "Scene save failed",
+                android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+    private void loadCurrentScene() {
+        boolean loaded = engineSurface.loadScene(sceneFile().getAbsolutePath());
+        closeToolsDrawer();
+        android.widget.Toast.makeText(this,
+                loaded ? "Scene loaded" : "No saved scene found / load failed",
+                android.widget.Toast.LENGTH_SHORT).show();
     }
 
     private void showWorldOutliner() {
