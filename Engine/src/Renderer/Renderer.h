@@ -14,7 +14,7 @@
 using namespace nova;
 
 struct RendererSettings {
-    bool showGrid = true;
+    bool showGrid = false;
     bool showShadows = true;
     bool showSky = true;
     bool showCharacters = true;
