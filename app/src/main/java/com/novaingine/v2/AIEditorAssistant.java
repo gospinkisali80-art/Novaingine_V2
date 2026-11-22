@@ -157,7 +157,7 @@ public final class AIEditorAssistant {
                     activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE)
                             .edit().putString(MODEL_PREF, selected).apply();
                     updateModelInfo();
-                    append("\\n[Groq model set to " + selected + ". Your Groq API key is unchanged.]\\n");
+                    append("\n[Groq model set to " + selected + ". Your Groq API key is unchanged.]\n");
                     d.dismiss();
                 })
                 .setNegativeButton("CANCEL", null)
