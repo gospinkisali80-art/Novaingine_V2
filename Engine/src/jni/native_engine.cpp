@@ -964,6 +964,127 @@ Java_com_novaingine_v2_NativeBridge_nativeSetSelectedTransform(
     );
 }
 
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeCreateTerrain(
+    JNIEnv*, jclass
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized) return JNI_FALSE;
+
+    recordUndo();
+    std::vector<uint32_t> oldTerrain;
+    for (const nova::SceneObject& object : gScene.getObjects()) {
+        if (object.name.rfind("Terrain Tile ", 0) == 0) {
+            oldTerrain.push_back(object.id);
+        }
+    }
+    for (uint32_t id : oldTerrain) gScene.removeObject(id);
+
+    const nova::Color grass(0.25f, 0.42f, 0.17f, 1.0f);
+    for (int z = -5; z <= 5; ++z) {
+        for (int x = -5; x <= 5; ++x) {
+            const float height = 0.15f;
+            nova::Transform transform;
+            transform.position = nova::Vec3(
+                static_cast<float>(x),
+                -0.08f + height * 0.5f,
+                -4.0f + static_cast<float>(z)
+            );
+            transform.scale = nova::Vec3(0.96f, height, 0.96f);
+            uint32_t id = gScene.addObject(
+                "Terrain Tile " + std::to_string(x) + " " + std::to_string(z),
+                nova::PrimitiveType::Cube,
+                transform,
+                grass
+            );
+            nova::SceneObject* tile = gScene.find(id);
+            if (tile) {
+                tile->material.baseColor = nova::Vec3(grass.r, grass.g, grass.b);
+                tile->material.roughness = 0.96f;
+                tile->material.metallic = 0.0f;
+            }
+        }
+    }
+    gScene.deselect();
+    gRenderer.releaseAllMeshes();
+    return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSculptTerrain(
+    JNIEnv*, jclass, jfloat centerXValue, jfloat centerZValue,
+    jfloat radiusValue, jfloat strengthValue, jint modeValue
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized) return JNI_FALSE;
+
+    const float centerX = static_cast<float>(centerXValue);
+    const float centerZ = static_cast<float>(centerZValue);
+    const float radius = std::clamp(static_cast<float>(radiusValue), 0.5f, 8.0f);
+    const float strength = std::clamp(static_cast<float>(strengthValue), 0.02f, 1.5f);
+    const int mode = std::clamp(static_cast<int>(modeValue), 0, 3);
+
+    std::vector<nova::SceneObject*> tiles;
+    for (nova::SceneObject& object : gScene.getObjects()) {
+        if (object.name.rfind("Terrain Tile ", 0) == 0) tiles.push_back(&object);
+    }
+    if (tiles.empty()) return JNI_FALSE;
+
+    std::vector<float> oldHeights;
+    oldHeights.reserve(tiles.size());
+    for (const nova::SceneObject* tile : tiles) {
+        oldHeights.push_back(tile->transform.scale.y);
+    }
+
+    bool changed = false;
+    for (size_t i = 0; i < tiles.size(); ++i) {
+        nova::SceneObject& tile = *tiles[i];
+        const float dx = tile.transform.position.x - centerX;
+        const float dz = tile.transform.position.z - centerZ;
+        const float distance = std::sqrt(dx * dx + dz * dz);
+        if (distance > radius) continue;
+
+        const float falloff = 1.0f - distance / radius;
+        const float smoothFalloff = falloff * falloff * (3.0f - 2.0f * falloff);
+        float height = oldHeights[i];
+
+        if (mode == 0) {
+            height += strength * smoothFalloff;
+        } else if (mode == 1) {
+            height -= strength * smoothFalloff;
+        } else if (mode == 2) {
+            float sum = 0.0f;
+            int count = 0;
+            for (size_t j = 0; j < tiles.size(); ++j) {
+                const float nx = tiles[j]->transform.position.x - tile.transform.position.x;
+                const float nz = tiles[j]->transform.position.z - tile.transform.position.z;
+                if (nx * nx + nz * nz <= 2.1f) {
+                    sum += oldHeights[j];
+                    ++count;
+                }
+            }
+            if (count > 0) {
+                const float average = sum / static_cast<float>(count);
+                height += (average - height) * std::clamp(strength, 0.0f, 1.0f) * smoothFalloff;
+            }
+        } else {
+            const float targetHeight = 0.75f;
+            height += (targetHeight - height) * std::clamp(strength, 0.0f, 1.0f) * smoothFalloff;
+        }
+
+        height = std::clamp(height, 0.12f, 4.5f);
+        if (std::fabs(height - oldHeights[i]) > 0.0001f) {
+            tile.transform.scale.y = height;
+            tile.transform.position.y = -0.08f + height * 0.5f;
+            changed = true;
+        }
+    }
+
+    if (changed) recordUndo();
+    return changed ? JNI_TRUE : JNI_FALSE;
+}
+
 JNIEXPORT jint JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeGetFps(
     JNIEnv*,
