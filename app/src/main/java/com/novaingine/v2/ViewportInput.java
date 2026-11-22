@@ -55,7 +55,7 @@ public final class ViewportInput extends View {
         rightKnobY = centerY;
 
         float buttonSize = 38.0f * density;
-        float right = width - 12.0f * density;
+        float right = width - 150.0f * density;
         upButton.set(right - buttonSize, 8.0f * density,
                 right, 8.0f * density + buttonSize);
         downButton.set(right - buttonSize, 52.0f * density,
