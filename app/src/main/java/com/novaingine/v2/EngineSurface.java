@@ -151,6 +151,14 @@ public final class EngineSurface extends GLSurfaceView
         return NativeBridge.nativeLoadScene(path);
     }
 
+    public int paintFoliage(float x, float z, float radius, int count, int kind) {
+        return NativeBridge.nativePaintFoliage(x, z, radius, count, kind);
+    }
+
+    public int clearFoliage() {
+        return NativeBridge.nativeClearFoliage();
+    }
+
     public boolean createTerrain() {
         return NativeBridge.nativeCreateTerrain();
     }
