@@ -206,13 +206,13 @@ public:
 
     Camera() {
 
-        position = Vec3(0.0f, 2.0f, 18.0f);
-        target = Vec3(0.0f, 1.5f, 8.0f);
+        position = Vec3(0.0f, 1.72f, 10.5f);
+        target = Vec3(0.0f, 1.65f, 0.5f);
 
         yaw = -90.0f;
-        pitch = -3.0f;
+        pitch = -1.0f;
 
-        fieldOfView = 72.0f;
+        fieldOfView = 76.0f;
 
         nearPlane = 0.05f;
         farPlane = 180.0f;
@@ -338,14 +338,14 @@ public:
 
     void reset() {
 
-        position = Vec3(0.0f, 2.0f, 18.0f);
+        position = Vec3(0.0f, 1.72f, 10.5f);
 
         yaw = -90.0f;
-        pitch = -3.0f;
+        pitch = -1.0f;
 
-        fieldOfView = 72.0f;
+        fieldOfView = 76.0f;
 
-        target = Vec3(0.0f, 1.5f, 8.0f);
+        target = Vec3(0.0f, 1.65f, 0.5f);
     }
 };
 
