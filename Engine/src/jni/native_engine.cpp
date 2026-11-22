@@ -965,6 +965,109 @@ Java_com_novaingine_v2_NativeBridge_nativeSetSelectedTransform(
 }
 
 
+JNIEXPORT jint JNICALL
+Java_com_novaingine_v2_NativeBridge_nativePaintFoliage(
+    JNIEnv*, jclass, jfloat centerXValue, jfloat centerZValue,
+    jfloat radiusValue, jint countValue, jint kindValue
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized) return 0;
+
+    const float centerX = static_cast<float>(centerXValue);
+    const float centerZ = static_cast<float>(centerZValue);
+    const float radius = std::clamp(static_cast<float>(radiusValue), 1.0f, 30.0f);
+    const int count = std::clamp(static_cast<int>(countValue), 1, 60);
+    const int kind = std::clamp(static_cast<int>(kindValue), 0, 1);
+
+    size_t existing = 0;
+    for (const nova::SceneObject& object : gScene.getObjects()) {
+        if (object.name.rfind("Foliage ", 0) == 0) ++existing;
+    }
+    if (existing >= 240) return 0;
+    const int objectsPerPlant = kind == 0 ? 2 : 1;
+    const int accepted = std::min(
+        count, static_cast<int>((240 - existing) / objectsPerPlant)
+    );
+    if (accepted <= 0) return 0;
+
+    recordUndo();
+    uint32_t seed = static_cast<uint32_t>(
+        std::fabs(centerX * 173.0f + centerZ * 997.0f) * 1000.0f
+    ) + static_cast<uint32_t>(gScene.objectCount() * 7919u) + 0x9e3779b9u;
+    auto random01 = [&seed]() -> float {
+        seed = seed * 1664525u + 1013904223u;
+        return static_cast<float>((seed >> 8) & 0x00ffffffu) / 16777215.0f;
+    };
+
+    for (int i = 0; i < accepted; ++i) {
+        const float angle = random01() * 6.28318530718f;
+        const float distance = std::sqrt(random01()) * radius;
+        const float x = centerX + std::cos(angle) * distance;
+        const float z = centerZ + std::sin(angle) * distance;
+
+        nova::Transform stemTransform;
+        stemTransform.position = nova::Vec3(x, kind == 0 ? 0.58f : 0.38f, z);
+        stemTransform.scale = kind == 0
+            ? nova::Vec3(0.13f, 0.58f, 0.13f)
+            : nova::Vec3(0.48f, 0.34f, 0.48f);
+        const nova::Color stemColor = kind == 0
+            ? nova::Color(0.27f, 0.13f, 0.055f, 1.0f)
+            : nova::Color(0.12f, 0.34f, 0.075f, 1.0f);
+        const uint32_t stemId = gScene.addObject(
+            "Foliage " + std::string(kind == 0 ? "Tree Trunk " : "Bush ") + std::to_string(i + 1),
+            kind == 0 ? nova::PrimitiveType::Cylinder : nova::PrimitiveType::Sphere,
+            stemTransform, stemColor
+        );
+        if (nova::SceneObject* stem = gScene.find(stemId)) {
+            stem->material.baseColor = nova::Vec3(stemColor.r, stemColor.g, stemColor.b);
+            stem->material.roughness = 0.92f;
+            stem->material.metallic = 0.0f;
+        }
+
+        if (kind == 0) {
+            nova::Transform crownTransform;
+            crownTransform.position = nova::Vec3(x, 1.62f + random01() * 0.22f, z);
+            const float size = 0.58f + random01() * 0.28f;
+            crownTransform.scale = nova::Vec3(size, size * 1.12f, size);
+            const float green = 0.30f + random01() * 0.16f;
+            const nova::Color leaves(0.10f, green, 0.075f, 1.0f);
+            const uint32_t crownId = gScene.addObject(
+                "Foliage Tree Canopy " + std::to_string(i + 1),
+                nova::PrimitiveType::Sphere, crownTransform, leaves
+            );
+            if (nova::SceneObject* canopy = gScene.find(crownId)) {
+                canopy->material.baseColor = nova::Vec3(leaves.r, leaves.g, leaves.b);
+                canopy->material.roughness = 0.88f;
+                canopy->material.metallic = 0.0f;
+            }
+        }
+    }
+
+    gScene.deselect();
+    gRenderer.releaseAllMeshes();
+    return static_cast<jint>(accepted);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeClearFoliage(
+    JNIEnv*, jclass
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized) return 0;
+
+    std::vector<uint32_t> removeIds;
+    for (const nova::SceneObject& object : gScene.getObjects()) {
+        if (object.name.rfind("Foliage ", 0) == 0) removeIds.push_back(object.id);
+    }
+    if (removeIds.empty()) return 0;
+
+    recordUndo();
+    for (uint32_t id : removeIds) gScene.removeObject(id);
+    gRenderer.releaseAllMeshes();
+    return static_cast<jint>(removeIds.size());
+}
+
+
 JNIEXPORT jboolean JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeCreateTerrain(
     JNIEnv*, jclass
