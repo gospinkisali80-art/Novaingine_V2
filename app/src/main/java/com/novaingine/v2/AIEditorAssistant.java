@@ -193,8 +193,10 @@ public final class AIEditorAssistant {
                 history.put(assistant);
                 return content.isEmpty() ? "The model returned an empty response." : content;
             }
-            JSONObject assistant = new JSONObject(message.toString());
+            JSONObject assistant = new JSONObject();
             assistant.put("role", "assistant");
+            assistant.put("content", message.optString("content", ""));
+            assistant.put("tool_calls", calls);
             history.put(assistant);
             for (int i = 0; i < calls.length(); i++) {
                 JSONObject call = calls.getJSONObject(i);
@@ -277,8 +279,8 @@ public final class AIEditorAssistant {
                     float x = number(a,"x",0), y = number(a,"y",0.5f), z = number(a,"z",-4);
                     float sx = number(a,"sx",1), sy = number(a,"sy",1), sz = number(a,"sz",1);
                     float red = clamp(number(a,"r",0.9f)), green = clamp(number(a,"g",0.65f)), blue = clamp(number(a,"b",0.12f));
-                    engine.queueEvent(() -> NativeBridge.nativeAddPrimitive(type, objectName, x,y,z,sx,sy,sz,red,green,blue));
-                    return "Creation queued for " + objectName + " (" + primitive + ").";
+                    int id = runOnRenderThread(() -> NativeBridge.nativeAddPrimitive(type, objectName, x,y,z,sx,sy,sz,red,green,blue));
+                    return id > 0 ? "Created " + objectName + " with scene object ID " + id + "." : "Object creation failed.";
                 }
                 case "inspect_scene": {
                     String[] objects = engine.getSceneObjects();
@@ -289,43 +291,62 @@ public final class AIEditorAssistant {
                     return out.toString();
                 }
                 case "create_terrain":
-                    engine.queueEvent(NativeBridge::nativeCreateTerrain);
-                    return "Terrain generation queued.";
+                    boolean terrain = runOnRenderThread(() -> NativeBridge.nativeCreateTerrain());
+                    return terrain ? "Terrain created successfully." : "Terrain creation failed.";
                 case "sculpt_terrain": {
                     int mode = a.optString("mode","raise").equals("lower") ? 1
                             : a.optString("mode","raise").equals("smooth") ? 2
                             : a.optString("mode","raise").equals("flatten") ? 3 : 0;
                     float x=number(a,"x",0), z=number(a,"z",-4), radius=number(a,"radius",3), strength=number(a,"strength",0.4f);
-                    engine.queueEvent(() -> NativeBridge.nativeSculptTerrain(x,z,radius,strength,mode));
-                    return "Terrain sculpt operation queued.";
+                    boolean sculpted = runOnRenderThread(() -> NativeBridge.nativeSculptTerrain(x,z,radius,strength,mode));
+                    return sculpted ? "Terrain sculpted successfully." : "No terrain changed. Generate terrain first or adjust the brush.";
                 }
                 case "paint_foliage": {
                     int kind = a.optString("kind","tree").equals("bush") ? 1 : 0;
                     float x=number(a,"x",0), z=number(a,"z",-4), radius=number(a,"radius",6);
                     int count=Math.max(1,Math.min(40,a.optInt("count",10)));
-                    engine.queueEvent(() -> NativeBridge.nativePaintFoliage(x,z,radius,count,kind));
-                    return "Foliage painting queued for " + count + " " + (kind==0?"trees":"bushes") + ".";
+                    int planted = runOnRenderThread(() -> NativeBridge.nativePaintFoliage(x,z,radius,count,kind));
+                    return "Placed " + planted + " " + (kind==0?"trees":"bushes") + ".";
                 }
                 case "clear_foliage":
-                    engine.queueEvent(NativeBridge::nativeClearFoliage);
-                    return "Clear foliage operation queued.";
+                    int removed = runOnRenderThread(() -> NativeBridge.nativeClearFoliage());
+                    return "Removed " + removed + " foliage scene objects.";
                 case "move_selected": {
                     float[] t=engine.getSelectedTransform();
                     if(t==null || t.length<9) return "Could not read selected transform.";
                     t[0]+=number(a,"dx",0); t[1]+=number(a,"dy",0); t[2]+=number(a,"dz",0);
                     engine.setSelectedTransform(t);
-                    return "Selected object movement queued.";
+                    return "Selected object movement submitted.";
                 }
                 case "undo":
-                    engine.queueEvent(NativeBridge::nativeUndo); return "Undo queued.";
+                    boolean undone = runOnRenderThread(() -> NativeBridge.nativeUndo()); return undone ? "Undo completed." : "Nothing available to undo.";
                 case "redo":
-                    engine.queueEvent(NativeBridge::nativeRedo); return "Redo queued.";
+                    boolean redone = runOnRenderThread(() -> NativeBridge.nativeRedo()); return redone ? "Redo completed." : "Nothing available to redo.";
                 default: return "Unknown tool. No action performed.";
             }
         } catch (Exception ex) { return "Tool error: " + safeMessage(ex); }
     }
 
-    private float number(JSONObject o, String key, float fallback) { return (float)o.optDouble(key, fallback); }
+    private interface RenderCall<T> { T run(); }
+
+    private <T> T runOnRenderThread(RenderCall<T> call) {
+        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicReference<T> result = new java.util.concurrent.atomic.AtomicReference<>();
+        engine.queueEvent(() -> {
+            try { result.set(call.run()); }
+            finally { latch.countDown(); }
+        });
+        try {
+            if (!latch.await(12, java.util.concurrent.TimeUnit.SECONDS))
+                throw new IllegalStateException("Renderer did not respond in time.");
+            return result.get();
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Scene operation interrupted.");
+        }
+    }
+
+    private float number(JSONObject o, String key, float fallback) { return (float)o.optDouble(key, fallback);
     private float clamp(float n) { return Math.max(0f, Math.min(1f, n)); }
     private String safeMessage(Exception e) { return e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage(); }
 
