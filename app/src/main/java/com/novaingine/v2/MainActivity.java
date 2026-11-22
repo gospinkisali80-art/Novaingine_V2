@@ -298,7 +298,7 @@ public final class MainActivity extends Activity
         addDrawerSection("GAME SYSTEMS");
         addDrawerItem("Animation", "Keyframes and playback", () -> showToolStatus("Animation"));
         addDrawerItem("Audio", "Sound sources and audio controls", () -> showToolStatus("Audio"));
-        addDrawerItem("AI / Navigation", "Navigation and agent behaviour", () -> showToolStatus("AI / Navigation"));
+        addDrawerItem("AI Assistant", "Groq-powered scene-building assistant", this::openAIAssistant);
         addDrawerItem("Visual Scripting", "Node-based gameplay logic", () -> showToolStatus("Visual Scripting"));
 
         addDrawerSection("EDITOR");
@@ -552,7 +552,7 @@ public final class MainActivity extends Activity
                 .show();
     }
 
-    private void showToolStatus(String toolName) {
+    private void openAIAssistant() {\n        closeToolsDrawer();\n        new AIEditorAssistant(this, engineSurface).show();\n    }\n\n    private void showToolStatus(String toolName) {
         closeToolsDrawer();
         new AlertDialog.Builder(this)
                 .setTitle(toolName)
