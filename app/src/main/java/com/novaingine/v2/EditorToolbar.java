@@ -17,6 +17,7 @@ public final class EditorToolbar extends LinearLayout {
 
     public interface ViewportActions {
         void onToggleMaximize();
+        void onOpenToolsDrawer();
     }
 
     private static final int COLOR_BACKGROUND = 0xE61B1B1B;
@@ -196,10 +197,7 @@ public final class EditorToolbar extends LinearLayout {
                 parent,
                 "☰",
                 "Viewport options",
-                () -> showOptionsMenu(
-                        context,
-                        parent.getChildAt(0)
-                )
+                actions::onOpenToolsDrawer
         );
 
         addButton(
