@@ -105,6 +105,8 @@ public final class NativeBridge {
     public static native void nativeSelectObjectById(int objectId);
     public static native float[] nativeGetSelectedTransform();
     public static native void nativeSetSelectedTransform(float[] values);
+    public static native int nativePaintFoliage(float centerX, float centerZ, float radius, int count, int kind);
+    public static native int nativeClearFoliage();
     public static native boolean nativeCreateTerrain();
     public static native boolean nativeSculptTerrain(
             float centerX, float centerZ, float radius, float strength, int mode
