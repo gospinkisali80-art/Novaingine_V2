@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <fstream>
+#include <iomanip>
 #include <mutex>
 
 #include "../Camera/Camera.h"
@@ -757,6 +759,80 @@ Java_com_novaingine_v2_NativeBridge_nativeSetPaused(
     gPaused = paused == JNI_TRUE;
 }
 
+
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSaveScene(
+    JNIEnv* env, jclass, jstring pathValue
+) {
+    if (!pathValue) return JNI_FALSE;
+    const char* path = env->GetStringUTFChars(pathValue, nullptr);
+    if (!path) return JNI_FALSE;
+    std::lock_guard<std::mutex> lock(engineMutex);
+    std::ofstream file(path, std::ios::out | std::ios::trunc);
+    env->ReleaseStringUTFChars(pathValue, path);
+    if (!file) return JNI_FALSE;
+
+    file << "NOVA_SCENE 1\n" << gScene.objectCount() << "\n";
+    file << std::setprecision(9);
+    for (const nova::SceneObject& o : gScene.getObjects()) {
+        file << o.id << " " << static_cast<int>(o.primitive) << " "
+             << std::quoted(o.name) << " "
+             << o.transform.position.x << " " << o.transform.position.y << " " << o.transform.position.z << " "
+             << o.transform.rotation.x << " " << o.transform.rotation.y << " " << o.transform.rotation.z << " "
+             << o.transform.scale.x << " " << o.transform.scale.y << " " << o.transform.scale.z << " "
+             << o.color.r << " " << o.color.g << " " << o.color.b << " " << o.color.a << " "
+             << o.material.roughness << " " << o.material.metallic << " "
+             << o.visible << " " << o.castsShadow << " " << o.isStatic << "\n";
+    }
+    return file.good() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeLoadScene(
+    JNIEnv* env, jclass, jstring pathValue
+) {
+    if (!pathValue) return JNI_FALSE;
+    const char* path = env->GetStringUTFChars(pathValue, nullptr);
+    if (!path) return JNI_FALSE;
+    std::ifstream file(path);
+    env->ReleaseStringUTFChars(pathValue, path);
+    if (!file) return JNI_FALSE;
+
+    std::string magic;
+    int version = 0;
+    size_t count = 0;
+    if (!(file >> magic >> version >> count) ||
+        magic != "NOVA_SCENE" || version != 1 || count > 10000) {
+        return JNI_FALSE;
+    }
+
+    nova::Scene loaded;
+    for (size_t i = 0; i < count; ++i) {
+        nova::SceneObject o;
+        int primitive = 0;
+        if (!(file >> o.id >> primitive >> std::quoted(o.name)
+              >> o.transform.position.x >> o.transform.position.y >> o.transform.position.z
+              >> o.transform.rotation.x >> o.transform.rotation.y >> o.transform.rotation.z
+              >> o.transform.scale.x >> o.transform.scale.y >> o.transform.scale.z
+              >> o.color.r >> o.color.g >> o.color.b >> o.color.a
+              >> o.material.roughness >> o.material.metallic
+              >> o.visible >> o.castsShadow >> o.isStatic)) {
+            return JNI_FALSE;
+        }
+        if (o.id == 0 || primitive < 0 || primitive > 7) return JNI_FALSE;
+        o.primitive = static_cast<nova::PrimitiveType>(primitive);
+        o.material.baseColor = nova::Vec3(o.color.r, o.color.g, o.color.b);
+        if (!loaded.addObject(o)) return JNI_FALSE;
+    }
+
+    std::lock_guard<std::mutex> lock(engineMutex);
+    gScene = loaded;
+    gVerticalVelocity = 0.0f;
+    gPhysicsGrounded = false;
+    gJumpWasPressed = false;
+    return JNI_TRUE;
+}
 
 JNIEXPORT jobjectArray JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeGetSceneObjects(
