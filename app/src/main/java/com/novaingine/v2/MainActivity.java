@@ -1,6 +1,7 @@
 package com.novaingine.v2;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.pm.ActivityInfo;
 import android.graphics.Color;
 import android.os.Bundle;
@@ -8,6 +9,8 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
+import android.widget.EditText;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 public final class MainActivity extends Activity
@@ -61,6 +64,7 @@ public final class MainActivity extends Activity
         createToolbar();
         createTouchControls();
         createStatistics();
+        createEditorPanels();
 
         setContentView(rootLayout);
 
@@ -167,6 +171,135 @@ public final class MainActivity extends Activity
                 statisticsText,
                 statsParams
         );
+    }
+
+
+    private void createEditorPanels() {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.HORIZONTAL);
+        panel.setPadding(dp(5), dp(4), dp(5), dp(4));
+        panel.setBackgroundColor(0xDD202020);
+
+        TextView outliner = new TextView(this);
+        outliner.setText("WORLD OUTLINER");
+        outliner.setTextColor(Color.WHITE);
+        outliner.setTextSize(10);
+        outliner.setGravity(Gravity.CENTER);
+        outliner.setPadding(dp(10), dp(8), dp(10), dp(8));
+        outliner.setBackgroundColor(0xFF3A3A3A);
+        outliner.setOnClickListener(view -> showWorldOutliner());
+
+        TextView details = new TextView(this);
+        details.setText("DETAILS");
+        details.setTextColor(Color.WHITE);
+        details.setTextSize(10);
+        details.setGravity(Gravity.CENTER);
+        details.setPadding(dp(10), dp(8), dp(10), dp(8));
+        details.setBackgroundColor(0xFF3A3A3A);
+        details.setOnClickListener(view -> showDetailsInspector());
+
+        LinearLayout.LayoutParams itemParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        itemParams.setMargins(dp(3), 0, dp(3), 0);
+        panel.addView(outliner, itemParams);
+        panel.addView(details, itemParams);
+
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP | Gravity.END
+        );
+        params.setMargins(0, dp(55), dp(8), 0);
+        rootLayout.addView(panel, params);
+    }
+
+    private void showWorldOutliner() {
+        String[] objects = engineSurface.getSceneObjects();
+        if (objects == null || objects.length == 0) {
+            new AlertDialog.Builder(this)
+                    .setTitle("World Outliner")
+                    .setMessage("The scene contains no objects.")
+                    .setPositiveButton("Close", null)
+                    .show();
+            return;
+        }
+
+        String[] labels = new String[objects.length];
+        int[] ids = new int[objects.length];
+        for (int i = 0; i < objects.length; i++) {
+            String row = objects[i] == null ? "" : objects[i];
+            int split = row.indexOf('|');
+            try {
+                ids[i] = Integer.parseInt(split < 0 ? row : row.substring(0, split));
+            } catch (NumberFormatException ignored) {
+                ids[i] = 0;
+            }
+            labels[i] = split < 0 ? row : row.substring(split + 1);
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("World Outliner  •  " + objects.length + " objects")
+                .setItems(labels, (dialog, which) -> {
+                    if (ids[which] != 0) {
+                        engineSurface.selectObjectById(ids[which]);
+                    }
+                })
+                .setNegativeButton("Close", null)
+                .show();
+    }
+
+    private void showDetailsInspector() {
+        float[] values = engineSurface.getSelectedTransform();
+        if (values == null || values.length < 9) return;
+
+        String[] names = {
+                "Position X", "Position Y", "Position Z",
+                "Rotation X", "Rotation Y", "Rotation Z",
+                "Scale X", "Scale Y", "Scale Z"
+        };
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(18), dp(8), dp(18), dp(4));
+
+        EditText[] fields = new EditText[9];
+        for (int i = 0; i < fields.length; i++) {
+            TextView label = new TextView(this);
+            label.setText(names[i]);
+            label.setTextColor(Color.DKGRAY);
+            label.setTextSize(11);
+            content.addView(label);
+
+            EditText field = new EditText(this);
+            field.setSingleLine(true);
+            field.setInputType(android.text.InputType.TYPE_CLASS_NUMBER
+                    | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+                    | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+            field.setText(String.format(java.util.Locale.US, "%.3f", values[i]));
+            content.addView(field);
+            fields[i] = field;
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("Details Inspector")
+                .setView(content)
+                .setPositiveButton("Apply", (dialog, which) -> {
+                    float[] updated = values.clone();
+                    for (int i = 0; i < fields.length; i++) {
+                        try {
+                            updated[i] = Float.parseFloat(
+                                    fields[i].getText().toString().trim()
+                            );
+                        } catch (NumberFormatException ignored) {
+                            updated[i] = values[i];
+                        }
+                    }
+                    engineSurface.setSelectedTransform(updated);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
     @Override
