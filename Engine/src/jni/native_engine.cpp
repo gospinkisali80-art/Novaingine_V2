@@ -966,6 +966,46 @@ Java_com_novaingine_v2_NativeBridge_nativeSetSelectedTransform(
 
 
 JNIEXPORT jint JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeAddPrimitive(
+    JNIEnv* env, jclass, jint primitiveValue, jstring nameValue,
+    jfloat x, jfloat y, jfloat z, jfloat sx, jfloat sy, jfloat sz,
+    jfloat red, jfloat green, jfloat blue
+) {
+    const char* rawName = nameValue ? env->GetStringUTFChars(nameValue, nullptr) : nullptr;
+    const std::string objectName = rawName ? rawName : "AI Object";
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized) {
+        if (rawName) env->ReleaseStringUTFChars(nameValue, rawName);
+        return 0;
+    }
+    const int primitiveIndex = std::clamp(static_cast<int>(primitiveValue), 0, 5);
+    const nova::PrimitiveType primitive = static_cast<nova::PrimitiveType>(primitiveIndex);
+    recordUndo();
+    nova::Transform transform;
+    transform.position = nova::Vec3(x, y, z);
+    transform.scale = nova::Vec3(
+        std::max(0.01f, std::fabs(sx)),
+        std::max(0.01f, std::fabs(sy)),
+        std::max(0.01f, std::fabs(sz))
+    );
+    const nova::Color color(
+        std::clamp(static_cast<float>(red), 0.0f, 1.0f),
+        std::clamp(static_cast<float>(green), 0.0f, 1.0f),
+        std::clamp(static_cast<float>(blue), 0.0f, 1.0f),
+        1.0f
+    );
+    const uint32_t id = gScene.addObject(objectName, primitive, transform, color);
+    if (nova::SceneObject* object = gScene.find(id)) {
+        object->material.baseColor = nova::Vec3(color.r, color.g, color.b);
+        object->material.roughness = 0.72f;
+        object->material.metallic = 0.0f;
+    }
+    gRenderer.releaseAllMeshes();
+    if (rawName) env->ReleaseStringUTFChars(nameValue, rawName);
+    return static_cast<jint>(id);
+}
+
+JNIEXPORT jint JNICALL
 Java_com_novaingine_v2_NativeBridge_nativePaintFoliage(
     JNIEnv*, jclass, jfloat centerXValue, jfloat centerZValue,
     jfloat radiusValue, jint countValue, jint kindValue
