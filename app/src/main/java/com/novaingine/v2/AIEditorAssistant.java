@@ -33,9 +33,7 @@ import java.util.concurrent.Executors;
 public final class AIEditorAssistant {
     private static final String PREFS = "nova_ai_settings";
     private static final String KEY = "groq_api_key";
-    private static final String MODEL_20B = "openai/gpt-oss-20b";
-    private static final String MODEL_120B = "openai/gpt-oss-120b";
-    private static final String MODEL_PREF = "groq_model";
+    private static final String MODEL_ID = "qwen/qwen3.8-27b";
     private TextView modelInfo;
     private final Activity activity;
     private final EngineSurface engine;
@@ -54,7 +52,7 @@ public final class AIEditorAssistant {
         JSONObject system = new JSONObject();
         try {
             system.put("role", "system");
-            system.put("content", "You are NOVA AI, a professional real-time 3D world-building agent inside Novaingine, inspired by the workflow and quality expectations of Unreal Editor. You MUST build requested creations by executing scene tools, not merely describe them. Think like a level artist and modular environment artist. For a house, create a coherent complete structure: raised foundation, floor slab, separate walls, roof sections, door, window frames and glass, trim, steps and tasteful details. Use multiple accurately positioned and scaled primitives; avoid a pile of random cubes. Keep parts aligned, intersecting slightly where needed to avoid gaps, use consistent dimensions, complementary colors and sensible materials. For roads, bridges, towers and other assets, decompose into logical structural parts and details. Inspect the scene first when placement matters, build around existing objects without destroying them, and explain the layout. Coordinates use X horizontal, Y up, Z depth; default arena center is near X=0, Z=-4. Use sensible human-scale proportions (door about 1.0 wide x 2.1 high; storey about 3 units). Place requested assets beside the arena if asked, not on top of it. Use many tool calls in a single response when needed, but stay under the operation limit. After building, inspect the scene and report what was actually created. Use create_primitive repeatedly for compound assets; use select_object before transform tools. Rotate values are radians. Never claim an action succeeded unless its tool reports success. Preserve existing scene content unless the user asks to remove it. Keep mobile performance in mind.");
+            system.put("content", "You are NOVA AI, the scene assistant inside Novaingine. Do not create objects from primitive shapes and do not claim that Blender assets can be imported yet. Use only the available scene inspection, terrain, foliage, selection, transform, undo and redo tools. For requests to create detailed meshes or buildings, explain that the Blender-to-Novaingine model pipeline is not connected yet. Inspect the scene when placement matters. Coordinates use X horizontal, Y up, Z depth. Never claim an action succeeded unless its tool reports success. Preserve existing scene content unless the user asks to remove it. Keep mobile performance in mind.");
             history.put(system);
         } catch (Exception ignored) {}
     }
@@ -73,10 +71,6 @@ public final class AIEditorAssistant {
         title.setTextSize(16);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         top.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
-        Button modelButton = new Button(activity);
-        modelButton.setText("MODEL");
-        modelButton.setOnClickListener(v -> showModelDialog());
-        top.addView(modelButton);
         Button keyButton = new Button(activity);
         keyButton.setText("API KEY");
         keyButton.setOnClickListener(v -> showKeyDialog());
@@ -131,37 +125,13 @@ public final class AIEditorAssistant {
 
 
     private String getModel() {
-        return activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE)
-                .getString(MODEL_PREF, MODEL_120B);
+        return MODEL_ID;
     }
 
     private void updateModelInfo() {
         if (modelInfo != null) {
-            String selected = getModel();
-            String label = selected.equals(MODEL_120B) ? "GPT-OSS 120B" : "GPT-OSS 20B";
-            modelInfo.setText("Provider: Groq  |  Model: " + label + " (" + selected + ")  |  Tool-enabled scene assistant");
+            modelInfo.setText("Provider: Groq  |  Model: Qwen 3.8 27B (" + MODEL_ID + ")  |  AI scene assistant");
         }
-    }
-
-    private void showModelDialog() {
-        String[] labels = {
-                "GPT-OSS 120B — Recommended, stronger reasoning",
-                "GPT-OSS 20B — Keep as a faster alternative"
-        };
-        String current = getModel();
-        int checked = current.equals(MODEL_20B) ? 1 : 0;
-        new AlertDialog.Builder(activity)
-                .setTitle("Choose Groq model")
-                .setSingleChoiceItems(labels, checked, (d, which) -> {
-                    String selected = which == 0 ? MODEL_120B : MODEL_20B;
-                    activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE)
-                            .edit().putString(MODEL_PREF, selected).apply();
-                    updateModelInfo();
-                    append("\n[Groq model set to " + selected + ". Your Groq API key is unchanged.]\n");
-                    d.dismiss();
-                })
-                .setNegativeButton("CANCEL", null)
-                .show();
     }
 
     private void showKeyDialog() {
@@ -224,10 +194,10 @@ public final class AIEditorAssistant {
             body.put("messages", history);
             body.put("tools", tools);
             body.put("tool_choice", "auto");
-            body.put("temperature", 0.2);
-            body.put("max_completion_tokens", 4096);
-            body.put("reasoning_effort", "low");
-            body.put("include_reasoning", false);
+            body.put("temperature", 1.0);
+            body.put("max_completion_tokens", 8192);
+            body.put("reasoning_effort", "medium");
+            body.put("reasoning_format", "hidden");
             body.put("parallel_tool_calls", false);
             JSONObject response = postGroq(body);
             JSONObject message = response.getJSONArray("choices").getJSONObject(0).getJSONObject("message");
@@ -239,13 +209,7 @@ public final class AIEditorAssistant {
                 assistant.put("content", content);
                 history.put(assistant);
                 if (content.isEmpty()) {
-                    String lastRequest = history.optJSONObject(history.length() - 1) == null ? ""
-                            : history.optJSONObject(history.length() - 1).optString("content", "");
-                    if (looksLikeHouseRequest(lastRequest)) {
-                        String built = buildModernHouse(8.0f, -4.0f, 1.0f);
-                        return "Groq returned an empty completion, so the local construction fallback ran. " + built;
-                    }
-                    return "Groq returned no text or scene-tool calls. No scene changes were made. Please retry.";
+                    return "Groq returned an empty completion. No scene changes were made. Please retry.";
                 }
                 return content;
             }
@@ -305,8 +269,6 @@ public final class AIEditorAssistant {
 
     private JSONArray buildTools() throws Exception {
         JSONArray tools = new JSONArray();
-        tools.put(tool("build_house", "Construct a detailed two-storey modern house from real native scene objects. Use for house, home, villa or cottage requests. Optional center x, z and scale.", "{\"type\":\"object\",\"properties\":{\"x\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"},\"scale\":{\"type\":\"number\"}}}"));
-        tools.put(tool("create_primitive", "Create a 3D object in the current scene. primitive: cube, sphere, cylinder, plane, ramp or wedge.", "{\"type\":\"object\",\"properties\":{\"primitive\":{\"type\":\"string\",\"enum\":[\"cube\",\"sphere\",\"cylinder\",\"plane\",\"ramp\",\"wedge\"]},\"name\":{\"type\":\"string\"},\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"},\"sx\":{\"type\":\"number\"},\"sy\":{\"type\":\"number\"},\"sz\":{\"type\":\"number\"},\"r\":{\"type\":\"number\"},\"g\":{\"type\":\"number\"},\"b\":{\"type\":\"number\"}},\"required\":[\"primitive\",\"name\",\"x\",\"y\",\"z\",\"sx\",\"sy\",\"sz\"]}"));
         tools.put(tool("inspect_scene", "List scene object IDs and names, and the selected object's transform.", "{\"type\":\"object\",\"properties\":{}}"));
         tools.put(tool("create_terrain", "Generate or replace the editable terrain patch.", "{\"type\":\"object\",\"properties\":{}}"));
         tools.put(tool("sculpt_terrain", "Sculpt terrain. mode is raise, lower, smooth or flatten.", "{\"type\":\"object\",\"properties\":{\"x\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"},\"radius\":{\"type\":\"number\"},\"strength\":{\"type\":\"number\"},\"mode\":{\"type\":\"string\",\"enum\":[\"raise\",\"lower\",\"smooth\",\"flatten\"]}},\"required\":[\"x\",\"z\",\"radius\",\"strength\",\"mode\"]}"));
@@ -331,20 +293,6 @@ public final class AIEditorAssistant {
     private String executeTool(String name, JSONObject a) {
         try {
             switch (name) {
-                case "build_house":
-                    return buildModernHouse(number(a,"x",8.0f), number(a,"z",-4.0f), number(a,"scale",1.0f));
-                case "create_primitive": {
-                    String primitive = a.optString("primitive", "cube");
-                    int type = primitive.equals("cylinder") ? 1 : primitive.equals("ramp") ? 2
-                            : primitive.equals("wedge") ? 3 : primitive.equals("sphere") ? 4
-                            : primitive.equals("plane") ? 5 : 0;
-                    String objectName = a.optString("name", "AI " + primitive);
-                    float x = number(a,"x",0), y = number(a,"y",0.5f), z = number(a,"z",-4);
-                    float sx = number(a,"sx",1), sy = number(a,"sy",1), sz = number(a,"sz",1);
-                    float red = clamp(number(a,"r",0.9f)), green = clamp(number(a,"g",0.65f)), blue = clamp(number(a,"b",0.12f));
-                    int id = runOnRenderThread(() -> NativeBridge.nativeAddPrimitive(type, objectName, x,y,z,sx,sy,sz,red,green,blue));
-                    return id > 0 ? "Created " + objectName + " with scene object ID " + id + "." : "Object creation failed.";
-                }
                 case "inspect_scene": {
                     String[] objects = engine.getSceneObjects();
                     StringBuilder out = new StringBuilder("Objects: ");
@@ -413,76 +361,6 @@ public final class AIEditorAssistant {
     }
 
 
-    private boolean looksLikeHouseRequest(String text) {
-        if (text == null) return false;
-        String s = text.toLowerCase(java.util.Locale.ROOT);
-        return s.contains("house") || s.contains("home") || s.contains("villa") || s.contains("cottage");
-    }
-
-    /** Creates a complete modular house using native scene objects, not a text-only model response. */
-    private String buildModernHouse(float cx, float cz, float requestedScale) {
-        final float k = Math.max(0.7f, Math.min(1.6f, requestedScale));
-        // Each row: x, y, z, width, height, depth, red, green, blue.
-        final float[][] p = {
-            {0,.18f,0,6.8f,.36f,5.8f,.25f,.27f,.30f},
-            {0,.43f,0,6.3f,.16f,5.3f,.72f,.70f,.64f},
-            {0,3.02f,0,6.1f,.18f,5.1f,.30f,.32f,.36f},
-            {-2.92f,1.72f,0,.28f,2.55f,5,.88f,.84f,.75f},
-            {2.92f,1.72f,0,.28f,2.55f,5,.88f,.84f,.75f},
-            {0,1.72f,-2.36f,5.55f,2.55f,.28f,.88f,.84f,.75f},
-            {-1.85f,1.72f,2.36f,1.85f,2.55f,.28f,.88f,.84f,.75f},
-            {1.85f,1.72f,2.36f,1.85f,2.55f,.28f,.88f,.84f,.75f},
-            {0,2.82f,2.36f,1.85f,.34f,.28f,.88f,.84f,.75f},
-            {-2.82f,4.28f,0,.28f,2.35f,4.95f,.90f,.88f,.81f},
-            {2.82f,4.28f,0,.28f,2.35f,4.95f,.90f,.88f,.81f},
-            {0,4.28f,-2.34f,5.45f,2.35f,.28f,.90f,.88f,.81f},
-            {-1.78f,4.28f,2.34f,1.8f,2.35f,.28f,.90f,.88f,.81f},
-            {1.78f,4.28f,2.34f,1.8f,2.35f,.28f,.90f,.88f,.81f},
-            {0,5.55f,0,6.8f,.22f,5.9f,.12f,.15f,.19f},
-            {-1.62f,5.72f,0,3.55f,.20f,6.0f,.16f,.19f,.23f},
-            {1.62f,5.72f,0,3.55f,.20f,6.0f,.16f,.19f,.23f},
-            {0,1.48f,2.57f,1.02f,2.08f,.12f,.20f,.12f,.08f},
-            {-2.0f,1.75f,2.57f,1.15f,1.25f,.08f,.20f,.48f,.66f},
-            {2.0f,1.75f,2.57f,1.15f,1.25f,.08f,.20f,.48f,.66f},
-            {-1.72f,4.30f,2.54f,1.20f,1.35f,.08f,.20f,.48f,.66f},
-            {1.72f,4.30f,2.54f,1.20f,1.35f,.08f,.20f,.48f,.66f},
-            {0,3.18f,3.05f,3.0f,.16f,1.15f,.28f,.30f,.33f},
-            {-1.42f,3.70f,3.56f,.10f,.95f,.10f,.20f,.23f,.26f},
-            {1.42f,3.70f,3.56f,.10f,.95f,.10f,.20f,.23f,.26f},
-            {0,4.16f,3.56f,2.95f,.10f,.10f,.20f,.23f,.26f},
-            {0,.55f,3.15f,1.65f,.18f,.65f,.60f,.59f,.54f},
-            {0,.40f,3.58f,1.95f,.14f,.55f,.60f,.59f,.54f},
-            {-1.42f,1.55f,2.92f,.16f,2.25f,.16f,.80f,.78f,.70f},
-            {1.42f,1.55f,2.92f,.16f,2.25f,.16f,.80f,.78f,.70f}
-        };
-        final String[] names = {
-            "House Foundation","House Ground Floor","House Upper Floor",
-            "House Lower Left Wall","House Lower Right Wall","House Lower Rear Wall",
-            "House Lower Front Left","House Lower Front Right","House Front Lintel",
-            "House Upper Left Wall","House Upper Right Wall","House Upper Rear Wall",
-            "House Upper Front Left","House Upper Front Right","House Roof Cap",
-            "House Roof Wing Left","House Roof Wing Right","House Front Door",
-            "House Ground Window Left","House Ground Window Right","House Upper Window Left",
-            "House Upper Window Right","House Balcony Slab","House Balcony Rail Left",
-            "House Balcony Rail Right","House Balcony Top Rail","House Front Step",
-            "House Porch Step","House Porch Column Left","House Porch Column Right"
-        };
-        int count = runOnRenderThread(() -> {
-            int made = 0;
-            for (int i=0; i<p.length; i++) {
-                float[] a = p[i];
-                int id = NativeBridge.nativeAddPrimitive(0, names[i],
-                    cx+a[0]*k, a[1]*k, cz+a[2]*k,
-                    a[3]*k, a[4]*k, a[5]*k, a[6], a[7], a[8]);
-                if (id > 0) made++;
-            }
-            return made;
-        });
-        return count == p.length
-            ? "Created a two-storey modern house with " + count + " real scene parts: foundation, floors, walls, roof, door, glass windows, balcony, steps and columns."
-            : "House creation incomplete: " + count + " of " + p.length + " parts were created.";
-    }
-
     private interface RenderCall<T> { T run(); }
 
     private <T> T runOnRenderThread(RenderCall<T> call) {
@@ -503,7 +381,6 @@ public final class AIEditorAssistant {
     }
 
     private float number(JSONObject o, String key, float fallback) { return (float)o.optDouble(key, fallback); }
-    private float clamp(float n) { return Math.max(0f, Math.min(1f, n)); }
     private String safeMessage(Exception e) { return e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage(); }
 
     private void append(String text) {
