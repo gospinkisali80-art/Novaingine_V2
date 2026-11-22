@@ -263,6 +263,14 @@ public final class EngineSurface extends GLSurfaceView
         queueEvent(NativeBridge::nativeResetScene);
     }
 
+    public void undoScene() {
+        queueEvent(NativeBridge::nativeUndo);
+    }
+
+    public void redoScene() {
+        queueEvent(NativeBridge::nativeRedo);
+    }
+
     private float clamp(float value) {
         return Math.max(-1.0f, Math.min(1.0f, value));
     }
