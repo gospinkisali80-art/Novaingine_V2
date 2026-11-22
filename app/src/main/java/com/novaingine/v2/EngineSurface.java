@@ -346,19 +346,10 @@ public final class EngineSurface extends GLSurfaceView
                     multiTouch = true;
 
                 } else if (!multiTouch) {
-
-                    float x = event.getX();
-                    float y = event.getY();
-
-                    float dx = x - previousX;
-                    float dy = y - previousY;
-
-                    previousX = x;
-                    previousY = y;
-
-                    queueEvent(() ->
-                            NativeBridge.nativeTouch(dx, dy)
-                    );
+                    // Single-finger viewport dragging no longer rotates the camera.
+                    // Use the dedicated LOOK joystick; two-finger pan/zoom remains enabled.
+                    previousX = event.getX();
+                    previousY = event.getY();
                 }
 
                 return true;
