@@ -31,6 +31,7 @@ public final class MainActivity extends Activity
     private View toolsScrim;
     private LinearLayout toolsDrawer;
     private boolean toolsDrawerOpen;
+    private boolean drawerPhysicsEnabled;
 
     private int normalToolbarHeight;
     private int normalInputHeight;
@@ -301,7 +302,7 @@ public final class MainActivity extends Activity
         addDrawerItem("Visual Scripting", "Node-based gameplay logic", () -> showToolStatus("Visual Scripting"));
 
         addDrawerSection("EDITOR");
-        addDrawerItem("Physics", "Toggle collision and gravity", () -> showToolStatus("Physics settings are available from the toolbar"));
+        addDrawerItem("Physics: " + (drawerPhysicsEnabled ? "ON" : "OFF"), "Toggle collision and gravity", () -> {\n            drawerPhysicsEnabled = !drawerPhysicsEnabled;\n            engineSurface.setPhysicsEnabled(drawerPhysicsEnabled);\n            closeToolsDrawer();\n        });
         addDrawerItem("Reset Scene", "Restore the default arena", () -> {
             engineSurface.resetScene();
             closeToolsDrawer();
