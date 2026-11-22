@@ -552,7 +552,12 @@ public final class MainActivity extends Activity
                 .show();
     }
 
-    private void openAIAssistant() {\n        closeToolsDrawer();\n        new AIEditorAssistant(this, engineSurface).show();\n    }\n\n    private void showToolStatus(String toolName) {
+    private void openAIAssistant() {
+        closeToolsDrawer();
+        new AIEditorAssistant(this, engineSurface).show();
+    }
+
+    private void showToolStatus(String toolName) {
         closeToolsDrawer();
         new AlertDialog.Builder(this)
                 .setTitle(toolName)
