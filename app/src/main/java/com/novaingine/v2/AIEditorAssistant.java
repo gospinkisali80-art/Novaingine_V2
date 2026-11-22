@@ -139,9 +139,7 @@ Set your Groq API key using API KEY to connect the model.");
                     String value = field.getText().toString().trim();
                     activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE)
                             .edit().putString(KEY, value).apply();
-                    append("
-[Groq key saved on this device.]
-");
+                    append("\n[Groq key saved on this device.]\n");
                 })
                 .setNegativeButton("CANCEL", null).show();
     }
@@ -156,12 +154,9 @@ Set your Groq API key using API KEY to connect the model.");
         if (text.isEmpty()) return;
         if (getKey().isEmpty()) { showKeyDialog(); return; }
         prompt.setText("");
-        append("
-YOU: " + text + "
-");
+        append("\nYOU: " + text + "\n");
         busy = true;
-        append("NOVA AI: Thinking and checking available scene tools...
-");
+        append("NOVA AI: Thinking and checking available scene tools...\n");
         worker.execute(() -> {
             try {
                 JSONObject user = new JSONObject();
@@ -170,14 +165,12 @@ YOU: " + text + "
                 history.put(user);
                 String answer = runAgent();
                 main.post(() -> {
-                    append(answer + "
-");
+                    append(answer + "\n");
                     busy = false;
                 });
             } catch (Exception ex) {
                 main.post(() -> {
-                    append("Connection error: " + safeMessage(ex) + "
-");
+                    append("Connection error: " + safeMessage(ex) + "\n");
                     busy = false;
                 });
             }
@@ -221,8 +214,7 @@ YOU: " + text + "
                 toolMessage.put("tool_call_id", id);
                 toolMessage.put("content", result);
                 history.put(toolMessage);
-                final String status = "Tool: " + name + " → " + result + "
-";
+                final String status = "Tool: " + name + " → " + result + "\n";
                 main.post(() -> append(status));
             }
         }
@@ -358,8 +350,7 @@ YOU: " + text + "
         }
     }
 
-    private float number(JSONObject o, String key, float fallback) { return (float)o.optDouble(key, fallback);
-    private float clamp(float n) { return Math.max(0f, Math.min(1f, n)); }
+    private float number(JSONObject o, String key, float fallback) { return (float)o.optDouble(key, fallback); }\n    private float clamp(float n) { return Math.max(0f, Math.min(1f, n)); }
     private String safeMessage(Exception e) { return e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage(); }
 
     private void append(String text) {
