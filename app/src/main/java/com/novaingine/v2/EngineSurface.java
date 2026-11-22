@@ -130,6 +130,14 @@ public final class EngineSurface extends GLSurfaceView
         verticalMovement = clamp(value);
     }
 
+    public boolean saveScene(String path) {
+        return NativeBridge.nativeSaveScene(path);
+    }
+
+    public boolean loadScene(String path) {
+        return NativeBridge.nativeLoadScene(path);
+    }
+
     public String[] getSceneObjects() {
         return NativeBridge.nativeGetSceneObjects();
     }
