@@ -14,6 +14,9 @@
 #include "../Scene/SceneFactory.h"
 #include "../Renderer/Renderer.h"
 #include "../Physics/PhysicsWorld.h"
+#include "../Geometry/Mesh.h"
+#define CGLTF_IMPLEMENTATION
+#include "../ThirdParty/cgltf.h"
 
 #define NOVA_LOG_TAG "NovaEngine"
 #define NOVA_LOG(...) __android_log_print(ANDROID_LOG_INFO, NOVA_LOG_TAG, __VA_ARGS__)
@@ -964,6 +967,94 @@ Java_com_novaingine_v2_NativeBridge_nativeSetSelectedTransform(
     );
 }
 
+
+JNIEXPORT jint JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeImportGlb(JNIEnv* env, jclass, jstring pathValue) {
+    if (!pathValue) return -1;
+    const char* rawPath = env->GetStringUTFChars(pathValue, nullptr);
+    if (!rawPath) return -1;
+    const std::string path(rawPath);
+    env->ReleaseStringUTFChars(pathValue, rawPath);
+    cgltf_options options{};
+    cgltf_data* data = nullptr;
+    if (cgltf_parse_file(&options, path.c_str(), &data) != cgltf_result_success || !data) return -1;
+    if (cgltf_load_buffers(&options, data, path.c_str()) != cgltf_result_success ||
+        cgltf_validate(data) != cgltf_result_success) { cgltf_free(data); return -1; }
+
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized) { cgltf_free(data); return -1; }
+    size_t imported = 0, totalVertices = 0;
+    recordUndo();
+    for (cgltf_size mi = 0; mi < data->meshes_count && imported < 200; ++mi) {
+        const cgltf_mesh& src = data->meshes[mi];
+        for (cgltf_size pi = 0; pi < src.primitives_count && imported < 200; ++pi) {
+            const cgltf_primitive& prim = src.primitives[pi];
+            if (prim.type != cgltf_primitive_type_triangles) continue;
+            const cgltf_accessor *pos = nullptr, *norm = nullptr, *uv = nullptr;
+            for (cgltf_size ai = 0; ai < prim.attributes_count; ++ai) {
+                const cgltf_attribute& at = prim.attributes[ai];
+                if (at.type == cgltf_attribute_type_position) pos = at.data;
+                else if (at.type == cgltf_attribute_type_normal) norm = at.data;
+                else if (at.type == cgltf_attribute_type_texcoord && at.index == 0) uv = at.data;
+            }
+            if (!pos || pos->count < 3 || pos->count > 250000 ||
+                totalVertices + pos->count > 750000) continue;
+            const size_t count = static_cast<size_t>(pos->count);
+            nova::Mesh mesh;
+            mesh.reserve(count, prim.indices ? static_cast<size_t>(prim.indices->count) : count * 3);
+            bool valid = true;
+            for (size_t i = 0; i < count; ++i) {
+                cgltf_float p[3]={0,0,0}, n[3]={0,1,0}, t[2]={0,0};
+                if (!cgltf_accessor_read_float(pos, i, p, 3)) { valid=false; break; }
+                if (norm) cgltf_accessor_read_float(norm, i, n, 3);
+                if (uv) cgltf_accessor_read_float(uv, i, t, 2);
+                mesh.addVertex(nova::Vertex(nova::Vec3(p[0],p[1],p[2]),
+                    nova::normalize(nova::Vec3(n[0],n[1],n[2])), t[0], t[1]));
+            }
+            if (!valid) continue;
+            if (prim.indices) {
+                const size_t ic = static_cast<size_t>(prim.indices->count);
+                if (ic < 3 || ic > 750000 || ic % 3) continue;
+                for (size_t i=0; i<ic; i+=3) {
+                    cgltf_size a=cgltf_accessor_read_index(prim.indices,i);
+                    cgltf_size b=cgltf_accessor_read_index(prim.indices,i+1);
+                    cgltf_size d=cgltf_accessor_read_index(prim.indices,i+2);
+                    if (a>=count || b>=count || d>=count) { valid=false; break; }
+                    mesh.addTriangle(static_cast<uint32_t>(a),static_cast<uint32_t>(b),static_cast<uint32_t>(d));
+                }
+            } else {
+                if (count % 3) continue;
+                for (size_t i=0;i<count;i+=3)
+                    mesh.addTriangle(static_cast<uint32_t>(i),static_cast<uint32_t>(i+1),static_cast<uint32_t>(i+2));
+            }
+            if (!valid || !mesh.isValid()) continue;
+            if (!norm) mesh.recalculateNormals();
+            nova::Color color(0.72f,0.74f,0.78f,1.0f);
+            float roughness=0.65f, metallic=0.0f;
+            if (prim.material) {
+                const auto& m=prim.material->pbr_metallic_roughness;
+                color=nova::Color(m.base_color_factor[0],m.base_color_factor[1],m.base_color_factor[2],m.base_color_factor[3]);
+                roughness=std::clamp(m.roughness_factor,0.04f,1.0f);
+                metallic=std::clamp(m.metallic_factor,0.0f,1.0f);
+            }
+            std::string name=src.name ? src.name : "Blender Mesh";
+            if (src.primitives_count>1) name += " "+std::to_string(pi+1);
+            nova::Transform transform;
+            uint32_t id=gScene.addObject(name,nova::PrimitiveType::Cube,transform,color);
+            nova::SceneObject* object=gScene.find(id);
+            if (!object || !gRenderer.uploadMesh(id,mesh)) { gScene.removeObject(id); continue; }
+            object->material.baseColor=nova::Vec3(color.r,color.g,color.b);
+            object->material.roughness=roughness;
+            object->material.metallic=metallic;
+            totalVertices+=count;
+            ++imported;
+        }
+    }
+    cgltf_free(data);
+    if (!imported) { gRenderer.releaseAllMeshes(); return 0; }
+    gScene.deselect();
+    return static_cast<jint>(imported);
+}
 
 JNIEXPORT jint JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeAddPrimitive(
