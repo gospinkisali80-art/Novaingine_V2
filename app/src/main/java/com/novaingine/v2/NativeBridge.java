@@ -112,6 +112,8 @@ public final class NativeBridge {
             float centerX, float centerZ, float radius, float strength, int mode
     );
 
+    public static native int nativeImportGlb(String path);
+
     public static native int nativeAddPrimitive(int primitive, String name, float x, float y, float z, float sx, float sy, float sz, float r, float g, float b);
 
     public static native int nativeGetFps();
