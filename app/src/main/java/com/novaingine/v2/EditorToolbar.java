@@ -397,25 +397,27 @@ public final class EditorToolbar extends LinearLayout {
             Context context,
             LinearLayout parent) {
 
-        addButton(
-                context,
-                parent,
-                "Physics: OFF",
-                "Toggle first-person physics, gravity and collision",
-                () -> {
-                    physicsEnabled = !physicsEnabled;
-                    engineSurface.setPhysicsEnabled(physicsEnabled);
-                    View button = parent.getChildAt(parent.getChildCount() - 1);
-                    if (button instanceof TextView) {
-                        ((TextView) button).setText(
-                                physicsEnabled ? "Physics: ON" : "Physics: OFF"
-                        );
-                        ((TextView) button).setTextColor(
-                                physicsEnabled ? COLOR_ACCENT : COLOR_TEXT
-                        );
-                    }
-                }
+        TextView physicsButton = createButton(context, "Physics: OFF");
+        physicsButton.setContentDescription(
+                "Toggle first-person physics, gravity and collision"
         );
+        parent.addView(
+                physicsButton,
+                new LayoutParams(
+                        LayoutParams.WRAP_CONTENT,
+                        LayoutParams.WRAP_CONTENT
+                )
+        );
+        physicsButton.setOnClickListener(view -> {
+            physicsEnabled = !physicsEnabled;
+            engineSurface.setPhysicsEnabled(physicsEnabled);
+            physicsButton.setText(
+                    physicsEnabled ? "Physics: ON" : "Physics: OFF"
+            );
+            physicsButton.setTextColor(
+                    physicsEnabled ? COLOR_ACCENT : COLOR_TEXT
+            );
+        });
 
         TextView label = new TextView(context);
 
