@@ -757,6 +757,78 @@ Java_com_novaingine_v2_NativeBridge_nativeSetPaused(
     gPaused = paused == JNI_TRUE;
 }
 
+
+JNIEXPORT jobjectArray JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeGetSceneObjects(
+    JNIEnv* env, jclass
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    jclass stringClass = env->FindClass("java/lang/String");
+    jobjectArray result = env->NewObjectArray(
+        static_cast<jsize>(gScene.objectCount()), stringClass, nullptr
+    );
+    for (jsize i = 0; i < static_cast<jsize>(gScene.objectCount()); ++i) {
+        const nova::SceneObject* object = gScene.get(static_cast<size_t>(i));
+        if (!object) continue;
+        std::string row = std::to_string(object->id) + "|" + object->name;
+        jstring value = env->NewStringUTF(row.c_str());
+        env->SetObjectArrayElement(result, i, value);
+        env->DeleteLocalRef(value);
+    }
+    return result;
+}
+
+JNIEXPORT void JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSelectObjectById(
+    JNIEnv*, jclass, jint objectId
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (gInitialized) gScene.select(static_cast<uint32_t>(objectId));
+}
+
+JNIEXPORT jfloatArray JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeGetSelectedTransform(
+    JNIEnv* env, jclass
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    jfloat values[9] = {};
+    const nova::SceneObject* object = gScene.selected();
+    if (object) {
+        values[0] = object->transform.position.x;
+        values[1] = object->transform.position.y;
+        values[2] = object->transform.position.z;
+        values[3] = object->transform.rotation.x;
+        values[4] = object->transform.rotation.y;
+        values[5] = object->transform.rotation.z;
+        values[6] = object->transform.scale.x;
+        values[7] = object->transform.scale.y;
+        values[8] = object->transform.scale.z;
+    }
+    jfloatArray result = env->NewFloatArray(9);
+    env->SetFloatArrayRegion(result, 0, 9, values);
+    return result;
+}
+
+JNIEXPORT void JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetSelectedTransform(
+    JNIEnv* env, jclass, jfloatArray values
+) {
+    if (!values || env->GetArrayLength(values) < 9) return;
+    jfloat v[9];
+    env->GetFloatArrayRegion(values, 0, 9, v);
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized) return;
+    nova::SceneObject* object = gScene.selected();
+    if (!object) return;
+    object->transform.position = nova::Vec3(v[0], v[1], v[2]);
+    object->transform.rotation = nova::Vec3(v[3], v[4], v[5]);
+    object->transform.scale = nova::Vec3(
+        std::max(0.01f, v[6]),
+        std::max(0.01f, v[7]),
+        std::max(0.01f, v[8])
+    );
+}
+
 JNIEXPORT jint JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeGetFps(
     JNIEnv*,
