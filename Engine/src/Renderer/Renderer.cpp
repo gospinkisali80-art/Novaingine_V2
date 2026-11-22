@@ -184,16 +184,16 @@ out vec4 fragColor;
 const float PI = 3.14159265358979323846;
 
 float shadowAmount(vec4 position) {
+    if (position.w <= 0.0) return 0.0;
+
     vec3 projected = position.xyz / position.w;
     projected = projected * 0.5 + 0.5;
 
-    if (projected.z > 1.0 ||
+    if (projected.z < 0.0 || projected.z > 1.0 ||
         projected.x < 0.0 || projected.x > 1.0 ||
         projected.y < 0.0 || projected.y > 1.0) {
         return 0.0;
     }
-
-    if (position.w <= 0.0) return 0.0;
 
     float NdotL = max(dot(
         normalize(vNormal),
@@ -331,9 +331,12 @@ void main() {
 
     // World-space concrete tiling: grout, subtle slab variation and fine
     // mineral grain. Applied to upward-facing neutral rough surfaces only.
-    if (N.y > 0.72 && roughness > 0.78 && metallic < 0.05 &&
+    if (roughness > 0.78 && metallic < 0.05 &&
         max(albedo.r, max(albedo.g, albedo.b)) < 0.62) {
-        vec2 tileUV = vWorldPosition.xz * 0.5;
+        vec2 concretePlane = abs(N.y) > 0.72
+            ? vWorldPosition.xz
+            : (abs(N.x) > 0.72 ? vWorldPosition.zy : vWorldPosition.xy);
+        vec2 tileUV = concretePlane * 0.5;
         vec2 cell = fract(tileUV);
         vec2 tileId = floor(tileUV);
         float grout = 1.0 - smoothstep(0.025, 0.055,
@@ -505,7 +508,7 @@ float noise3(vec3 p) {
 float cloudFbm(vec3 p) {
     float value = 0.0;
     float amplitude = 0.55;
-    for (int octave = 0; octave < 4; ++octave) {
+    for (int octave = 0; octave < 3; ++octave) {
         value += noise3(p) * amplitude;
         p = p * 2.03 + vec3(7.1, 3.7, 5.3);
         amplitude *= 0.5;
@@ -534,9 +537,7 @@ void main() {
     // Two broad world-direction cloud layers with soft multi-octave edges.
     float cloudHeight = max(ray.y + 0.19, 0.10);
     vec2 cloudPlane = ray.xz / cloudHeight;
-    float broadClouds = cloudFbm(vec3(cloudPlane * 0.72, 1.8));
-    float fineClouds = cloudFbm(vec3(cloudPlane * 1.85, 4.7));
-    float cloudField = broadClouds * 0.72 + fineClouds * 0.28;
+    float cloudField = cloudFbm(vec3(cloudPlane * 1.05, 2.8));
     float cloudMask = smoothstep(0.48, 0.68, cloudField);
     cloudMask *= smoothstep(-0.035, 0.20, ray.y);
     float underside = clamp(0.78 + ray.y * 0.38, 0.62, 1.0);
