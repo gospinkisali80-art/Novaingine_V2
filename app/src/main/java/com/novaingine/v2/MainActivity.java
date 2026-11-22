@@ -3,6 +3,11 @@ package com.novaingine.v2;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.pm.ActivityInfo;
+import android.content.Intent;
+import android.net.Uri;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
@@ -289,7 +294,7 @@ public final class MainActivity extends Activity
         addDrawerSection("WORLD BUILDING");
         addDrawerItem("Terrain Sculpting", "Generate terrain and raise, lower, smooth or flatten it", this::showTerrainSculptor);
         addDrawerItem("Foliage Painting", "Paint trees and bushes into the scene", this::showFoliagePainter);
-        addDrawerItem("Asset Importing", "Import 3D models and textures", () -> showToolStatus("Asset Importing"));
+        addDrawerItem("Import Blender Model (.glb)", "Import a Blender-exported glTF binary model", this::openGlbPicker);
 
         addDrawerSection("RENDERING");
         addDrawerItem("Global Illumination", "Indirect lighting controls", () -> showToolStatus("Global Illumination"));
@@ -404,6 +409,53 @@ public final class MainActivity extends Activity
         params.setMargins(0, dp(3), 0, dp(3));
         toolsDrawer.addView(item, params);
         item.setOnClickListener(view -> action.run());
+    }
+
+    private static final int REQUEST_IMPORT_GLB = 7412;
+
+    private void openGlbPicker() {
+        closeToolsDrawer();
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"model/gltf-binary", "application/octet-stream"});
+        startActivityForResult(intent, REQUEST_IMPORT_GLB);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != REQUEST_IMPORT_GLB || resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        Uri uri = data.getData();
+        new Thread(() -> {
+            File modelFile = new File(getCacheDir(), "nova_import_" + System.currentTimeMillis() + ".glb");
+            try (InputStream input = getContentResolver().openInputStream(uri);
+                 FileOutputStream output = new FileOutputStream(modelFile)) {
+                if (input == null) throw new IllegalStateException("Could not open selected file.");
+                byte[] buffer = new byte[8192];
+                int read;
+                long total = 0;
+                while ((read = input.read(buffer)) != -1) {
+                    total += read;
+                    if (total > 100L * 1024L * 1024L) throw new IllegalArgumentException("Model is larger than 100 MB.");
+                    output.write(buffer, 0, read);
+                }
+                runOnUiThread(() -> {
+                    android.widget.Toast.makeText(this, "Importing Blender model…", android.widget.Toast.LENGTH_SHORT).show();
+                    engineSurface.importGlb(modelFile.getAbsolutePath(), count -> {
+                        String message = count > 0
+                                ? "Imported " + count + " mesh part(s) from Blender."
+                                : "Model import failed. Check that this is a valid .glb with triangle meshes.";
+                        android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show();
+                        if (count <= 0) modelFile.delete();
+                    });
+                });
+            } catch (Exception error) {
+                modelFile.delete();
+                runOnUiThread(() -> android.widget.Toast.makeText(this,
+                        "Model import error: " + error.getMessage(), android.widget.Toast.LENGTH_LONG).show());
+            }
+        }, "Nova-GLB-Copy").start();
     }
 
     private void showFoliagePainter() {
