@@ -88,7 +88,11 @@ public final class AIEditorAssistant {
         transcript.setTextColor(Color.WHITE);
         transcript.setTextSize(13);
         transcript.setPadding(dp(10), dp(10), dp(10), dp(10));
-        transcript.setText("Novaingine AI is ready.\n\nTry: “Create a large platform beside the central pedestal” or “Plant 12 trees around the arena.”\n\nSet your Groq API key using API KEY to connect the model.");
+        transcript.setText("Novaingine AI is ready.
+
+Try: “Create a large platform beside the central pedestal” or “Plant 12 trees around the arena.”
+
+Set your Groq API key using API KEY to connect the model.");
         scroll.addView(transcript);
         LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1);
         scrollParams.topMargin = dp(8);
@@ -135,7 +139,9 @@ public final class AIEditorAssistant {
                     String value = field.getText().toString().trim();
                     activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE)
                             .edit().putString(KEY, value).apply();
-                    append("\n[Groq key saved on this device.]\n");
+                    append("
+[Groq key saved on this device.]
+");
                 })
                 .setNegativeButton("CANCEL", null).show();
     }
@@ -150,9 +156,12 @@ public final class AIEditorAssistant {
         if (text.isEmpty()) return;
         if (getKey().isEmpty()) { showKeyDialog(); return; }
         prompt.setText("");
-        append("\nYOU: " + text + "\n");
+        append("
+YOU: " + text + "
+");
         busy = true;
-        append("NOVA AI: Thinking and checking available scene tools...\n");
+        append("NOVA AI: Thinking and checking available scene tools...
+");
         worker.execute(() -> {
             try {
                 JSONObject user = new JSONObject();
@@ -161,12 +170,14 @@ public final class AIEditorAssistant {
                 history.put(user);
                 String answer = runAgent();
                 main.post(() -> {
-                    append(answer + "\n");
+                    append(answer + "
+");
                     busy = false;
                 });
             } catch (Exception ex) {
                 main.post(() -> {
-                    append("Connection error: " + safeMessage(ex) + "\n");
+                    append("Connection error: " + safeMessage(ex) + "
+");
                     busy = false;
                 });
             }
@@ -210,7 +221,8 @@ public final class AIEditorAssistant {
                 toolMessage.put("tool_call_id", id);
                 toolMessage.put("content", result);
                 history.put(toolMessage);
-                final String status = "Tool: " + name + " → " + result + "\n";
+                final String status = "Tool: " + name + " → " + result + "
+";
                 main.post(() -> append(status));
             }
         }
