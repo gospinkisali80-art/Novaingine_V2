@@ -287,7 +287,7 @@ public final class MainActivity extends Activity
         addDrawerItem("Redo", "Redo the last undone scene edit", () -> engineSurface.redoScene());
 
         addDrawerSection("WORLD BUILDING");
-        addDrawerItem("Terrain Sculpting", "Terrain height and brush tools", () -> showToolStatus("Terrain Sculpting"));
+        addDrawerItem("Terrain Sculpting", "Generate terrain and raise, lower, smooth or flatten it", this::showTerrainSculptor);
         addDrawerItem("Foliage Painting", "Place and paint vegetation", () -> showToolStatus("Foliage Painting"));
         addDrawerItem("Asset Importing", "Import 3D models and textures", () -> showToolStatus("Asset Importing"));
 
@@ -404,6 +404,83 @@ public final class MainActivity extends Activity
         params.setMargins(0, dp(3), 0, dp(3));
         toolsDrawer.addView(item, params);
         item.setOnClickListener(view -> action.run());
+    }
+
+    private void showTerrainSculptor() {
+        closeToolsDrawer();
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(18), dp(8), dp(18), dp(4));
+
+        TextView info = new TextView(this);
+        info.setText("Create an editable 11 x 11 terrain patch, then sculpt around a world X/Z position. The patch is centered near the arena.");
+        info.setTextColor(Color.DKGRAY);
+        info.setTextSize(12);
+        content.addView(info);
+
+        String[] labels = {"Brush center X", "Brush center Z", "Brush radius", "Brush strength"};
+        EditText[] fields = new EditText[4];
+        String[] defaults = {"0", "-4", "3.0", "0.45"};
+        for (int i = 0; i < fields.length; i++) {
+            TextView label = new TextView(this);
+            label.setText(labels[i]);
+            label.setTextColor(Color.DKGRAY);
+            label.setTextSize(11);
+            content.addView(label);
+
+            EditText field = new EditText(this);
+            field.setSingleLine(true);
+            field.setInputType(android.text.InputType.TYPE_CLASS_NUMBER
+                    | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+                    | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+            field.setText(defaults[i]);
+            content.addView(field);
+            fields[i] = field;
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("Terrain Sculpting")
+                .setView(content)
+                .setNeutralButton("Generate", (dialog, which) -> {
+                    boolean ok = engineSurface.createTerrain();
+                    android.widget.Toast.makeText(this,
+                            ok ? "Terrain generated" : "Terrain generation failed",
+                            android.widget.Toast.LENGTH_SHORT).show();
+                })
+                .setPositiveButton("Raise", (dialog, which) ->
+                        applyTerrainBrush(fields, 0))
+                .setNegativeButton("More Tools", (dialog, which) ->
+                        showTerrainModes(fields))
+                .show();
+    }
+
+    private float terrainValue(EditText field, float fallback) {
+        try {
+            return Float.parseFloat(field.getText().toString().trim());
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
+
+    private void applyTerrainBrush(EditText[] fields, int mode) {
+        float x = terrainValue(fields[0], 0.0f);
+        float z = terrainValue(fields[1], -4.0f);
+        float radius = terrainValue(fields[2], 3.0f);
+        float strength = terrainValue(fields[3], 0.45f);
+        boolean changed = engineSurface.sculptTerrain(x, z, radius, strength, mode);
+        android.widget.Toast.makeText(this,
+                changed ? "Terrain sculpted" : "No terrain found or no change",
+                android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+    private void showTerrainModes(EditText[] fields) {
+        new AlertDialog.Builder(this)
+                .setTitle("Terrain Brush")
+                .setItems(new String[]{"Lower", "Smooth", "Flatten"},
+                        (dialog, which) -> applyTerrainBrush(fields, which + 1))
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
     private void showToolStatus(String toolName) {
