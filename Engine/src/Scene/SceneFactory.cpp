@@ -84,88 +84,65 @@ void addMannequin(Scene& scene, Vec3 origin, const std::string& prefix) {
 void SceneFactory::buildDefaultScene(Scene& scene) {
     scene.clear();
 
+    // Reference layout: a rectangular grey test arena with vivid yellow
+    // geometry, a central round pedestal, and open sky around the platform.
     const Color floor = makeColor(0.5490196f, 0.5490196f, 0.5490196f);
     const Color wall = makeColor(0.6039216f, 0.6039216f, 0.6039216f);
-    const Color inner = makeColor(0.6039216f, 0.6039216f, 0.6039216f);
-    const Color gray = makeColor(0.43f, 0.45f, 0.48f);
     const Color yellow = makeColor(0.9490196f, 0.7176471f, 0.0196078f);
+    const Color yellowShade = makeColor(0.78f, 0.39f, 0.055f);
+    const Color concrete = makeColor(0.50f, 0.51f, 0.53f);
 
     addObject(scene, "Arena Floor", PrimitiveType::Plane,
         {0.0f, -0.08f, 0.0f}, {40.0f, 1.0f, 40.0f}, floor);
 
     addObject(scene, "North Perimeter Wall", PrimitiveType::Cube,
-        {0.0f, 0.72f, -20.0f}, {40.4f, 1.5f, 0.2f}, wall);
-
+        {0.0f, 0.68f, -20.0f}, {40.4f, 1.4f, 0.28f}, wall);
     addObject(scene, "South Perimeter Wall", PrimitiveType::Cube,
-        {0.0f, 0.72f, 20.0f}, {40.4f, 1.5f, 0.2f}, wall);
-
+        {0.0f, 0.68f, 20.0f}, {40.4f, 1.4f, 0.28f}, wall);
     addObject(scene, "East Perimeter Wall", PrimitiveType::Cube,
-        {20.0f, 0.72f, 0.0f}, {0.2f, 1.5f, 40.0f}, wall);
-
+        {20.0f, 0.68f, 0.0f}, {0.28f, 1.4f, 40.0f}, wall);
     addObject(scene, "West Perimeter Wall", PrimitiveType::Cube,
-        {-20.0f, 0.72f, 0.0f}, {0.2f, 1.5f, 40.0f}, wall);
+        {-20.0f, 0.68f, 0.0f}, {0.28f, 1.4f, 40.0f}, wall);
 
-    addObject(scene, "North Inner Wall Face", PrimitiveType::Cube,
-        {0.0f, 0.72f, -19.88f}, {39.8f, 1.45f, 0.025f}, inner);
-
-    addObject(scene, "South Inner Wall Face", PrimitiveType::Cube,
-        {0.0f, 0.72f, 19.88f}, {39.8f, 1.45f, 0.025f}, inner);
-
-    addObject(scene, "East Inner Wall Face", PrimitiveType::Cube,
-        {19.88f, 0.72f, 0.0f}, {0.025f, 1.45f, 39.8f}, inner);
-
-    addObject(scene, "West Inner Wall Face", PrimitiveType::Cube,
-        {-19.88f, 0.72f, 0.0f}, {0.025f, 1.45f, 39.8f}, inner);
-
+    // Central two-level circular pedestal: grey body and yellow top.
+    addObject(scene, "Central Pedestal Base", PrimitiveType::Cylinder,
+        {0.0f, 0.22f, 0.0f}, {3.7f, 0.44f, 3.7f}, concrete);
     addObject(scene, "Central Yellow Platform", PrimitiveType::Cylinder,
-        {0.0f, 0.38f, 0.0f}, {2.8f, 0.38f, 2.8f}, yellow);
+        {0.0f, 0.51f, 0.0f}, {2.9f, 0.16f, 2.9f}, yellow);
 
-    addObject(scene, "Central Yellow Upper Platform", PrimitiveType::Cylinder,
-        {0.0f, 0.88f, 0.0f}, {1.35f, 0.22f, 1.35f}, yellow);
+    // Back row: large yellow columns and a low curved obstacle.
+    addObject(scene, "Back Left Yellow Column", PrimitiveType::Cylinder,
+        {-7.8f, 1.0f, -13.0f}, {1.65f, 2.0f, 1.65f}, yellow);
+    addObject(scene, "Back Right Yellow Column", PrimitiveType::Cylinder,
+        {8.0f, 1.0f, -13.0f}, {1.65f, 2.0f, 1.65f}, yellow);
+    addObject(scene, "Back Center Curved Obstacle", PrimitiveType::HalfCylinder,
+        {0.0f, 0.72f, -13.2f}, {5.0f, 1.45f, 2.2f}, yellow);
 
-    addObject(scene, "Yellow Column 01", PrimitiveType::Cylinder,
-        {-8.0f, 1.0f, -7.0f}, {0.55f, 1.0f, 0.55f}, yellow);
+    // Left-side cylinders, staggered like the reference image.
+    addObject(scene, "Left Front Yellow Cylinder", PrimitiveType::Cylinder,
+        {-15.0f, 0.92f, 4.8f}, {2.35f, 1.85f, 2.35f}, yellowShade);
+    addObject(scene, "Left Rear Yellow Cylinder", PrimitiveType::Cylinder,
+        {-15.0f, 0.76f, -2.0f}, {2.1f, 1.52f, 2.1f}, yellow);
+    addObject(scene, "Left Low Yellow Platform", PrimitiveType::HalfCylinder,
+        {-11.4f, 0.42f, -8.0f}, {3.2f, 0.82f, 2.5f}, yellow);
 
-    addObject(scene, "Yellow Column 02", PrimitiveType::Cylinder,
-        {8.0f, 1.0f, -7.0f}, {0.55f, 1.0f, 0.55f}, yellow);
+    // Right-side angular yellow platform and a separate raised block.
+    addObject(scene, "Right Yellow Wedge", PrimitiveType::Wedge,
+        {13.0f, 0.68f, 2.5f}, {6.5f, 1.35f, 5.0f}, yellow,
+        {0.0f, -18.0f, 0.0f});
+    addObject(scene, "Right Yellow Raised Block", PrimitiveType::Cube,
+        {10.5f, 0.72f, -8.5f}, {2.4f, 1.45f, 2.4f}, yellow);
 
-    addObject(scene, "Yellow Column 03", PrimitiveType::Cylinder,
-        {-8.0f, 1.0f, 7.0f}, {0.55f, 1.0f, 0.55f}, yellow);
-
-    addObject(scene, "Yellow Column 04", PrimitiveType::Cylinder,
-        {8.0f, 1.0f, 7.0f}, {0.55f, 1.0f, 0.55f}, yellow);
-
-    addObject(scene, "Yellow Column 05", PrimitiveType::HalfCylinder,
-        {-13.0f, 0.85f, 0.0f}, {0.8f, 0.85f, 0.8f}, yellow);
-
-    addObject(scene, "Yellow Column 06", PrimitiveType::HalfCylinder,
-        {13.0f, 0.85f, 0.0f}, {0.8f, 0.85f, 0.8f}, yellow);
-
-    addObject(scene, "Gray Ramp A", PrimitiveType::Ramp,
-        {-5.0f, 0.45f, -1.8f}, {3.5f, 0.9f, 2.2f}, gray,
+    // Foreground yellow angular platform and smaller grey ramp detail.
+    addObject(scene, "Foreground Yellow Wedge", PrimitiveType::Wedge,
+        {-1.8f, 0.42f, 16.0f}, {8.5f, 0.85f, 5.2f}, yellow,
+        {0.0f, 180.0f, 0.0f});
+    addObject(scene, "Center Grey Ramp", PrimitiveType::Ramp,
+        {-4.6f, 0.42f, 2.0f}, {3.4f, 0.85f, 2.5f}, concrete,
         {0.0f, 0.0f, -18.0f});
-
-    addObject(scene, "Gray Ramp B", PrimitiveType::Ramp,
-        {-9.0f, 0.35f, 2.2f}, {2.8f, 0.7f, 2.0f}, gray,
+    addObject(scene, "Rear Grey Ramp", PrimitiveType::Ramp,
+        {4.5f, 0.32f, -7.0f}, {2.8f, 0.65f, 2.0f}, concrete,
         {0.0f, 0.0f, 16.0f});
-
-    addObject(scene, "Northwest Yellow Wedge", PrimitiveType::Wedge,
-        {-15.0f, 0.55f, -14.0f}, {3.0f, 1.1f, 3.0f}, yellow);
-
-    addObject(scene, "Northeast Yellow Wedge", PrimitiveType::Wedge,
-        {15.0f, 0.55f, -14.0f}, {3.0f, 1.1f, 3.0f}, yellow);
-
-    addObject(scene, "Southwest Yellow Wedge", PrimitiveType::Wedge,
-        {-15.0f, 0.55f, 14.0f}, {3.0f, 1.1f, 3.0f}, yellow);
-
-    addObject(scene, "Southeast Yellow Wedge", PrimitiveType::Wedge,
-        {15.0f, 0.55f, 14.0f}, {3.0f, 1.1f, 3.0f}, yellow);
-
-    addObject(scene, "Foreground Gray Block", PrimitiveType::Cube,
-        {-2.0f, 1.0f, 17.5f}, {5.0f, 2.0f, 3.0f}, gray);
-
-    addMannequin(scene, {5.0f, 0.0f, -11.0f}, "Mannequin A");
-    addMannequin(scene, {-11.0f, 0.0f, 5.0f}, "Mannequin B");
 
     scene.deselect();
 }
