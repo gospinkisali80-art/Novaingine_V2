@@ -7,6 +7,7 @@
 #include <fstream>
 #include <iomanip>
 #include <mutex>
+#include <vector>
 
 #include "../Camera/Camera.h"
 #include "../Scene/Scene.h"
@@ -40,6 +41,60 @@ float gGridSnap = 10.0f;
 float gRotationSnap = 10.0f;
 float gScaleSnap = 0.25f;
 float gCameraSpeed = 3.0f;
+
+struct SceneSnapshot {
+    std::vector<nova::SceneObject> objects;
+    uint32_t selectedId = 0;
+};
+
+std::vector<SceneSnapshot> gUndoStack;
+std::vector<SceneSnapshot> gRedoStack;
+constexpr size_t MAX_UNDO_STEPS = 64;
+
+SceneSnapshot captureScene() {
+    SceneSnapshot snapshot;
+    snapshot.objects = gScene.getObjects();
+    snapshot.selectedId = gScene.selectedId();
+    return snapshot;
+}
+
+void recordUndo() {
+    gUndoStack.push_back(captureScene());
+    if (gUndoStack.size() > MAX_UNDO_STEPS) {
+        gUndoStack.erase(gUndoStack.begin());
+    }
+    gRedoStack.clear();
+}
+
+void restoreScene(const SceneSnapshot& snapshot) {
+    gScene.clear();
+    for (const nova::SceneObject& object : snapshot.objects) {
+        gScene.addObject(object);
+    }
+    if (snapshot.selectedId != 0) {
+        gScene.select(snapshot.selectedId);
+    }
+    gRenderer.releaseAllMeshes();
+    gVerticalVelocity = 0.0f;
+    gPhysicsGrounded = false;
+    gJumpWasPressed = false;
+}
+
+bool applyUndo(bool undo) {
+    std::vector<SceneSnapshot>& source = undo ? gUndoStack : gRedoStack;
+    std::vector<SceneSnapshot>& destination = undo ? gRedoStack : gUndoStack;
+    if (source.empty()) return false;
+
+    destination.push_back(captureScene());
+    if (destination.size() > MAX_UNDO_STEPS) {
+        destination.erase(destination.begin());
+    }
+
+    SceneSnapshot target = source.back();
+    source.pop_back();
+    restoreScene(target);
+    return true;
+}
 
 int gViewportWidth = 1;
 int gViewportHeight = 1;
@@ -682,6 +737,7 @@ Java_com_novaingine_v2_NativeBridge_nativeMoveSelected(
         return;
     }
 
+    if (gScene.selected() != nullptr) recordUndo();
     moveSelected(
         static_cast<float>(deltaX),
         static_cast<float>(deltaY),
@@ -827,7 +883,9 @@ Java_com_novaingine_v2_NativeBridge_nativeLoadScene(
     }
 
     std::lock_guard<std::mutex> lock(engineMutex);
+    recordUndo();
     gScene = loaded;
+    gRenderer.releaseAllMeshes();
     gVerticalVelocity = 0.0f;
     gPhysicsGrounded = false;
     gJumpWasPressed = false;
@@ -896,6 +954,7 @@ Java_com_novaingine_v2_NativeBridge_nativeSetSelectedTransform(
     if (!gInitialized) return;
     nova::SceneObject* object = gScene.selected();
     if (!object) return;
+    recordUndo();
     object->transform.position = nova::Vec3(v[0], v[1], v[2]);
     object->transform.rotation = nova::Vec3(v[3], v[4], v[5]);
     object->transform.scale = nova::Vec3(
@@ -951,6 +1010,22 @@ Java_com_novaingine_v2_NativeBridge_nativeGetTriangles(
     );
 }
 
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeUndo(
+    JNIEnv*, jclass
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    return (gInitialized && applyUndo(true)) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeRedo(
+    JNIEnv*, jclass
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    return (gInitialized && applyUndo(false)) ? JNI_TRUE : JNI_FALSE;
+}
+
 JNIEXPORT void JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeResetScene(
     JNIEnv*,
@@ -962,7 +1037,9 @@ Java_com_novaingine_v2_NativeBridge_nativeResetScene(
         return;
     }
 
+    recordUndo();
     nova::SceneFactory::buildDefaultScene(gScene);
+    gRenderer.releaseAllMeshes();
     gCamera.reset();
     gVerticalVelocity = 0.0f;
     gPhysicsGrounded = false;
