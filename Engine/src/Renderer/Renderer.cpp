@@ -253,116 +253,51 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0) {
 void main() {
     vec3 N = normalize(vNormal);
     vec3 L = normalize(-uLightDirection);
-    vec3 V = normalize(uCameraPosition - vWorldPosition);
-    vec3 H = normalize(V + L);
 
-    float rawNdotL = max(dot(N, L), 0.0);
-    float NdotV = max(dot(N, V), 0.001);
-    float NdotL = max(dot(N, L), 0.001);
+    // Scene material colors are authored as sRGB values. Convert once here.
+    vec3 albedo = pow(
+        clamp(uBaseColor, vec3(0.0), vec3(1.0)),
+        vec3(2.2)
+    );
 
-    vec3 albedo = pow(max(uBaseColor, vec3(0.0)), vec3(2.2));
-
-    float roughness = clamp(uRoughness, 0.04, 1.0);
-    float metallic = clamp(uMetallic, 0.0, 1.0);
-
-    // Material inspection modes.
+    // Keep material inspection modes available to the editor.
     if (uViewMode == 5) {
         fragColor = vec4(N * 0.5 + 0.5, 1.0);
         return;
     }
-
     if (uViewMode == 6) {
-        fragColor = vec4(vec3(roughness), 1.0);
+        fragColor = vec4(vec3(clamp(uRoughness, 0.04, 1.0)), 1.0);
         return;
     }
-
     if (uViewMode == 7) {
-        fragColor = vec4(vec3(metallic), 1.0);
+        fragColor = vec4(vec3(clamp(uMetallic, 0.0, 1.0)), 1.0);
         return;
     }
 
-    // Unlit mode.
+    // Hemisphere colors are sRGB #6E9BD6 and #7A7468, converted to linear.
+    vec3 skyColor = pow(vec3(110.0, 155.0, 214.0) / 255.0, vec3(2.2));
+    vec3 groundColor = pow(vec3(122.0, 116.0, 104.0) / 255.0, vec3(2.2));
+    vec3 hemisphere = mix(groundColor, skyColor, N.y * 0.5 + 0.5);
+    vec3 ambient = hemisphere * albedo;
+
+    // Direct sunlight: sRGB #FFF4E0 converted to linear, fixed intensity 3.
+    vec3 sunColor = pow(vec3(255.0, 244.0, 224.0) / 255.0, vec3(2.2));
+    float NdotL = max(dot(N, L), 0.0);
+    vec3 sunDiffuse = albedo * sunColor * NdotL * 3.0;
+
+    vec3 result = ambient + sunDiffuse;
+
+    // Unlit inspection still shares the same final exposure/display transform.
     if (uViewMode == 1) {
-        vec3 unlit = albedo * uExposure;
-        unlit = (unlit * (2.51 * unlit + 0.03)) /
-                (unlit * (2.43 * unlit + 0.59) + 0.14);
-        unlit = clamp(unlit, 0.0, 1.0);
-        unlit = pow(unlit, vec3(1.0 / 2.2));
-        fragColor = vec4(unlit, uColor.a);
-        return;
+        result = albedo;
+    } else if (uViewMode == 3) {
+        result = vec3(NdotL);
     }
 
-    vec3 skyColor = pow(
-        vec3(0.4314, 0.6078, 0.8392),
-        vec3(2.2)
-    );
-
-    vec3 groundColor = pow(
-        vec3(0.4784, 0.4549, 0.4078),
-        vec3(2.2)
-    );
-
-    vec3 hemiColor = mix(
-        groundColor,
-        skyColor,
-        N.y * 0.5 + 0.5
-    );
-
-    vec3 F0 = mix(vec3(0.04), albedo, metallic);
-    vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
-
-    float D = distributionGGX(N, H, roughness);
-    float G = geometrySmith(N, V, L, roughness);
-
-    vec3 specular = (D * G * F) /
-        max(4.0 * NdotV * NdotL, 0.001);
-
-    vec3 kd = (1.0 - F) * (1.0 - metallic);
-
-    vec3 sunColor = pow(
-        vec3(1.0, 0.9569, 0.8784),
-        vec3(2.2)
-    );
-
-    float sunIntensity = 3.0;
-
-    vec3 direct =
-        (kd * albedo / PI + specular) *
-        sunColor *
-        sunIntensity *
-        rawNdotL;
-
-    float shadow = 0.0;
-
-    if (uUseShadows == 1) {
-        shadow = shadowAmount(vShadowPosition) * uShadowStrength;
-    }
-
-    direct *= (1.0 - shadow);
-
-    vec3 ambient =
-        hemiColor * albedo * (1.0 - metallic);
-
-    // Small ambient specular keeps metallic surfaces visible.
-    ambient += F0 * 0.03;
-
-    vec3 result = ambient + direct;
-
-    if (uViewMode == 3) {
-        result = vec3(rawNdotL);
-    } else if (uViewMode == 4) {
-        result = ambient + direct;
-    }
-
+    // Exposure, ACES fit, clamp, and exactly one linear-to-sRGB conversion.
     result *= uExposure;
-
-    // Preserve the existing ACES tone mapping and sRGB conversion.
-    result = (
-        result * (2.51 * result + 0.03)
-    ) / (
-        result * (2.43 * result + 0.59) + 0.14
-    );
-
+    result = (result * (2.51 * result + 0.03)) /
+             (result * (2.43 * result + 0.59) + 0.14);
     result = clamp(result, 0.0, 1.0);
     result = pow(result, vec3(1.0 / 2.2));
 
@@ -1478,6 +1413,8 @@ void Renderer::renderScenePass(
     Scene& scene,
     const Camera& camera
 ) {
+    // Opaque sky and scene rendering must never inherit overlay blending.
+    glDisable(GL_BLEND);
     glBindFramebuffer(GL_FRAMEBUFFER, sceneTarget_.framebuffer);
     glViewport(0, 0, width_, height_);
 
@@ -1530,6 +1467,7 @@ void Renderer::renderSelectionMask(
 void Renderer::renderSelectionOutline() {
     if (!sceneTarget_.valid) return;
 
+    glDisable(GL_BLEND);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, width_, height_);
 
