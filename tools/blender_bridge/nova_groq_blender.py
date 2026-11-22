@@ -70,6 +70,10 @@ for item in plan["objects"]:
     obj.data.materials.append(mat)
     for poly in mesh.polygons:
         poly.use_smooth = True
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    obj.select_set(False)
 bpy.ops.object.select_all(action="SELECT")
 bpy.context.view_layer.objects.active = bpy.context.selected_objects[0] if bpy.context.selected_objects else None
 bpy.ops.wm.save_as_mainfile(filepath=output_blend)
