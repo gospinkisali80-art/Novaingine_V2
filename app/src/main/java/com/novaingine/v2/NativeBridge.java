@@ -98,6 +98,9 @@ public final class NativeBridge {
             boolean paused
     );
 
+    public static native boolean nativeSaveScene(String path);
+    public static native boolean nativeLoadScene(String path);
+
     public static native String[] nativeGetSceneObjects();
     public static native void nativeSelectObjectById(int objectId);
     public static native float[] nativeGetSelectedTransform();
