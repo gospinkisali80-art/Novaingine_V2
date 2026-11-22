@@ -198,6 +198,24 @@ public final class MainActivity extends Activity
         details.setBackgroundColor(0xFF3A3A3A);
         details.setOnClickListener(view -> showDetailsInspector());
 
+        TextView undo = new TextView(this);
+        undo.setText("UNDO");
+        undo.setTextColor(Color.WHITE);
+        undo.setTextSize(10);
+        undo.setGravity(Gravity.CENTER);
+        undo.setPadding(dp(10), dp(8), dp(10), dp(8));
+        undo.setBackgroundColor(0xFF3A3A3A);
+        undo.setOnClickListener(view -> engineSurface.undoScene());
+
+        TextView redo = new TextView(this);
+        redo.setText("REDO");
+        redo.setTextColor(Color.WHITE);
+        redo.setTextSize(10);
+        redo.setGravity(Gravity.CENTER);
+        redo.setPadding(dp(10), dp(8), dp(10), dp(8));
+        redo.setBackgroundColor(0xFF3A3A3A);
+        redo.setOnClickListener(view -> engineSurface.redoScene());
+
         LinearLayout.LayoutParams itemParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -205,6 +223,8 @@ public final class MainActivity extends Activity
         itemParams.setMargins(dp(3), 0, dp(3), 0);
         panel.addView(outliner, itemParams);
         panel.addView(details, itemParams);
+        panel.addView(undo, itemParams);
+        panel.addView(redo, itemParams);
 
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT,
