@@ -288,7 +288,7 @@ public final class MainActivity extends Activity
 
         addDrawerSection("WORLD BUILDING");
         addDrawerItem("Terrain Sculpting", "Generate terrain and raise, lower, smooth or flatten it", this::showTerrainSculptor);
-        addDrawerItem("Foliage Painting", "Place and paint vegetation", () -> showToolStatus("Foliage Painting"));
+        addDrawerItem("Foliage Painting", "Paint trees and bushes into the scene", this::showFoliagePainter);
         addDrawerItem("Asset Importing", "Import 3D models and textures", () -> showToolStatus("Asset Importing"));
 
         addDrawerSection("RENDERING");
@@ -404,6 +404,75 @@ public final class MainActivity extends Activity
         params.setMargins(0, dp(3), 0, dp(3));
         toolsDrawer.addView(item, params);
         item.setOnClickListener(view -> action.run());
+    }
+
+    private void showFoliagePainter() {
+        closeToolsDrawer();
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(18), dp(8), dp(18), dp(4));
+
+        TextView info = new TextView(this);
+        info.setText("Paint a bounded group of low-poly trees or bushes around a world X/Z position. Each tree uses a trunk and canopy. Foliage is part of the scene and supports Undo.");
+        info.setTextColor(Color.DKGRAY);
+        info.setTextSize(12);
+        content.addView(info);
+
+        String[] labels = {"Brush center X", "Brush center Z", "Brush radius", "Plant count"};
+        String[] defaults = {"0", "-4", "8", "18"};
+        EditText[] fields = new EditText[4];
+        for (int i = 0; i < fields.length; i++) {
+            TextView label = new TextView(this);
+            label.setText(labels[i]);
+            label.setTextColor(Color.DKGRAY);
+            label.setTextSize(11);
+            content.addView(label);
+
+            EditText field = new EditText(this);
+            field.setSingleLine(true);
+            field.setInputType(android.text.InputType.TYPE_CLASS_NUMBER
+                    | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+                    | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+            field.setText(defaults[i]);
+            content.addView(field);
+            fields[i] = field;
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("Foliage Painter")
+                .setView(content)
+                .setPositiveButton("Paint Trees", (dialog, which) ->
+                        applyFoliageBrush(fields, 0))
+                .setNeutralButton("Paint Bushes", (dialog, which) ->
+                        applyFoliageBrush(fields, 1))
+                .setNegativeButton("Clear Foliage", (dialog, which) -> {
+                    int removed = engineSurface.clearFoliage();
+                    android.widget.Toast.makeText(this,
+                            removed > 0 ? "Removed " + removed + " foliage objects" : "No foliage to clear",
+                            android.widget.Toast.LENGTH_SHORT).show();
+                })
+                .show();
+    }
+
+    private float foliageValue(EditText field, float fallback) {
+        try {
+            return Float.parseFloat(field.getText().toString().trim());
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
+
+    private void applyFoliageBrush(EditText[] fields, int kind) {
+        float x = foliageValue(fields[0], 0.0f);
+        float z = foliageValue(fields[1], -4.0f);
+        float radius = foliageValue(fields[2], 8.0f);
+        int count = Math.round(foliageValue(fields[3], 18.0f));
+        int planted = engineSurface.paintFoliage(x, z, radius, count, kind);
+        android.widget.Toast.makeText(this,
+                planted > 0 ? "Painted " + planted + (kind == 0 ? " trees" : " bushes")
+                        : "No foliage placed (mobile scene limit reached)",
+                android.widget.Toast.LENGTH_SHORT).show();
     }
 
     private void showTerrainSculptor() {
