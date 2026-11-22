@@ -1031,6 +1031,7 @@ Java_com_novaingine_v2_NativeBridge_nativeSculptTerrain(
     }
     if (tiles.empty()) return JNI_FALSE;
 
+    const SceneSnapshot beforeSculpt = captureScene();
     std::vector<float> oldHeights;
     oldHeights.reserve(tiles.size());
     for (const nova::SceneObject* tile : tiles) {
@@ -1081,7 +1082,13 @@ Java_com_novaingine_v2_NativeBridge_nativeSculptTerrain(
         }
     }
 
-    if (changed) recordUndo();
+    if (changed) {
+        gUndoStack.push_back(beforeSculpt);
+        if (gUndoStack.size() > MAX_UNDO_STEPS) {
+            gUndoStack.erase(gUndoStack.begin());
+        }
+        gRedoStack.clear();
+    }
     return changed ? JNI_TRUE : JNI_FALSE;
 }
 
