@@ -113,6 +113,13 @@ public final class EngineSurface extends GLSurfaceView
         }
     }
 
+    public void importGlb(String path, java.util.function.IntConsumer callback) {
+        queueEvent(() -> {
+            int imported = NativeBridge.nativeImportGlb(path);
+            if (callback != null) post(() -> callback.accept(imported));
+        });
+    }
+
     public int getFps() {
         return currentFps;
     }
