@@ -10,6 +10,7 @@
 #include "../Scene/Scene.h"
 #include "../Scene/SceneFactory.h"
 #include "../Renderer/Renderer.h"
+#include "../Physics/PhysicsWorld.h"
 
 #define NOVA_LOG_TAG "NovaEngine"
 #define NOVA_LOG(...) __android_log_print(ANDROID_LOG_INFO, NOVA_LOG_TAG, __VA_ARGS__)
@@ -26,6 +27,10 @@ bool gInitialized = false;
 bool gPaused = false;
 bool gWorldSpace = true;
 bool gSnapEnabled = true;
+bool gPhysicsEnabled = false;
+bool gPhysicsGrounded = false;
+bool gJumpWasPressed = false;
+float gVerticalVelocity = 0.0f;
 
 int gTransformMode = 0;
 
@@ -497,12 +502,31 @@ Java_com_novaingine_v2_NativeBridge_nativeFly(
 
     gCamera.movementSpeed = gCameraSpeed;
 
-    gCamera.move(
-        static_cast<float>(forward),
-        static_cast<float>(right),
-        static_cast<float>(vertical),
-        std::clamp(static_cast<float>(deltaTime), 0.0f, 0.1f)
+    const float dt = std::clamp(
+        static_cast<float>(deltaTime), 0.0f, 0.05f
     );
+
+    if (gPhysicsEnabled) {
+        nova::PhysicsWorld::step(
+            gScene,
+            gCamera,
+            static_cast<float>(forward),
+            static_cast<float>(right),
+            static_cast<float>(vertical),
+            dt,
+            gCameraSpeed,
+            gVerticalVelocity,
+            gPhysicsGrounded,
+            gJumpWasPressed
+        );
+    } else {
+        gCamera.move(
+            static_cast<float>(forward),
+            static_cast<float>(right),
+            static_cast<float>(vertical),
+            dt
+        );
+    }
 }
 
 JNIEXPORT void JNICALL
@@ -698,6 +722,31 @@ Java_com_novaingine_v2_NativeBridge_nativeSetExposure(
 }
 
 JNIEXPORT void JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetPhysicsEnabled(
+    JNIEnv*,
+    jclass,
+    jboolean enabled
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+
+    gPhysicsEnabled = enabled == JNI_TRUE;
+    gVerticalVelocity = 0.0f;
+    gPhysicsGrounded = false;
+    gJumpWasPressed = false;
+
+    if (gPhysicsEnabled) {
+        gCamera.position.y = std::max(
+            gCamera.position.y,
+            nova::PhysicsWorld::PLAYER_HEIGHT + 0.05f
+        );
+        gCamera.target = gCamera.position + gCamera.forward() * 10.0f;
+    }
+
+    NOVA_LOG("Character physics %s",
+        gPhysicsEnabled ? "enabled" : "disabled");
+}
+
+JNIEXPORT void JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeSetPaused(
     JNIEnv*,
     jclass,
@@ -767,6 +816,9 @@ Java_com_novaingine_v2_NativeBridge_nativeResetScene(
 
     nova::SceneFactory::buildDefaultScene(gScene);
     gCamera.reset();
+    gVerticalVelocity = 0.0f;
+    gPhysicsGrounded = false;
+    gJumpWasPressed = false;
 
     NOVA_LOG(
         "Scene reset. Objects: %zu",
