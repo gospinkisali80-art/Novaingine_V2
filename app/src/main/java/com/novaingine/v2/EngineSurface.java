@@ -130,6 +130,23 @@ public final class EngineSurface extends GLSurfaceView
         verticalMovement = clamp(value);
     }
 
+    public String[] getSceneObjects() {
+        return NativeBridge.nativeGetSceneObjects();
+    }
+
+    public float[] getSelectedTransform() {
+        return NativeBridge.nativeGetSelectedTransform();
+    }
+
+    public void selectObjectById(int objectId) {
+        queueEvent(() -> NativeBridge.nativeSelectObjectById(objectId));
+    }
+
+    public void setSelectedTransform(float[] values) {
+        float[] copy = values.clone();
+        queueEvent(() -> NativeBridge.nativeSetSelectedTransform(copy));
+    }
+
     public void setPhysicsEnabled(boolean enabled) {
         queueEvent(() -> NativeBridge.nativeSetPhysicsEnabled(enabled));
     }
