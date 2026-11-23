@@ -33,6 +33,7 @@ public final class EngineSurface extends GLSurfaceView
     private volatile float sculptPressure = 1.0f;
     private volatile int sculptBrush;
     private volatile boolean sculptSymmetry = true;
+    private boolean sculptStrokeActive;
 
     public EngineSurface(Context context) {
         super(context);
@@ -129,13 +130,43 @@ public final class EngineSurface extends GLSurfaceView
 
     public void setSculptOptions(boolean enabled, int brush, float radius, float strength, float falloff, boolean symmetry, float pressure) {
         sculptMode = enabled;
-        sculptBrush = Math.max(0, Math.min(7, brush));
+        sculptBrush = Math.max(0, Math.min(11, brush));
         sculptRadius = Math.max(0.01f, Math.min(2.0f, radius));
         sculptStrength = Math.max(0.001f, Math.min(0.5f, strength));
         sculptFalloff = Math.max(0.0f, Math.min(1.0f, falloff));
         sculptSymmetry = symmetry;
         sculptPressure = Math.max(0.05f, Math.min(1.0f, pressure));
         queueEvent(() -> NativeBridge.nativeSetSculptMode(enabled));
+    }
+
+    // Brush strokes run locally on the GL thread; they never call Groq.
+    public void handleSculptTouch(MotionEvent event, float viewportTopOffset) {
+        if (!sculptMode) return;
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN && event.getPointerCount() == 1) {
+            sculptStrokeActive = true;
+            final float x = event.getX(0);
+            final float y = event.getY(0) + viewportTopOffset;
+            queueEvent(() -> {
+                NativeBridge.nativeBeginSculptStroke();
+                NativeBridge.nativeSculptAtScreen(x, y, sculptRadius, sculptStrength,
+                        sculptBrush, sculptFalloff, sculptSymmetry, sculptPressure);
+            });
+        } else if (action == MotionEvent.ACTION_MOVE && sculptStrokeActive
+                && event.getPointerCount() == 1) {
+            final float x = event.getX(0);
+            final float y = event.getY(0) + viewportTopOffset;
+            queueEvent(() -> NativeBridge.nativeSculptAtScreen(x, y, sculptRadius,
+                    sculptStrength, sculptBrush, sculptFalloff, sculptSymmetry, sculptPressure));
+        } else if (action == MotionEvent.ACTION_POINTER_DOWN
+                || action == MotionEvent.ACTION_POINTER_UP
+                || action == MotionEvent.ACTION_UP
+                || action == MotionEvent.ACTION_CANCEL) {
+            if (sculptStrokeActive) {
+                sculptStrokeActive = false;
+                queueEvent(NativeBridge::nativeEndSculptStroke);
+            }
+        }
     }
 
     public void createSculptMesh(int shape, int density, java.util.function.IntConsumer callback) {
