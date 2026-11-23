@@ -9,7 +9,7 @@ import sys
 import urllib.error
 import urllib.request
 
-MODEL = "llama-3.3-70b-versatile"
+MODEL = "openai/gpt-oss-120b"
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 SYSTEM_PROMPT = """You are a professional 3D modeler creating a Blender scene for a mobile game engine.
@@ -176,10 +176,8 @@ def groq_generate(prompt, api_key):
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": "Create this 3D asset: " + prompt}
         ],
-        "temperature": 0.25,
         "max_completion_tokens": 6000,
         "reasoning_effort": "low",
-        "include_reasoning": False,
         "response_format": {"type": "json_object"}
     }
     request = urllib.request.Request(
