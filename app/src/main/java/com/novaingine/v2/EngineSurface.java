@@ -3,6 +3,7 @@ package com.novaingine.v2;
 import android.content.Context;
 import android.opengl.GLSurfaceView;
 import android.view.MotionEvent;
+import android.view.View;
 
 public final class EngineSurface extends GLSurfaceView
         implements GLSurfaceView.Renderer {
@@ -157,7 +158,7 @@ public final class EngineSurface extends GLSurfaceView
     }
 
     // Convert overlay coordinates into the actual GL SurfaceView coordinate space.
-    public void handleSculptTouch(MotionEvent event, View sourceView) {
+    public void handleSculptTouchFromView(MotionEvent event, View sourceView) {
         if (sourceView == null) {
             handleSculptTouch(event, 0.0f);
             return;
