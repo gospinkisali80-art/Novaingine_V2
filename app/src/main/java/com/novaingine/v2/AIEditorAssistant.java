@@ -245,8 +245,8 @@ public final class AIEditorAssistant {
         JSONObject body = new JSONObject();
         body.put("model", getModel());
         body.put("messages", chatMessages);
-        body.put("temperature", 0.6);
-        body.put("max_tokens", 160);
+        body.put("temperature", 0.7);
+        body.put("max_completion_tokens", 1024);
         JSONObject response = postLocalModel(body);
         JSONObject choice = response.getJSONArray("choices").getJSONObject(0);
         JSONObject message = choice.getJSONObject("message");
@@ -273,7 +273,7 @@ public final class AIEditorAssistant {
             body.put("tools", tools);
             body.put("tool_choice", "auto");
             body.put("temperature", 0.6);
-            body.put("max_tokens", 2048);
+            body.put("max_completion_tokens", 4096);
             body.put("parallel_tool_calls", false);
             JSONObject response = postLocalModel(body);
             JSONObject message = response.getJSONArray("choices").getJSONObject(0).getJSONObject("message");
