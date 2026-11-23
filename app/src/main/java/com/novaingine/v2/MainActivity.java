@@ -722,6 +722,7 @@ public final class MainActivity extends Activity
         if (statisticsText != null) statisticsText.setVisibility(View.GONE);
         if (editorPanels != null) editorPanels.setVisibility(View.GONE);
 
+        engineSurface.setManualSculptWorkspace(true);
         manualSculptWorkspace = new ManualSculptWorkspace(
                 this, engineSurface, this::closeManualSculpting);
         rootLayout.addView(manualSculptWorkspace, new FrameLayout.LayoutParams(
@@ -734,6 +735,7 @@ public final class MainActivity extends Activity
         rootLayout.removeView(manualSculptWorkspace);
         manualSculptWorkspace = null;
         engineSurface.setSculptOptions(false, 0, 0.18f, 0.12f, 0.5f, 0, false, 1.0f);
+        engineSurface.setManualSculptWorkspace(false);
         if (editorToolbar != null) editorToolbar.setVisibility(View.VISIBLE);
         if (viewportInput != null) viewportInput.setVisibility(View.VISIBLE);
         if (statisticsText != null) statisticsText.setVisibility(View.VISIBLE);
