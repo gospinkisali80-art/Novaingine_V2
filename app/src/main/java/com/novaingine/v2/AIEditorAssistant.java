@@ -502,6 +502,7 @@ public final class AIEditorAssistant {
                     if (result == -1) return "No active sculpt mesh is selected. Call create_sculpt_mesh first, then sculpt the selected sphere or plane.";
                     if (result == -2) return "Engine is not initialized.";
                     if (result == -4) return "The selected mesh has no active SculptMesh CPU data. Create a dense sculpt mesh first.";
+                    if (result == -6) return "This stroke is too long for one safe batch. Split it into shorter paths; dab spacing is preserved at 25% of brush radius.";
                     return "Sculpt stroke rejected. Check the path triplets and brush parameters.";
                 }
                 case "extrude_face": return runMeshModeling(0, a.optInt("faceIndex", 0), number(a, "distance", 0.5f), "Face extrusion");
