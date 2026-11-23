@@ -31,23 +31,26 @@ and download the Novaingine-V2-debug artifact.
 Development in progress.
 
 
-## Grok AI assistant (Android)
+## Groq AI assistant (Android)
 
-Novaingine's in-app AI assistant connects directly to the xAI Grok API. No local model, llama.cpp server, Termux runtime, Groq provider, or other model provider is used by the Android assistant.
+Novaingine's Android AI assistant uses the Groq Chat Completions API with the `openai/gpt-oss-120b` model. It does not use xAI/Grok, local llama.cpp, Termux, or a local model server.
 
-### Connect Grok
+### Connect Groq
 
-1. Install and open Novaingine.
-2. Open **Tools → AI Assistant**.
-3. Tap **API KEY** and enter your xAI API key.
-4. Enter a scene request such as "Build a detailed treehouse" or "Sculpt a dragon".
-5. Grok can call Novaingine's validated scene tools. The app executes mesh creation, sculpt brush passes, transforms, terrain and foliage operations locally in the native engine.
+1. Open **Tools → AI Assistant**.
+2. Tap **API KEY** and enter a Groq API key managed by the account owner/parent or guardian.
+3. Describe an object or scene, for example "Build a detailed treehouse" or "Create a low-poly sports car".
+4. Groq returns chat responses and function calls. Novaingine validates and executes its mesh creation, sculpting, transforms, terrain and foliage tools locally in the native engine.
 
-The key is stored in the app's private SharedPreferences on the device. It is not embedded in the repository or APK source. Do not share the key or commit it to GitHub. This client-side storage is not a substitute for a secure server-side secret vault on a device that may be rooted or compromised.
+Endpoint: `https://api.groq.com/openai/v1/chat/completions`
 
-**Billing warning:** xAI API access is billed by usage and is not the same as free access to Grok on its website. An API key alone does not provide free API credits. Check the current xAI API pricing and account billing before making requests. The app does not enforce a spending limit.
+Model: `openai/gpt-oss-120b`
 
-Official docs: [xAI API quickstart](https://docs.x.ai/overview), [Function calling](https://docs.x.ai/developers/tools/function-calling), [Pricing](https://x.ai/api).
+The API key is stored in the app's private SharedPreferences on the device. It is not embedded in the repository or APK source. Never share the key or commit it to GitHub. This client-side storage is not a substitute for a secure server-side secret vault.
+
+**Free-tier note:** Groq provides a rate-limited free tier. Limits depend on the account and model and may change; check the Groq Limits page. Requests may be rejected when an account reaches its limits. The older `llama-3.3-70b-versatile` model from the original Python example was retired from free and developer tiers on August 16, 2026; Novaingine therefore uses the current GPT-OSS 120B model instead.
+
+Official docs: [Groq models](https://console.groq.com/docs/models), [Rate limits](https://console.groq.com/docs/rate-limits), [Tool use](https://console.groq.com/docs/tool-use/local-tool-calling).
 
 ## Blender desktop companion (separate from Android local AI)
 
