@@ -51,7 +51,7 @@ Use Termux on the same phone as Novaingine. The first setup needs internet to do
    `mkdir -p ~/models`
    `curl -L --fail -o ~/models/Qwen3-4B-Q4_K_M.gguf https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf`
 4. Start the server and leave Termux running:
-   `~/llama.cpp/build/bin/llama-server -m ~/models/Qwen3-4B-Q4_K_M.gguf --host 127.0.0.1 --port 8080 -c 2048 -t 4 --alias nova-local --jinja`
+   `~/llama.cpp/build/bin/llama-server -m ~/models/Qwen3-4B-Q4_K_M.gguf --host 127.0.0.1 --port 8080 -c 2048 -t 4 --alias nova-local --jinja --reasoning off`
 5. Open Novaingine → Tools → AI Assistant. It connects to `http://127.0.0.1:8080/v1/chat/completions`.
 
 ### Android memory notes
