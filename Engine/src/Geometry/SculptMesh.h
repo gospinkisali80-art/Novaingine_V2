@@ -385,7 +385,12 @@ public:
                 for(auto& chunk:chunks) {
                     bool dirty=false;
                     for(uint32_t tri:chunk.triangles)if(touched[indices[tri*3]]||touched[indices[tri*3+1]]||touched[indices[tri*3+2]]){dirty=true;break;}
-                    if(dirty)chunk.dirty=true;
+                    if(dirty) {
+                        chunk.dirty=true;
+                        chunk.bounds=AABB{};
+                        for(uint32_t tri:chunk.triangles)
+                            for(int k=0;k<3;k++)chunk.bounds.add(positions[indices[tri*3+k]]);
+                    }
                 }
             }
             return changed;
