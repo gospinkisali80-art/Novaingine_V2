@@ -210,7 +210,6 @@ public:
             if(n.leaf()){for(uint32_t j=n.first;j<n.first+n.count;j++)n.bounds.merge(triangleBounds(triangleOrder[j]));}
             else {n.bounds.merge(bvh[n.left].bounds);n.bounds.merge(bvh[n.right].bounds);}
         }
-        for(auto& c:chunks){c.bounds=AABB{};for(uint32_t t:c.triangles)for(int k=0;k<3;k++)c.bounds.add(positions[indices[t*3+k]]);c.dirty=true;}
     }
     static bool rayTriangle(const Vec3& o,const Vec3& d,const Vec3& a,const Vec3& b,const Vec3& c,float& t,float& u,float& v){
         Vec3 e1=b-a,e2=c-a,p=cross(d,e2);float det=dot(e1,p);if(std::fabs(det)<1e-8f)return false;
@@ -339,7 +338,7 @@ public:
                         }
                         case 3: p=p+ownNormal*(amount*b.radius*0.1f);break;
                         case 4: {
-                            Vec3 lineStart=grabCaptured?grabLastCenter:c;
+                            Vec3 lineStart=c-movement;
                             Vec3 axis=c-lineStart;float den=dot(axis,axis);
                             Vec3 closest=den>1e-8f?lineStart+axis*std::clamp(dot(p-lineStart,axis)/den,0.0f,1.0f):c;
                             p=p+normalize(closest-p)*(std::fabs(amount)*b.radius*0.45f);break;
