@@ -192,8 +192,8 @@ public final class ViewportInput extends View {
     public boolean onTouchEvent(MotionEvent event) {
         // Leave the top editor toolbar interactive while this transparent overlay
         // captures viewport touches across the full screen.
-        if (event.getY() < 48.0f * density) return false;
         int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN && event.getY() < 48.0f * density) return false;
         int index = event.getActionIndex();
         int pointerId = event.getPointerId(index);
         float x = event.getX(index);
