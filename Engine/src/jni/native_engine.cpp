@@ -1227,6 +1227,8 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateSculptMesh(
         { std::lock_guard<std::mutex> qlock(gSculptQueueMutex); gSculptQueue.clear(); }
         std::lock_guard<std::mutex> dataLock(gSculptDataMutex);
         gSculptMesh.reset();gSculptMeshId=0;
+        gSculptMeshDirty.store(false,std::memory_order_release);
+        gSculptMaskDirty.store(false,std::memory_order_release);
     }
     if (!mesh.isValid()) return 0;
     recordUndo(true);
@@ -1246,6 +1248,7 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateSculptMesh(
         std::lock_guard<std::mutex> dataLock(gSculptDataMutex);
         gSculptMeshId=id;
         gSculptMeshDirty.store(false,std::memory_order_release);
+        gSculptMaskDirty.store(false,std::memory_order_release);
         gSculptMasks[id]=gSculptMesh->mask;
     } else {
         gSculptMasks[id] = std::vector<float>(gCustomMeshes[id].vertexCount(), 0.0f);
@@ -1272,6 +1275,7 @@ Java_com_novaingine_v2_NativeBridge_nativeEnterSculptMode(JNIEnv*, jclass) {
     { std::lock_guard<std::mutex> qlock(gSculptQueueMutex); gSculptQueue.clear(); }
     { std::lock_guard<std::mutex> dataLock(gSculptDataMutex); gSculptMesh.reset(); }
     gSculptMeshDirty.store(false,std::memory_order_release);
+    gSculptMaskDirty.store(false,std::memory_order_release);
     gSculptStrokeActive = false;
     gHasPreviousSculptHit = false;
     gSculptMode = true;
