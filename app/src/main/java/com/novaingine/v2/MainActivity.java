@@ -44,6 +44,7 @@ public final class MainActivity extends Activity
     private LinearLayout toolsDrawer;
     private boolean toolsDrawerOpen;
     private boolean drawerPhysicsEnabled;
+    private ManualSculptWorkspace manualSculptWorkspace;
 
     private int normalToolbarHeight;
     private int normalInputHeight;
@@ -300,7 +301,7 @@ public final class MainActivity extends Activity
 
         addDrawerSection("WORLD BUILDING");
         addDrawerItem("Terrain Sculpting", "Sculpt the generated terrain surface", this::showTerrainSculptor);
-        addDrawerItem("Mesh Sculpting", "Draw, smooth, flatten or grab imported mesh vertices", this::showMeshSculptor);
+        addDrawerItem("Manual Sculpting", "Open the full-screen portrait sculpt workspace with all 12 brushes", this::showMeshSculptor);
         addDrawerItem("Foliage Painting", "Paint trees and bushes into the scene", this::showFoliagePainter);
         addDrawerItem("Import Blender Model (.glb)", "Import a Blender-exported glTF binary model", this::openGlbPicker);
 
@@ -556,118 +557,43 @@ public final class MainActivity extends Activity
     }
     private void showMeshSculptor() {
         closeToolsDrawer();
-        LinearLayout content = new LinearLayout(this);
-        content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(16), dp(8), dp(16), dp(8));
+        openManualSculpting();
+    }
 
-        TextView info = new TextView(this);
-        info.setText("Create a dense sphere or plane, select a mesh, choose a brush, then enable Sculpt Mode. Close this panel and drag one finger directly on the mesh for continuous local sculpting. Two fingers pan/zoom. Brush strokes do not use Groq.");
-        info.setTextColor(Color.DKGRAY);
-        info.setTextSize(12);
-        content.addView(info);
+    private void openManualSculpting() {
+        if (manualSculptWorkspace != null) return;
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+        if (editorToolbar != null) editorToolbar.setVisibility(View.GONE);
+        if (viewportInput != null) viewportInput.setVisibility(View.GONE);
+        if (statisticsText != null) statisticsText.setVisibility(View.GONE);
+        if (editorPanels != null) editorPanels.setVisibility(View.GONE);
 
-        java.util.function.BiConsumer<String, Runnable> actionButton = (label, action) -> {
-            TextView b = new TextView(this);
-            b.setText(label);
-            b.setTextColor(Color.WHITE);
-            b.setTextSize(13);
-            b.setGravity(Gravity.CENTER);
-            b.setPadding(dp(12), dp(12), dp(12), dp(12));
-            b.setBackgroundColor(0xFF354B63);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            lp.setMargins(0, dp(3), 0, dp(3));
-            content.addView(b, lp);
-            b.setOnClickListener(v -> action.run());
-        };
+        manualSculptWorkspace = new ManualSculptWorkspace(
+                this, engineSurface, this::closeManualSculpting);
+        rootLayout.addView(manualSculptWorkspace, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+    }
 
-        actionButton.accept("CREATE SCULPT SPHERE", () ->
-                engineSurface.createSculptMesh(0, 48, id ->
-                        android.widget.Toast.makeText(this,
-                                id > 0 ? "Sculpt sphere created and selected" : "Could not create sculpt sphere",
-                                android.widget.Toast.LENGTH_SHORT).show()));
-        actionButton.accept("CREATE DENSE SCULPT PLANE", () ->
-                engineSurface.createSculptMesh(1, 96, id ->
-                        android.widget.Toast.makeText(this,
-                                id > 0 ? "Dense sculpt plane created and selected" : "Could not create sculpt plane",
-                                android.widget.Toast.LENGTH_SHORT).show()));
+    private void closeManualSculpting() {
+        if (manualSculptWorkspace == null) return;
+        rootLayout.removeView(manualSculptWorkspace);
+        manualSculptWorkspace = null;
+        engineSurface.setSculptOptions(false, 0, 0.18f, 0.12f, 0.5f, true, 1.0f);
+        if (editorToolbar != null) editorToolbar.setVisibility(View.VISIBLE);
+        if (viewportInput != null) viewportInput.setVisibility(View.VISIBLE);
+        if (statisticsText != null) statisticsText.setVisibility(View.VISIBLE);
+        if (editorPanels != null) editorPanels.setVisibility(View.VISIBLE);
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+    }
 
-        Spinner brush = new Spinner(this);
-        String[] brushes = {"Draw", "Smooth", "Grab", "Inflate", "Pinch", "Flatten", "Crease", "Mask", "Clay", "Scrape", "Layer", "Unmask"};
-        brush.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item, brushes));
-        content.addView(brush);
-
-        String[] labels = {"Radius (0.01 - 2.0)", "Strength (0.001 - 0.5)", "Falloff (0 - 1)", "Pressure / brush size (0.05 - 1)"};
-        String[] defaults = {"0.18", "0.12", "0.5", "1.0"};
-        EditText[] fields = new EditText[4];
-        for (int i = 0; i < labels.length; i++) {
-            TextView label = new TextView(this);
-            label.setText(labels[i]);
-            label.setTextColor(Color.DKGRAY);
-            content.addView(label);
-            EditText field = new EditText(this);
-            field.setSingleLine(true);
-            field.setInputType(android.text.InputType.TYPE_CLASS_NUMBER
-                    | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
-            field.setText(defaults[i]);
-            content.addView(field);
-            fields[i] = field;
+    @Override
+    public void onBackPressed() {
+        if (manualSculptWorkspace != null) {
+            closeManualSculpting();
+            return;
         }
-
-        CheckBox symmetry = new CheckBox(this);
-        symmetry.setText("X-axis symmetry");
-        symmetry.setTextColor(Color.DKGRAY);
-        symmetry.setChecked(true);
-        content.addView(symmetry);
-
-        java.util.function.Supplier<float[]> readValues = () -> {
-            float[] values = {0.18f, 0.12f, 0.5f, 1.0f};
-            for (int i = 0; i < fields.length; i++) {
-                try { values[i] = Float.parseFloat(fields[i].getText().toString().trim()); }
-                catch (Exception ignored) {}
-            }
-            values[0] = Math.max(0.01f, Math.min(2.0f, values[0]));
-            values[1] = Math.max(0.001f, Math.min(0.5f, values[1]));
-            values[2] = Math.max(0.0f, Math.min(1.0f, values[2]));
-            values[3] = Math.max(0.05f, Math.min(1.0f, values[3]));
-            return values;
-        };
-
-        actionButton.accept("ENABLE VIEWPORT SCULPTING", () -> {
-            float[] v = readValues.get();
-            engineSurface.setSculptOptions(true, brush.getSelectedItemPosition(),
-                    v[0], v[1], v[2], symmetry.isChecked(), v[3]);
-            android.widget.Toast.makeText(this, "Sculpt Mode ON — drag one finger over the selected mesh", android.widget.Toast.LENGTH_LONG).show();
-        });
-        actionButton.accept("UPDATE BRUSH SETTINGS", () -> {
-            float[] v = readValues.get();
-            engineSurface.setSculptOptions(true, brush.getSelectedItemPosition(),
-                    v[0], v[1], v[2], symmetry.isChecked(), v[3]);
-        });
-        actionButton.accept("STOP SCULPT MODE", () -> {
-            engineSurface.setSculptOptions(false, brush.getSelectedItemPosition(),
-                    0.18f, 0.12f, 0.5f, symmetry.isChecked(), 1.0f);
-            android.widget.Toast.makeText(this, "Sculpt Mode OFF", android.widget.Toast.LENGTH_SHORT).show();
-        });
-        actionButton.accept("EXPORT SELECTED MESH AS OBJ", () -> {
-            File folder = getExternalFilesDir(null);
-            if (folder == null) {
-                android.widget.Toast.makeText(this, "Storage folder unavailable", android.widget.Toast.LENGTH_LONG).show();
-                return;
-            }
-            File obj = new File(folder, "Novaingine_Sculpt.obj");
-            engineSurface.exportSelectedObj(obj.getAbsolutePath(), ok ->
-                    android.widget.Toast.makeText(this,
-                            ok ? "OBJ exported: " + obj.getAbsolutePath() : "Select a sculptable mesh first",
-                            android.widget.Toast.LENGTH_LONG).show());
-        });
-
-        new AlertDialog.Builder(this)
-                .setTitle("Viewport Mesh Sculpting")
-                .setView(content)
-                .setPositiveButton("DONE — SCULPT VIEWPORT", (dialog, which) -> {})
-                .setNegativeButton("Close", null)
-                .show();
+        super.onBackPressed();
     }
 
     private void showFoliagePainter() {
@@ -1030,6 +956,7 @@ public final class MainActivity extends Activity
     protected void onDestroy() {
 
         cameraControls = null;
+        manualSculptWorkspace = null;
         viewportInput = null;
         editorToolbar = null;
         engineSurface = null;
