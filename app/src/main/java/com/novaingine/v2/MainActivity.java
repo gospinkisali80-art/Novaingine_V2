@@ -331,7 +331,7 @@ public final class MainActivity extends Activity
         addDrawerSection("GAME SYSTEMS");
         addDrawerItem("Animation", "Keyframes and playback", () -> showToolStatus("Animation"));
         addDrawerItem("Audio", "Sound sources and audio controls", () -> showToolStatus("Audio"));
-        addDrawerItem("AI Assistant", "Free-tier Groq cloud scene-building assistant", this::openAIAssistant);
+        addDrawerItem("AI Assistant", "Groq-hosted Qwen cloud scene-building assistant", this::openAIAssistant);
         addDrawerItem("Visual Scripting", "Create, connect, edit and run gameplay nodes", this::showVisualScriptingEditor);
 
         addDrawerSection("EDITOR");
