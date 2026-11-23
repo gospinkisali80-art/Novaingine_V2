@@ -208,7 +208,9 @@ public final class AIEditorAssistant {
                 "add ", "paint ", "place ", "move ", "rotate ", "scale ",
                 "select ", "delete ", "remove ", "undo", "redo",
                 "terrain", "mesh", "object", "scene", "house", "building",
-                "character", "human", "face", "tree", "bush", "foliage"
+                "character", "human", "face", "tree", "bush", "foliage",
+                "extrude", "inset", "bevel", "loop cut", "loop-cut", "subdivide", "subdivision",
+                "merge vertices", "merge by distance", "knife", "topology", "edit mesh", "vertex", "edge", "face mode"
         };
         for (String word : actionWords) {
             if (q.contains(word)) return true;
