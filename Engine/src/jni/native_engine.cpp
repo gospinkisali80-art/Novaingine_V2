@@ -1327,6 +1327,47 @@ Java_com_novaingine_v2_NativeBridge_nativeSculptSelectedMesh(
     return 1;
 }
 JNIEXPORT jint JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeAISculptSelectedMesh(
+    JNIEnv*, jclass, jfloat cxValue, jfloat cyValue, jfloat czValue,
+    jfloat radiusValue, jfloat strengthValue, jint brushValue,
+    jfloat falloffValue, jboolean symmetryValue,
+    jfloat dragXValue, jfloat dragYValue, jfloat dragZValue
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized) return -2;
+    const uint32_t id = gScene.selectedId();
+    auto found = gCustomMeshes.find(id);
+    if (id == 0 || found == gCustomMeshes.end()) return -1;
+
+    const nova::Vec3 center(
+        std::clamp(static_cast<float>(cxValue), -1000.0f, 1000.0f),
+        std::clamp(static_cast<float>(cyValue), -1000.0f, 1000.0f),
+        std::clamp(static_cast<float>(czValue), -1000.0f, 1000.0f));
+    const float radius = std::clamp(static_cast<float>(radiusValue), 0.01f, 3.0f);
+    const float strength = std::clamp(static_cast<float>(strengthValue), 0.001f, 0.5f);
+    const float falloff = std::clamp(static_cast<float>(falloffValue), 0.0f, 1.0f);
+    const int brushIndex = std::clamp(static_cast<int>(brushValue), 0, 7);
+    const nova::Vec3 drag(
+        std::clamp(static_cast<float>(dragXValue), -2.0f, 2.0f),
+        std::clamp(static_cast<float>(dragYValue), -2.0f, 2.0f),
+        std::clamp(static_cast<float>(dragZValue), -2.0f, 2.0f));
+
+    nova::Mesh edited = found->second;
+    std::vector<float> masks = gSculptMasks[id];
+    const bool changed = nova::MeshSculptor::apply(
+        edited, masks, center, drag, radius, strength,
+        static_cast<nova::SculptBrush>(brushIndex), falloff,
+        symmetryValue == JNI_TRUE);
+    if (!changed) return 0;
+
+    recordUndo(true);
+    if (!gRenderer.uploadMesh(id, edited)) return -3;
+    found->second = std::move(edited);
+    gSculptMasks[id] = std::move(masks);
+    return 1;
+}
+
+JNIEXPORT jint JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeAddPrimitive(
     JNIEnv* env, jclass, jint primitiveValue, jstring nameValue,
     jfloat x, jfloat y, jfloat z, jfloat sx, jfloat sy, jfloat sz,
