@@ -462,13 +462,17 @@ public final class MainActivity extends Activity
     }
 
     private void showDrawerVisibility() {
-        final String[] names = {"Show All", "Hide Grid", "Hide Shadows",
+        final String[] names = {"Sculpt", "Show All", "Hide Grid", "Hide Shadows",
                 "Hide Sky", "Hide Characters", "Show Statistics"};
         final int[] flags = {63, 62, 61, 59, 55, 16};
         new android.app.AlertDialog.Builder(this)
-                .setTitle("Viewport Visibility")
+                .setTitle("Show / Hide")
                 .setItems(names, (dialog, which) -> {
-                    engineSurface.setShowFlags(flags[which]);
+                    if (which == 0) {
+                        engineSurface.enterSculptMode();
+                    } else {
+                        engineSurface.setShowFlags(flags[which - 1]);
+                    }
                     closeToolsDrawer();
                 }).setNegativeButton("Cancel", null).show();
     }
