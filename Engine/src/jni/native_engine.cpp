@@ -94,7 +94,7 @@ void startSculptWorker() {
 void enqueueSculptJob(const SculptDabJob& job) {
     {
         std::lock_guard<std::mutex> lock(gSculptQueueMutex);
-        if(gSculptQueue.size()>=256)gSculptQueue.pop_front();
+        if(gSculptQueue.size()>=4096)gSculptQueue.pop_front();
         gSculptQueue.push_back(job);
     }
     gSculptQueueCv.notify_one();
@@ -1613,6 +1613,15 @@ Java_com_novaingine_v2_NativeBridge_nativeAISculptStroke(
         std::clamp(static_cast<float>(dragZValue),-2.0f,2.0f));
     auto pointAt=[&](size_t i){return nova::Vec3(values[i*3],values[i*3+1],values[i*3+2]);};
 
+    const float spacing=std::max(0.005f,brush.radius*0.25f);
+    size_t estimatedDabs=1;
+    if(pointCount>1) {
+        for(size_t i=0;i+1<pointCount;i++) {
+            float distance=nova::length(pointAt(i+1)-pointAt(i));
+            estimatedDabs+=(size_t)std::max(1,(int)std::ceil(distance/spacing));
+            if(estimatedDabs>240)return -6;
+        }
+    }
     startSculptWorker();
     enqueueSculptJob(SculptDabJob{nova::Vec3(),nova::Vec3(),nova::Vec3(),brush,true,false});
     int dabCount=0;
@@ -1621,16 +1630,13 @@ Java_com_novaingine_v2_NativeBridge_nativeAISculptStroke(
         enqueueSculptJob(SculptDabJob{pointAt(0),up,drag,brush,false,false});
         dabCount=1;
     } else {
-        const float spacing=std::max(0.005f,brush.radius*0.25f);
         nova::Vec3 first=pointAt(0);
         enqueueSculptJob(SculptDabJob{first,up,nova::Vec3(),brush,false,false});
         dabCount=1;
-        for(size_t segmentIndex=0;segmentIndex+1<pointCount&&dabCount<240;segmentIndex++) {
+        for(size_t segmentIndex=0;segmentIndex+1<pointCount;segmentIndex++) {
             nova::Vec3 a=pointAt(segmentIndex),b=pointAt(segmentIndex+1);
             nova::Vec3 segment=b-a;
-            float distance=nova::length(segment);
-            int steps=std::max(1,(int)std::ceil(distance/spacing));
-            steps=std::min(steps,240-dabCount);
+            int steps=std::max(1,(int)std::ceil(nova::length(segment)/spacing));
             for(int step=1;step<=steps;step++) {
                 float t=(float)step/(float)steps;
                 nova::Vec3 center=a+segment*t;
