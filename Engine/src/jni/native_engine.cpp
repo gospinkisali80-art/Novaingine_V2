@@ -1237,7 +1237,7 @@ Java_com_novaingine_v2_NativeBridge_nativeSculptAtScreen(
     const float pressure = std::clamp(static_cast<float>(pressureValue), 0.05f, 1.0f);
     const float radius = std::clamp(static_cast<float>(radiusValue), 0.01f, 2.0f);
     const float strength = std::clamp(static_cast<float>(strengthValue) * pressure, 0.001f, 0.5f);
-    const auto brush = static_cast<nova::SculptBrush>(std::clamp(static_cast<int>(brushValue), 0, 7));
+    const auto brush = static_cast<nova::SculptBrush>(std::clamp(static_cast<int>(brushValue), 0, 11));
     if (!nova::MeshSculptor::apply(found->second, masks, hit, drag, radius, strength,
                                    brush, falloffValue, symmetryValue == JNI_TRUE)) return 0;
     if (brush != nova::SculptBrush::Mask && !gRenderer.uploadMesh(id, found->second)) return 0;
