@@ -44,6 +44,12 @@ public final class MainActivity extends Activity
     private LinearLayout toolsDrawer;
     private boolean toolsDrawerOpen;
     private boolean drawerPhysicsEnabled;
+    private boolean drawerWorldSpace = true;
+    private boolean drawerSnapEnabled = true;
+    private float drawerGridSnap = 10.0f;
+    private float drawerRotationSnap = 10.0f;
+    private float drawerScaleSnap = 0.25f;
+    private float drawerCameraSpeed = 3.07f;
     private ManualSculptWorkspace manualSculptWorkspace;
 
     private int normalToolbarHeight;
@@ -291,6 +297,19 @@ public final class MainActivity extends Activity
         scroll.addView(toolsDrawer);
 
         addDrawerHeader("NOVAINGINE TOOLS", "EDITOR CONTROL CENTER");
+
+        addDrawerSection("VIEWPORT CONTROLS");
+        addDrawerItem("Camera View", "Perspective, top, bottom, front, back, left or right", this::showDrawerCameraViews);
+        addDrawerItem("Rendering Mode", "Lit, unlit, wireframe, normals, roughness and metallic", this::showDrawerRenderModes);
+        addDrawerItem("Show / Hide", "Grid, shadows, sky, characters and statistics", this::showDrawerVisibility);
+        addDrawerItem("Transform Tool", "Select, move, rotate or scale", this::showDrawerTransformModes);
+        addDrawerItem("Coordinate Space: " + (drawerWorldSpace ? "WORLD" : "LOCAL"), "Switch transform orientation", () -> {
+            drawerWorldSpace = !drawerWorldSpace;
+            engineSurface.setWorldSpace(drawerWorldSpace);
+            closeToolsDrawer();
+        });
+        addDrawerItem("Snapping: " + (drawerSnapEnabled ? "ON" : "OFF"), "Toggle snapping; configure grid, rotation and scale increments", this::showDrawerSnapSettings);
+        addDrawerItem("Camera Speed", "Adjust viewport navigation speed", this::showDrawerCameraSpeed);
         addDrawerSection("SCENE");
         addDrawerItem("World Outliner", "Browse and select scene objects", this::showWorldOutliner);
         addDrawerItem("Details Inspector", "Edit position, rotation and scale", this::showDetailsInspector);
@@ -418,6 +437,133 @@ public final class MainActivity extends Activity
         params.setMargins(0, dp(3), 0, dp(3));
         toolsDrawer.addView(item, params);
         item.setOnClickListener(view -> action.run());
+    }
+
+
+    private void showDrawerCameraViews() {
+        final String[] names = {"Perspective", "Top", "Bottom", "Left", "Right", "Front", "Back"};
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Camera View")
+                .setItems(names, (dialog, which) -> {
+                    engineSurface.setCameraView(which);
+                    closeToolsDrawer();
+                }).setNegativeButton("Cancel", null).show();
+    }
+
+    private void showDrawerRenderModes() {
+        final String[] names = {"Lit", "Unlit", "Wireframe", "Detail Lighting",
+                "Lighting Only", "Normals", "Roughness", "Metallic"};
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Rendering Mode")
+                .setItems(names, (dialog, which) -> {
+                    engineSurface.setViewMode(which);
+                    closeToolsDrawer();
+                }).setNegativeButton("Cancel", null).show();
+    }
+
+    private void showDrawerVisibility() {
+        final String[] names = {"Show All", "Hide Grid", "Hide Shadows",
+                "Hide Sky", "Hide Characters", "Show Statistics"};
+        final int[] flags = {63, 62, 61, 59, 55, 16};
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Viewport Visibility")
+                .setItems(names, (dialog, which) -> {
+                    engineSurface.setShowFlags(flags[which]);
+                    closeToolsDrawer();
+                }).setNegativeButton("Cancel", null).show();
+    }
+
+    private void showDrawerTransformModes() {
+        final String[] names = {"Select", "Move", "Rotate", "Scale"};
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Transform Tool")
+                .setItems(names, (dialog, which) -> {
+                    engineSurface.setTransformMode(which);
+                    closeToolsDrawer();
+                }).setNegativeButton("Cancel", null).show();
+    }
+
+    private void showDrawerSnapSettings() {
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(18), dp(8), dp(18), dp(4));
+        CheckBox enabled = new CheckBox(this);
+        enabled.setText("Enable snapping");
+        enabled.setChecked(drawerSnapEnabled);
+        content.addView(enabled);
+        final String[] gridNames = {"1", "5", "10", "25", "50", "100"};
+        final float[] gridValues = {1, 5, 10, 25, 50, 100};
+        final String[] rotationNames = {"1°", "5°", "10°", "15°", "30°", "45°", "90°"};
+        final float[] rotationValues = {1, 5, 10, 15, 30, 45, 90};
+        final String[] scaleNames = {"0.1", "0.25", "0.5", "1.0"};
+        final float[] scaleValues = {0.1f, 0.25f, 0.5f, 1.0f};
+        Spinner grid = new Spinner(this);
+        grid.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item, gridNames));
+        grid.setSelection(indexOfFloat(gridValues, drawerGridSnap));
+        content.addView(drawerLabel("Grid increment"));
+        content.addView(grid);
+        Spinner rotation = new Spinner(this);
+        rotation.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item, rotationNames));
+        rotation.setSelection(indexOfFloat(rotationValues, drawerRotationSnap));
+        content.addView(drawerLabel("Rotation increment"));
+        content.addView(rotation);
+        Spinner scale = new Spinner(this);
+        scale.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item, scaleNames));
+        scale.setSelection(indexOfFloat(scaleValues, drawerScaleSnap));
+        content.addView(drawerLabel("Scale increment"));
+        content.addView(scale);
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Snapping Settings")
+                .setView(content)
+                .setPositiveButton("Apply", (dialog, which) -> {
+                    drawerSnapEnabled = enabled.isChecked();
+                    drawerGridSnap = gridValues[grid.getSelectedItemPosition()];
+                    drawerRotationSnap = rotationValues[rotation.getSelectedItemPosition()];
+                    drawerScaleSnap = scaleValues[scale.getSelectedItemPosition()];
+                    engineSurface.setSnap(drawerSnapEnabled, drawerGridSnap,
+                            drawerRotationSnap, drawerScaleSnap);
+                    closeToolsDrawer();
+                }).setNegativeButton("Cancel", null).show();
+    }
+
+    private int indexOfFloat(float[] values, float target) {
+        for (int i = 0; i < values.length; i++) if (Math.abs(values[i] - target) < 0.001f) return i;
+        return 0;
+    }
+
+    private TextView drawerLabel(String value) {
+        TextView label = new TextView(this);
+        label.setText(value);
+        label.setTextColor(Color.WHITE);
+        label.setTextSize(12);
+        label.setPadding(0, dp(8), 0, dp(2));
+        return label;
+    }
+
+    private void showDrawerCameraSpeed() {
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(20), dp(12), dp(20), dp(8));
+        TextView value = drawerLabel(String.format(java.util.Locale.US, "Speed: %.1f", drawerCameraSpeed));
+        content.addView(value);
+        android.widget.SeekBar speed = new android.widget.SeekBar(this);
+        speed.setMax(100);
+        speed.setProgress(Math.max(0, Math.min(100, Math.round((drawerCameraSpeed - 0.1f) / 9.9f * 100))));
+        content.addView(speed);
+        speed.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(android.widget.SeekBar bar, int progress, boolean fromUser) {
+                drawerCameraSpeed = 0.1f + (progress / 100.0f) * 9.9f;
+                value.setText(String.format(java.util.Locale.US, "Speed: %.1f", drawerCameraSpeed));
+                if (fromUser) engineSurface.setCameraSpeed(drawerCameraSpeed);
+            }
+            @Override public void onStartTrackingTouch(android.widget.SeekBar bar) {}
+            @Override public void onStopTrackingTouch(android.widget.SeekBar bar) {}
+        });
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Camera Speed")
+                .setView(content)
+                .setPositiveButton("Done", (dialog, which) -> closeToolsDrawer())
+                .show();
     }
 
     private static final int REQUEST_IMPORT_GLB = 7412;
