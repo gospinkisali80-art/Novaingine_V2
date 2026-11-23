@@ -129,6 +129,10 @@ public final class EngineSurface extends GLSurfaceView
         });
     }
 
+    public void setManualSculptWorkspace(boolean enabled) {
+        queueEvent(() -> NativeBridge.nativeSetManualSculptWorkspace(enabled));
+    }
+
     public void setSculptOptions(boolean enabled, int brush, float radius, float strength, float falloff, int symmetryAxis, boolean subtract, float pressure) {
         sculptMode = enabled;
         sculptBrush = Math.max(0, Math.min(11, brush));
