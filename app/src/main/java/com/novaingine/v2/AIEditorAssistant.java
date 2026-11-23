@@ -52,7 +52,7 @@ public final class AIEditorAssistant {
         JSONObject system = new JSONObject();
         try {
             system.put("role", "system");
-            system.put("content", "You are NOVA AI, the scene assistant inside Novaingine. Do not create objects from primitive shapes and do not claim that Blender assets can be imported yet. Use only the available scene inspection, terrain, foliage, selection, transform, undo and redo tools. For requests to create detailed meshes or buildings, explain that the Blender-to-Novaingine model pipeline is not connected yet. Inspect the scene when placement matters. Coordinates use X horizontal, Y up, Z depth. Never claim an action succeeded unless its tool reports success. Preserve existing scene content unless the user asks to remove it. Keep mobile performance in mind.");
+            system.put("content", "You are NOVA AI, the Groq-powered sculpting and scene assistant inside Novaingine. You can directly sculpt custom meshes through Novaingine's built-in eight-brush mesh sculptor. Keep the Blender-to-GLB integration available; never remove or replace it. For AI-created sculpted assets, use create_sculpt_mesh to create a dense sphere or plane, then call sculpt_selected_mesh repeatedly with Draw, Smooth, Grab, Inflate, Pinch, Flatten, Crease or Mask to shape the actual selected mesh. Brush centers are LOCAL mesh coordinates; X is left/right, Y is up, Z is depth. A sphere starts around radius 1.0; a plane spans about -1 to +1 in X/Z. Use multiple varied brush passes and smoothing to build recognizable forms; do not merely describe steps. Keep each operation moderate for Android performance. Grab uses dragX/dragY/dragZ to pull geometry. Mask protects vertices from later sculpt passes. If a selected sculptable mesh already exists, sculpt it rather than creating another unless requested. You may also use the existing terrain and scene tools. Never claim success unless a tool confirms it. Preserve existing scene content unless asked to remove it. Be honest about current sculpting limits and do not claim Blender or Unreal parity.");
             history.put(system);
         } catch (Exception ignored) {}
     }
@@ -89,7 +89,7 @@ public final class AIEditorAssistant {
         transcript.setTextColor(Color.WHITE);
         transcript.setTextSize(13);
         transcript.setPadding(dp(10), dp(10), dp(10), dp(10));
-        transcript.setText("Novaingine AI is ready.\n\nTry: “Create a large platform beside the central pedestal” or “Plant 12 trees around the arena.”\n\nSet your Groq API key using API KEY to connect the model.");
+        transcript.setText("Novaingine AI is ready.\n\nTry: “Sculpt a rocky creature with a broad body, head, legs and smooth details” or “Sculpt a rocky hill on a dense plane.” Blender GLB import remains supported.\n\nSet your Groq API key using API KEY to connect the model.");
         scroll.addView(transcript);
         LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1);
         scrollParams.topMargin = dp(8);
@@ -104,7 +104,7 @@ public final class AIEditorAssistant {
         prompt.setMaxLines(3);
         prompt.setTextColor(Color.WHITE);
         prompt.setHintTextColor(0xFF9EADBE);
-        prompt.setHint("Tell the editor what to build...");
+        prompt.setHint("Tell Groq what mesh to sculpt...");
         prompt.setBackgroundColor(0xFF2A3442);
         sendRow.addView(prompt, new LinearLayout.LayoutParams(0, -2, 1));
         Button send = new Button(activity);
@@ -367,6 +367,8 @@ public final class AIEditorAssistant {
         tools.put(tool("inspect_scene", "List scene object IDs and names, and the selected object's transform.", "{\"type\":\"object\",\"properties\":{}}"));
         tools.put(tool("create_terrain", "Generate or replace the editable terrain patch.", "{\"type\":\"object\",\"properties\":{}}"));
         tools.put(tool("sculpt_terrain", "Sculpt terrain. Optional args: x defaults 0, z defaults -4, radius defaults 3, strength defaults 0.4, mode defaults raise. mode: raise, lower, smooth, flatten.", "{\"type\":\"object\",\"properties\":{\"x\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"},\"radius\":{\"type\":\"number\"},\"strength\":{\"type\":\"number\"},\"mode\":{\"type\":\"string\",\"enum\":[\"raise\",\"lower\",\"smooth\",\"flatten\"]}}}"));
+        tools.put(tool("create_sculpt_mesh", "Create and select an editable dense sphere or plane mesh for sculpting. Use density 32-80 on mobile. This creates actual geometry.", "{\"type\":\"object\",\"properties\":{\"shape\":{\"type\":\"string\",\"enum\":[\"sphere\",\"plane\"]},\"density\":{\"type\":\"integer\"}}}"));
+        tools.put(tool("sculpt_selected_mesh", "Apply one real brush pass to the selected custom mesh. brush: draw, smooth, grab, inflate, pinch, flatten, crease or mask. x/y/z are local mesh coordinates. radius 0.01-3; strength 0.001-0.5; falloff 0-1; symmetry mirrors across X. Grab uses dragX/dragY/dragZ. Call repeatedly with different centers and brushes to build a shape.", "{\"type\":\"object\",\"properties\":{\"brush\":{\"type\":\"string\",\"enum\":[\"draw\",\"smooth\",\"grab\",\"inflate\",\"pinch\",\"flatten\",\"crease\",\"mask\"]},\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"},\"radius\":{\"type\":\"number\"},\"strength\":{\"type\":\"number\"},\"falloff\":{\"type\":\"number\"},\"symmetry\":{\"type\":\"boolean\"},\"dragX\":{\"type\":\"number\"},\"dragY\":{\"type\":\"number\"},\"dragZ\":{\"type\":\"number\"}}}"));
         tools.put(tool("paint_foliage", "Paint trees or bushes around world X/Z. kind is tree or bush. Count is limited for mobile performance.", "{\"type\":\"object\",\"properties\":{\"x\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"},\"radius\":{\"type\":\"number\"},\"count\":{\"type\":\"integer\"},\"kind\":{\"type\":\"string\",\"enum\":[\"tree\",\"bush\"]}},\"required\":[\"x\",\"z\",\"radius\",\"count\",\"kind\"]}"));
         tools.put(tool("clear_foliage", "Remove all generated foliage objects.", "{\"type\":\"object\",\"properties\":{}}"));
         tools.put(tool("select_object", "Select an existing scene object by its numeric ID from inspect_scene.", "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"integer\"}},\"required\":[\"id\"]}"));
@@ -406,6 +408,38 @@ public final class AIEditorAssistant {
                     float x=number(a,"x",0), z=number(a,"z",-4), radius=number(a,"radius",3), strength=number(a,"strength",0.4f);
                     boolean sculpted = runOnRenderThread(() -> NativeBridge.nativeSculptTerrain(x,z,radius,strength,mode));
                     return sculpted ? "Terrain sculpted successfully." : "No terrain changed. Generate terrain first or adjust the brush.";
+                }
+                case "create_sculpt_mesh": {
+                    String shapeName = a.optString("shape", "sphere").toLowerCase(java.util.Locale.US);
+                    int shape = shapeName.equals("plane") ? 1 : 0;
+                    int density = Math.max(16, Math.min(80, a.optInt("density", 48)));
+                    int id = runOnRenderThread(() -> NativeBridge.nativeCreateSculptMesh(shape, density));
+                    return id > 0
+                            ? "Created and selected sculptable " + shapeName + " mesh ID " + id + " with density " + density + ". Now sculpt it using sculpt_selected_mesh calls."
+                            : "Could not create sculpt mesh. The engine may not be initialized.";
+                }
+                case "sculpt_selected_mesh": {
+                    String brushName = a.optString("brush", "draw").toLowerCase(java.util.Locale.US);
+                    int brush = brushName.equals("smooth") ? 1
+                            : brushName.equals("grab") ? 2
+                            : brushName.equals("inflate") ? 3
+                            : brushName.equals("pinch") ? 4
+                            : brushName.equals("flatten") ? 5
+                            : brushName.equals("crease") ? 6
+                            : brushName.equals("mask") ? 7 : 0;
+                    float x = number(a, "x", 0), y = number(a, "y", 0), z = number(a, "z", 0);
+                    float radius = Math.max(0.01f, Math.min(3.0f, number(a, "radius", 0.35f)));
+                    float strength = Math.max(0.001f, Math.min(0.5f, number(a, "strength", 0.12f)));
+                    float falloff = Math.max(0.0f, Math.min(1.0f, number(a, "falloff", 0.5f)));
+                    boolean symmetry = a.optBoolean("symmetry", true);
+                    float dx = number(a, "dragX", 0), dy = number(a, "dragY", 0), dz = number(a, "dragZ", 0);
+                    int result = runOnRenderThread(() -> NativeBridge.nativeAISculptSelectedMesh(
+                            x, y, z, radius, strength, brush, falloff, symmetry, dx, dy, dz));
+                    if (result == 1) return "Applied " + brushName + " brush to selected mesh successfully.";
+                    if (result == -1) return "No selected sculptable mesh. Call create_sculpt_mesh first or select an imported custom mesh.";
+                    if (result == -2) return "Engine is not initialized.";
+                    if (result == -3) return "Mesh upload failed.";
+                    return "Brush made no geometry change at that local coordinate. Try another center, a larger radius or a different brush.";
                 }
                 case "paint_foliage": {
                     int kind = a.optString("kind","tree").equals("bush") ? 1 : 0;
