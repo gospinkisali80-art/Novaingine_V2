@@ -37,7 +37,7 @@ Novaingine can import triangle meshes from binary glTF files (`.glb`) through
 **Tools → WORLD BUILDING → Import Blender Model (.glb)**.
 
 The Windows companion at `tools/blender_bridge/nova_groq_blender.py` asks
-Groq OpenAI GPT-OSS 20B for a validated mesh plan, opens Blender in background mode,
+Groq Llama 3.3 70B for a validated mesh plan, opens Blender in background mode,
 creates mesh objects and PBR base-color/roughness/metallic materials, saves a
 `.blend` project, and exports a `.glb` file.
 
