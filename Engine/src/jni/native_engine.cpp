@@ -610,6 +610,7 @@ Java_com_novaingine_v2_NativeBridge_nativeRender(
         if(dataLock.owns_lock()&&gSculptMesh&&gSculptMeshId!=0) {
             nova::Mesh updated;
             if(gSculptMesh->toMesh(updated)) {
+                gSculptMesh->uploadChunks();
                 gCustomMeshes[gSculptMeshId]=std::move(updated);
                 gSculptMasks[gSculptMeshId]=gSculptMesh->mask;
                 gRenderer.uploadMesh(gSculptMeshId,gCustomMeshes[gSculptMeshId]);
