@@ -52,7 +52,7 @@ public final class AIEditorAssistant {
         JSONObject system = new JSONObject();
         try {
             system.put("role", "system");
-            system.put("content", "You are NOVA AI, powered by Groq, the modeling and scene-building assistant inside Novaingine. When asked to build an object, character, vehicle, building, prop or environment, CREATE REAL VISIBLE 3D GEOMETRY IN THE CURRENT SCENE, not just explain how. Prefer create_lathe_mesh for rotational mechanical/architectural parts and create_ellipsoid_mesh for proportioned organic/body forms; these generate real high-resolution meshes locally with very few API tokens. Compose substantial assets from 6-16 distinct, deliberately proportioned parts, not generic stacks of primitives. Use create_mesh_part only for unique irregular geometry; its tool payload is token-expensive. Build recognizable silhouettes, varied cross-sections, layered forms, and connected surfaces. After each logical group inspect_scene, then continue refining. Do not stop after creating a base shape. Each mesh part supports up to 3000 vertices and 6000 triangles, local coordinates -20..20. Use extrude_face, inset_face, bevel_edge, loop_cut, subdivide_mesh, merge_vertices, and knife_cut on the selected mesh to perform real topology edits. Use faceIndex or edgeIndex starting at 0 unless scene inspection supplies a better index. Subdivision is capped at 3 levels and Android mesh complexity is capped. Do not claim a tool operation succeeded unless its result confirms success. Use coherent surfaces and sensible placement; do not make every object from identical boxes. After creating parts, inspect the scene and report exactly what was created. For organic assets, create a dense sculpt mesh first (sphere for characters/creatures/rounded props; plane for terrain-like forms), density 64-80 when mobile performance permits. Then use sculpt_selected_mesh as a real SculptMesh brush stroke tool, not the old low-detail mesh modifier. Brush centers and every point are LOCAL mesh coordinates; X is left/right, Y is up, Z is depth. Use points as a flat list of xyz triplets to draw continuous paths; the engine interpolates dabs at 25% of brush radius. If points are omitted, x/y/z is a single dab. Build organic forms in stages: primary masses with Draw/Clay/Inflate, pull silhouette features with Grab, carve separations with Crease/Pinch, flatten planes with Flatten/Scrape, protect finished regions with Mask, then Smooth lightly to remove lumps. Use several deliberate strokes at different centers and radii rather than one giant dab. Use X symmetry for centered characters and vehicles, Y/Z only when appropriate. Grab accepts dragX/dragY/dragZ for a one-point pull or a points path for a continuous pull. Radius is 0.02-1.0 world units, strength 0-1, hardness/falloff 0-1; subtract reverses Draw, Clay and Inflate. Wait for queued strokes to process before relying on later scene inspection. The AI must make recognizable silhouettes, proportionate anatomy, layered forms, and refined transitions, not merely inflate a sphere. If editing an existing object, inspect and select it first. Preserve all existing scene content unless the user explicitly asks to remove it. Keep Blender desktop bridge and GLB import available. Use existing terrain and scene tools when relevant. Keep operations moderate for Android performance. Never claim a model exists unless creation tools confirm success. If a geometry tool fails, explain the failure. Be honest about current sculpting limits and do not claim Blender or Unreal parity.");
+            system.put("content", "You are NOVA AI, powered by Groq, the modeling and scene-building assistant inside Novaingine. When asked to build an object, character, vehicle, building, prop or environment, CREATE REAL VISIBLE 3D GEOMETRY IN THE CURRENT SCENE, not just explain how. Prefer create_lathe_mesh for rotational mechanical/architectural parts and create_ellipsoid_mesh for proportioned organic/body forms; these generate real high-resolution meshes locally with very few API tokens. Compose substantial assets from 6-16 distinct, deliberately proportioned parts, not generic stacks of primitives. Use create_mesh_part only for unique irregular geometry; its tool payload is token-expensive. Build recognizable silhouettes, varied cross-sections, layered forms, and connected surfaces. After each logical group inspect_scene, then continue refining. Do not stop after creating a base shape. Each mesh part supports up to 3000 vertices and 6000 triangles, local coordinates -20..20. Use extrude_face, inset_face, bevel_edge, loop_cut, subdivide_mesh, merge_vertices, and knife_cut on the selected mesh to perform real topology edits. Use faceIndex or edgeIndex starting at 0 unless scene inspection supplies a better index. Subdivision is capped at 3 levels and Android mesh complexity is capped. Do not claim a tool operation succeeded unless its result confirms success. Use coherent surfaces and sensible placement; do not make every object from identical boxes. After creating parts, inspect the scene and report exactly what was created. For organic assets, create a dense sculpt mesh first (sphere for characters/creatures/rounded props; plane for terrain-like forms), density 64-80 when mobile performance permits. Then use sculpt_selected_mesh as a real SculptMesh brush stroke tool, not the old low-detail mesh modifier. Brush centers and every point are LOCAL mesh coordinates; X is left/right, Y is up, Z is depth. Use points as a flat list of xyz triplets to draw continuous paths; the engine interpolates dabs at 25% of brush radius. If points are omitted, x/y/z is a single dab. Build organic forms in stages: primary masses with Draw/Clay/Inflate, pull silhouette features with Grab, carve separations with Crease/Pinch, flatten planes with Flatten/Scrape, protect finished regions with Mask, then Smooth lightly to remove lumps. Use several deliberate strokes at different centers and radii rather than one giant dab. Use X symmetry for centered characters and vehicles, Y/Z only when appropriate. Grab accepts dragX/dragY/dragZ for a one-point pull or a points path for a continuous pull. Radius is 0.02-1.0 world units, strength 0-1, hardness/falloff 0-1; subtract reverses Draw, Clay and Inflate. Wait for queued strokes to process before relying on later scene inspection. The AI must make recognizable silhouettes, proportionate anatomy, layered forms, and refined transitions, not merely inflate a sphere. If editing an existing object, inspect and select it first. Preserve all existing scene content unless the user explicitly asks to remove it. Keep Blender desktop bridge and GLB import available. Use existing terrain and scene tools when relevant. Keep operations moderate for Android performance. Never claim a model exists unless creation tools confirm success. If a geometry or sculpt tool fails, read its exact error, diagnose the likely cause, and automatically try one corrected alternative (adjust parameters, inspect/select the correct mesh, or use a safer supported operation). Do not repeat an identical failing call. If the corrected retry also fails, stop and explain the actual reason. Never claim success without a successful tool result. Be honest about current sculpting limits and do not claim Blender or Unreal parity.");
             history.put(system);
         } catch (Exception ignored) {}
     }
@@ -319,45 +319,69 @@ public final class AIEditorAssistant {
     private JSONObject postGroqModel(JSONObject body) throws Exception {
         String apiKey = getApiKey();
         if (apiKey.isEmpty()) throw new Exception("Add your Groq API key using the API KEY button first.");
-        HttpURLConnection connection = (HttpURLConnection) new URL(GROQ_CHAT_URL).openConnection();
-        connection.setRequestMethod("POST");
-        connection.setConnectTimeout(5000);
-        connection.setReadTimeout(180000);
-        connection.setDoOutput(true);
-        connection.setRequestProperty("Content-Type", "application/json");
-        connection.setRequestProperty("Authorization", "Bearer " + apiKey);
-        byte[] data = body.toString().getBytes(StandardCharsets.UTF_8);
-        int code;
-        String responseText;
-        try {
-            try (OutputStream out = connection.getOutputStream()) { out.write(data); }
-            code = connection.getResponseCode();
-            java.io.InputStream stream = code >= 200 && code < 300
-                    ? connection.getInputStream() : connection.getErrorStream();
-            StringBuilder result = new StringBuilder();
-            if (stream != null) {
-                try (BufferedReader reader = new BufferedReader(
-                        new InputStreamReader(stream, StandardCharsets.UTF_8))) {
-                    String line;
-                    while ((line = reader.readLine()) != null) result.append(line);
+
+        // Retry only transient network/server/rate-limit failures. Authentication,
+        // invalid-request and other permanent 4xx errors are returned immediately.
+        final int maxAttempts = 3;
+        Exception lastError = null;
+        for (int attempt = 0; attempt < maxAttempts; attempt++) {
+            HttpURLConnection connection = null;
+            try {
+                connection = (HttpURLConnection) new URL(GROQ_CHAT_URL).openConnection();
+                connection.setRequestMethod("POST");
+                connection.setConnectTimeout(8000);
+                connection.setReadTimeout(180000);
+                connection.setDoOutput(true);
+                connection.setRequestProperty("Content-Type", "application/json");
+                connection.setRequestProperty("Authorization", "Bearer " + apiKey);
+                byte[] data = body.toString().getBytes(StandardCharsets.UTF_8);
+                try (OutputStream out = connection.getOutputStream()) { out.write(data); }
+
+                int code = connection.getResponseCode();
+                java.io.InputStream stream = code >= 200 && code < 300
+                        ? connection.getInputStream() : connection.getErrorStream();
+                StringBuilder result = new StringBuilder();
+                if (stream != null) {
+                    try (BufferedReader reader = new BufferedReader(
+                            new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+                        String line;
+                        while ((line = reader.readLine()) != null) result.append(line);
+                    }
                 }
+                String responseText = result.toString();
+                JSONObject json;
+                try {
+                    json = new JSONObject(responseText);
+                } catch (Exception parseError) {
+                    throw new Exception("Groq returned an unreadable response (HTTP " + code + ").");
+                }
+                if (code >= 200 && code < 300) return json;
+
+                String message = json.optJSONObject("error") == null ? json.toString()
+                        : json.getJSONObject("error").optString("message", json.toString());
+                Exception apiError = new Exception("Groq API HTTP " + code + ": " + message);
+                boolean temporary = code == 408 || code == 425 || code == 429
+                        || code == 500 || code == 502 || code == 503 || code == 504;
+                if (!temporary || attempt == maxAttempts - 1) throw apiError;
+                lastError = apiError;
+            } catch (java.io.IOException ex) {
+                lastError = new Exception("Temporary connection problem: "
+                        + (ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage()));
+                if (attempt == maxAttempts - 1) throw lastError;
+            } finally {
+                if (connection != null) connection.disconnect();
             }
-            responseText = result.toString();
-        } catch (java.net.ConnectException ex) {
-            throw new Exception("Could not connect to Groq. Check your internet connection and try again.");
-        } finally {
-            connection.disconnect();
+
+            long waitMs = 1800L * (attempt + 1);
+            main.post(() -> append("NOVA AI: Temporary issue. Retrying automatically...\\n"));
+            try {
+                Thread.sleep(waitMs);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new Exception("AI retry was interrupted.");
+            }
         }
-        JSONObject json;
-        try {
-            json = new JSONObject(responseText);
-        } catch (Exception parseError) {
-            throw new Exception("Groq returned an unreadable response (HTTP " + code + ").");
-        }
-        if (code >= 200 && code < 300) return json;
-        String message = json.optJSONObject("error") == null ? json.toString()
-                : json.getJSONObject("error").optString("message", json.toString());
-        throw new Exception("Groq API HTTP " + code + ": " + message);
+        throw lastError == null ? new Exception("Groq request failed after automatic retries.") : lastError;
     }
 
     private void compactHistoryForNextTurn() {
