@@ -157,6 +157,25 @@ void restoreScene(const SceneSnapshot& snapshot) {
     }
     gRenderer.releaseAllMeshes();
     for (const auto& entry : gCustomMeshes) gRenderer.uploadMesh(entry.first, entry.second);
+    {
+        std::lock_guard<std::mutex> qlock(gSculptQueueMutex);
+        gSculptQueue.clear();
+    }
+    {
+        std::lock_guard<std::mutex> dataLock(gSculptDataMutex);
+        auto restored=gCustomMeshes.find(gSculptMeshId);
+        if(restored!=gCustomMeshes.end()&&gSculptMode) {
+            gSculptMesh.reset(new nova::SculptMesh());
+            const auto& verts=restored->second.getVertices();
+            gSculptMesh->positions.reserve(verts.size());
+            gSculptMesh->normals.reserve(verts.size());
+            for(const auto& v:verts){gSculptMesh->positions.push_back(v.position);gSculptMesh->normals.push_back(v.normal);}
+            gSculptMesh->indices=restored->second.getIndices();
+            gSculptMesh->mask=gSculptMasks[gSculptMeshId];
+            gSculptMesh->buildAdjacency();gSculptMesh->buildChunks();gSculptMesh->buildBVH();
+        } else if(gSculptMode) { gSculptMesh.reset();gSculptMeshId=0; }
+        gSculptMeshDirty.store(false,std::memory_order_release);
+    }
     gVerticalVelocity = 0.0f;
     gPhysicsGrounded = false;
     gJumpWasPressed = false;
@@ -1940,7 +1959,9 @@ Java_com_novaingine_v2_NativeBridge_nativeResetScene(
     gSculptMode = false;
     gSculptStrokeActive = false;
     gHasPreviousSculptHit = false;
-    gSculptMesh.reset();
+    { std::lock_guard<std::mutex> dataLock(gSculptDataMutex); gSculptMesh.reset(); }
+    { std::lock_guard<std::mutex> qlock(gSculptQueueMutex); gSculptQueue.clear(); }
+    gSculptMeshDirty.store(false,std::memory_order_release);
     gSculptMeshId = 0;
     gRenderer.setSculptCursor(false, nova::Vec3(), nova::Vec3(0,1,0), 0.18f);
     nova::SceneFactory::buildDefaultScene(gScene);
