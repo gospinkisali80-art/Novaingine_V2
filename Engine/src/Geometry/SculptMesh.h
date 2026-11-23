@@ -321,6 +321,10 @@ public:
                 }
                 grabLastCenter=c;
             } else {
+                // Smooth uses a stable Jacobi snapshot: every vertex reads the same
+                // pre-dab surface, avoiding directional bias and lumpy sequential updates.
+                std::vector<Vec3> smoothSource;
+                if(b.type==1) smoothSource=positions;
                 for(const auto& item:affected) {
                     uint32_t i=item.index;float w=item.weight;
                     float protection=1.0f-std::clamp(mask[i],0.0f,1.0f);
@@ -339,8 +343,15 @@ public:
                         case 0: p=p+averageNormal*(amount*b.radius*0.45f);break;
                         case 1: {
                             Vec3 sum;uint32_t count=0;
-                            for(uint32_t k=adjacencyOffsets[i];k<adjacencyOffsets[i+1];k++){sum=sum+positions[adjacency[k]];++count;}
-                            if(count){Vec3 avg=sum/(float)count;p=p+(avg-p)*(std::fabs(amount)*0.5f);}
+                            for(uint32_t k=adjacencyOffsets[i];k<adjacencyOffsets[i+1];k++){
+                                uint32_t neighbor=adjacency[k];
+                                if(neighbor<smoothSource.size()){sum=sum+smoothSource[neighbor];++count;}
+                            }
+                            if(count){
+                                Vec3 avg=sum/(float)count;
+                                float relax=std::clamp(std::fabs(amount)*0.85f,0.0f,0.85f);
+                                p=p+(avg-smoothSource[i])*relax;
+                            }
                             break;
                         }
                         case 3: p=p+ownNormal*(amount*b.radius*0.45f);break;
@@ -360,7 +371,13 @@ public:
                             p=p+averageNormal*(amount*b.radius*0.45f);break;
                         }
                         case 9: p=p-averageNormal*(dot(p-averagePosition,averageNormal)*std::fabs(amount));break;
-                        case 10: p=p+averageNormal*(std::max(0.0f,dot(c-p,averageNormal))*std::fabs(amount));break;
+                        case 10: {
+                            // Layer builds toward a consistent stroke depth instead of
+                            // repeatedly inflating every dab without a height reference.
+                            float height=std::max(0.0f,dot(c-p,averageNormal));
+                            p=p+averageNormal*(std::clamp(height+b.radius*0.12f,0.0f,b.radius*0.45f)*amount);
+                            break;
+                        }
                     }
                     if(length(p-positions[i])>1e-7f){positions[i]=p;changed=true;}
                 }
