@@ -308,7 +308,7 @@ public final class MainActivity extends Activity
         addDrawerSection("GAME SYSTEMS");
         addDrawerItem("Animation", "Keyframes and playback", () -> showToolStatus("Animation"));
         addDrawerItem("Audio", "Sound sources and audio controls", () -> showToolStatus("Audio"));
-        addDrawerItem("AI Assistant", "Groq-powered scene-building assistant", this::openAIAssistant);
+        addDrawerItem("AI Assistant", "On-device llama.cpp scene-building assistant", this::openAIAssistant);
         addDrawerItem("Visual Scripting", "Create, connect, edit and run gameplay nodes", this::showVisualScriptingEditor);
 
         addDrawerSection("EDITOR");
