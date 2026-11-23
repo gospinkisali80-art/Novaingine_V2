@@ -231,6 +231,166 @@ public:
             }else{if(top+2<128){stack[top++]=node.left;stack[top++]=node.right;}}
         }return hit;
     }
+    struct Brush {
+        float radius=0.18f, strength=0.12f, hardness=0.5f, pressure=1.0f;
+        int type=0;
+        int symmetryAxis=0;
+        bool subtract=false;
+    };
+    struct WeightedVertex { uint32_t index=0; float weight=0.0f; };
+    std::vector<WeightedVertex> grabVertices;
+    Vec3 grabLastCenter{};
+    bool grabCaptured=false;
+
+    static float smoothStep(float x) {
+        x=std::clamp(x,0.0f,1.0f);
+        return x*x*(3.0f-2.0f*x);
+    }
+    static bool sphereIntersects(const AABB& b,const Vec3& p,float r) {
+        float dx=std::max(std::max(b.lo.x-p.x,0.0f),p.x-b.hi.x);
+        float dy=std::max(std::max(b.lo.y-p.y,0.0f),p.y-b.hi.y);
+        float dz=std::max(std::max(b.lo.z-p.z,0.0f),p.z-b.hi.z);
+        return dx*dx+dy*dy+dz*dz<=r*r;
+    }
+    void queryVertices(const Vec3& center,float radius,float hardness,std::vector<WeightedVertex>& out) const {
+        out.clear();
+        if(bvh.empty()||radius<=0.0f)return;
+        std::vector<uint8_t> seen(positions.size(),0);
+        std::array<int,128> stack{};int top=0;stack[top++]=0;
+        const float r2=radius*radius;
+        while(top) {
+            int ni=stack[--top];const BVHNode& node=bvh[(size_t)ni];
+            if(!sphereIntersects(node.bounds,center,radius))continue;
+            if(node.leaf()) {
+                for(uint32_t j=node.first;j<node.first+node.count;j++) {
+                    uint32_t t=triangleOrder[j];
+                    for(int k=0;k<3;k++) {
+                        uint32_t v=indices[t*3+k];if(v>=positions.size()||seen[v])continue;
+                        seen[v]=1;float d2=dot(positions[v]-center,positions[v]-center);
+                        if(d2>r2)continue;
+                        float falloff=1.0f-std::sqrt(d2)/radius;
+                        float w=std::pow(smoothStep(falloff),1.0f+std::clamp(hardness,0.0f,1.0f)*7.0f);
+                        if(w>0.00001f)out.push_back({v,w});
+                    }
+                }
+            } else if(top+2<128) {stack[top++]=node.left;stack[top++]=node.right;}
+        }
+    }
+    void beginStroke() { grabVertices.clear();grabCaptured=false;grabLastCenter=Vec3(); }
+    void endStroke() { grabVertices.clear();grabCaptured=false; }
+
+    bool applyDab(const Vec3& center,const Vec3& hitNormal,const Vec3& dragDelta,const Brush& input) {
+        if(positions.empty()||indices.empty())return false;
+        Brush b=input;
+        b.radius=std::clamp(b.radius,0.02f,1.0f);
+        b.strength=std::clamp(b.strength,0.0f,1.0f);
+        b.hardness=std::clamp(b.hardness,0.0f,1.0f);
+        b.pressure=std::clamp(b.pressure,0.0f,1.0f);
+        if(b.strength<=0.0f||b.pressure<=0.0f)return false;
+        auto applyOne=[&](const Vec3& c,const Vec3& hn,const Vec3& movement)->bool {
+            std::vector<WeightedVertex> affected;
+            queryVertices(c,b.radius,b.hardness,affected);
+            if(affected.empty())return false;
+            Vec3 averageNormal,averagePosition;
+            float totalWeight=0.0f;
+            for(const auto& item:affected) {
+                averageNormal=averageNormal+normals[item.index]*item.weight;
+                averagePosition=averagePosition+positions[item.index]*item.weight;
+                totalWeight+=item.weight;
+            }
+            averageNormal=normalize(averageNormal);
+            if(length(averageNormal)<0.0001f)averageNormal=normalize(hn);
+            if(totalWeight>0.0001f)averagePosition=averagePosition/totalWeight;else averagePosition=c;
+            const float signedStrength=b.strength*b.pressure*(b.subtract?-1.0f:1.0f);
+            bool changed=false;
+            if(b.type==2) {
+                if(!grabCaptured) {
+                    grabVertices=affected;grabLastCenter=c;grabCaptured=true;
+                } else {
+                    for(const auto& item:grabVertices) {
+                        float protection=1.0f-std::clamp(mask[item.index],0.0f,1.0f);
+                        Vec3 delta=movement*(item.weight*protection);
+                        if(length(delta)>1e-7f){positions[item.index]=positions[item.index]+delta;changed=true;}
+                    }
+                    grabLastCenter=c;
+                }
+            } else {
+                for(const auto& item:affected) {
+                    uint32_t i=item.index;float w=item.weight;
+                    float protection=1.0f-std::clamp(mask[i],0.0f,1.0f);
+                    Vec3 p=positions[i],ownNormal=normalize(normals[i]);
+                    if(b.type==7) {
+                        float before=mask[i];mask[i]=std::clamp(before+b.strength*b.pressure*w,0.0f,1.0f);
+                        changed=changed||mask[i]!=before;continue;
+                    }
+                    if(b.type==11) {
+                        float before=mask[i];mask[i]=std::max(0.0f,before-b.strength*b.pressure*w);
+                        changed=changed||mask[i]!=before;continue;
+                    }
+                    if(protection<=0.0f)continue;
+                    const float amount=signedStrength*w*protection;
+                    switch(b.type) {
+                        case 0: p=p+averageNormal*(amount*b.radius*0.1f);break;
+                        case 1: {
+                            Vec3 sum;uint32_t count=0;
+                            for(uint32_t k=adjacencyOffsets[i];k<adjacencyOffsets[i+1];k++){sum=sum+positions[adjacency[k]];++count;}
+                            if(count){Vec3 avg=sum/(float)count;p=p+(avg-p)*(std::fabs(amount)*0.5f);}
+                            break;
+                        }
+                        case 3: p=p+ownNormal*(amount*b.radius*0.1f);break;
+                        case 4: {
+                            Vec3 lineStart=grabCaptured?grabLastCenter:c;
+                            Vec3 axis=c-lineStart;float den=dot(axis,axis);
+                            Vec3 closest=den>1e-8f?lineStart+axis*std::clamp(dot(p-lineStart,axis)/den,0.0f,1.0f):c;
+                            p=p+normalize(closest-p)*(std::fabs(amount)*b.radius*0.45f);break;
+                        }
+                        case 5: p=p-averageNormal*(dot(p-averagePosition,averageNormal)*std::fabs(amount));break;
+                        case 6: {
+                            p=p-averageNormal*(std::fabs(amount)*b.radius*0.1f);
+                            p=p+normalize(c-p)*(std::fabs(amount)*b.radius*0.08f);break;
+                        }
+                        case 8: {
+                            p=p-averageNormal*(dot(p-c,averageNormal)*std::fabs(amount));
+                            p=p+averageNormal*(amount*b.radius*0.1f);break;
+                        }
+                        case 9: p=p-averageNormal*(dot(p-averagePosition,averageNormal)*std::fabs(amount));break;
+                        case 10: p=p+averageNormal*(std::max(0.0f,dot(c-p,averageNormal))*std::fabs(amount));break;
+                    }
+                    if(length(p-positions[i])>1e-7f){positions[i]=p;changed=true;}
+                }
+            }
+            if(changed&&b.type!=7&&b.type!=11) {
+                std::vector<uint8_t> touched(positions.size(),0);
+                for(const auto& item:affected)touched[item.index]=1;
+                for(const auto& item:affected)for(uint32_t k=adjacencyOffsets[item.index];k<adjacencyOffsets[item.index+1];k++)touched[adjacency[k]]=1;
+                for(size_t i=0;i<touched.size();i++)if(touched[i]) {
+                    Vec3 sum;
+                    for(uint32_t q=faceOffsets[i];q<faceOffsets[i+1];q++) {
+                        uint32_t tri=vertexTriangles[q],a=indices[tri*3],bb=indices[tri*3+1],cc=indices[tri*3+2];
+                        sum=sum+cross(positions[bb]-positions[a],positions[cc]-positions[a]);
+                    }
+                    if(length(sum)>1e-8f)normals[i]=normalize(sum);
+                }
+                refitBVH();
+                for(auto& chunk:chunks) {
+                    bool dirty=false;
+                    for(uint32_t tri:chunk.triangles)if(touched[indices[tri*3]]||touched[indices[tri*3+1]]||touched[indices[tri*3+2]]){dirty=true;break;}
+                    if(dirty)chunk.dirty=true;
+                }
+            }
+            return changed;
+        };
+        bool changed=applyOne(center,hitNormal,dragDelta);
+        if(b.symmetryAxis>=0&&b.symmetryAxis<=2) {
+            Vec3 mirrored=center,mirroredNormal=hitNormal,mirroredDelta=dragDelta;
+            if(b.symmetryAxis==0){mirrored.x=-mirrored.x;mirroredNormal.x=-mirroredNormal.x;mirroredDelta.x=-mirroredDelta.x;}
+            if(b.symmetryAxis==1){mirrored.y=-mirrored.y;mirroredNormal.y=-mirrored.y;mirroredDelta.y=-mirroredDelta.y;}
+            if(b.symmetryAxis==2){mirrored.z=-mirrored.z;mirroredNormal.z=-mirroredNormal.z;mirroredDelta.z=-mirroredDelta.z;}
+            if(length(mirrored-center)>0.0001f)changed=applyOne(mirrored,mirroredNormal,mirroredDelta)||changed;
+        }
+        return changed;
+    }
+
     void recalculateNormals(){
         normals.assign(positions.size(),Vec3());
         for(size_t i=0;i+2<indices.size();i+=3){uint32_t a=indices[i],b=indices[i+1],c=indices[i+2];Vec3 n=cross(positions[b]-positions[a],positions[c]-positions[a]);normals[a]=normals[a]+n;normals[b]=normals[b]+n;normals[c]=normals[c]+n;}
