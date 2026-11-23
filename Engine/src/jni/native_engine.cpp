@@ -1216,6 +1216,7 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateSculptMesh(
     const int density = std::clamp(static_cast<int>(densityValue), 16, 128);
     nova::Mesh mesh;
     if(shape==0) {
+        { std::lock_guard<std::mutex> qlock(gSculptQueueMutex); gSculptQueue.clear(); }
         { std::lock_guard<std::mutex> dataLock(gSculptDataMutex);
           gSculptMesh.reset(new nova::SculptMesh(nova::SculptMesh::cubeSphere(density,1.0f)));
           gSculptMeshId=0; }
@@ -1223,6 +1224,7 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateSculptMesh(
         gSculptMesh->uploadChunks();
     } else {
         mesh=nova::MeshSculptor::makePlane(density);
+        { std::lock_guard<std::mutex> qlock(gSculptQueueMutex); gSculptQueue.clear(); }
         std::lock_guard<std::mutex> dataLock(gSculptDataMutex);
         gSculptMesh.reset();gSculptMeshId=0;
     }
@@ -1267,8 +1269,8 @@ Java_com_novaingine_v2_NativeBridge_nativeEnterSculptMode(JNIEnv*, jclass) {
     gScene.clear();
     gCustomMeshes.clear();
     gSculptMasks.clear();
-    { std::lock_guard<std::mutex> dataLock(gSculptDataMutex); gSculptMesh.reset(); }
     { std::lock_guard<std::mutex> qlock(gSculptQueueMutex); gSculptQueue.clear(); }
+    { std::lock_guard<std::mutex> dataLock(gSculptDataMutex); gSculptMesh.reset(); }
     gSculptMeshDirty.store(false,std::memory_order_release);
     gSculptStrokeActive = false;
     gHasPreviousSculptHit = false;
