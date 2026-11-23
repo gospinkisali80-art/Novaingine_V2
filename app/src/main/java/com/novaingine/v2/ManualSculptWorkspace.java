@@ -440,7 +440,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
 
         @Override public boolean onTouchEvent(MotionEvent event) {
             int action = event.getActionMasked();
-            engine.handleSculptTouch(event, this);
+            engine.handleSculptTouchFromView(event, this);
             if (event.getPointerCount() >= 2) {
                 float cx = (event.getX(0) + event.getX(1)) * 0.5f;
                 float cy = (event.getY(0) + event.getY(1)) * 0.5f;
