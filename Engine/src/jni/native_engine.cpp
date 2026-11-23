@@ -54,6 +54,7 @@ float gCameraSpeed = 3.0f;
 struct SceneSnapshot {
     std::vector<nova::SceneObject> objects;
     std::unordered_map<uint32_t, nova::Mesh> customMeshes;
+    bool includesCustomMeshes = false;
     uint32_t selectedId = 0;
 };
 
@@ -61,16 +62,17 @@ std::vector<SceneSnapshot> gUndoStack;
 std::vector<SceneSnapshot> gRedoStack;
 constexpr size_t MAX_UNDO_STEPS = 64;
 
-SceneSnapshot captureScene() {
+SceneSnapshot captureScene(bool includeCustomMeshes = false) {
     SceneSnapshot snapshot;
     snapshot.objects = gScene.getObjects();
-    snapshot.customMeshes = gCustomMeshes;
+    snapshot.includesCustomMeshes = includeCustomMeshes;
+    if (includeCustomMeshes) snapshot.customMeshes = gCustomMeshes;
     snapshot.selectedId = gScene.selectedId();
     return snapshot;
 }
 
-void recordUndo() {
-    gUndoStack.push_back(captureScene());
+void recordUndo(bool includeCustomMeshes = false) {
+    gUndoStack.push_back(captureScene(includeCustomMeshes));
     if (gUndoStack.size() > MAX_UNDO_STEPS) {
         gUndoStack.erase(gUndoStack.begin());
     }
@@ -79,7 +81,7 @@ void recordUndo() {
 
 void restoreScene(const SceneSnapshot& snapshot) {
     gScene.clear();
-    gCustomMeshes = snapshot.customMeshes;
+    if (snapshot.includesCustomMeshes) gCustomMeshes = snapshot.customMeshes;
     for (const nova::SceneObject& object : snapshot.objects) {
         gScene.addObject(object);
     }
@@ -98,7 +100,7 @@ bool applyUndo(bool undo) {
     std::vector<SceneSnapshot>& destination = undo ? gRedoStack : gUndoStack;
     if (source.empty()) return false;
 
-    destination.push_back(captureScene());
+    destination.push_back(captureScene(source.back().includesCustomMeshes));
     if (destination.size() > MAX_UNDO_STEPS) {
         destination.erase(destination.begin());
     }
@@ -901,8 +903,9 @@ Java_com_novaingine_v2_NativeBridge_nativeLoadScene(
     }
 
     std::lock_guard<std::mutex> lock(engineMutex);
-    recordUndo();
+    recordUndo(true);
     gScene = loaded;
+    gCustomMeshes.clear();
     gRenderer.releaseAllMeshes();
     gVerticalVelocity = 0.0f;
     gPhysicsGrounded = false;
@@ -999,7 +1002,7 @@ Java_com_novaingine_v2_NativeBridge_nativeImportGlb(JNIEnv* env, jclass, jstring
     std::lock_guard<std::mutex> lock(engineMutex);
     if (!gInitialized) { cgltf_free(data); return -1; }
     size_t imported = 0, totalVertices = 0;
-    recordUndo();
+    recordUndo(true);
     for (cgltf_size mi = 0; mi < data->meshes_count && imported < 200; ++mi) {
         const cgltf_mesh& src = data->meshes[mi];
         for (cgltf_size pi = 0; pi < src.primitives_count && imported < 200; ++pi) {
@@ -1133,7 +1136,7 @@ Java_com_novaingine_v2_NativeBridge_nativeSculptSelectedMesh(
         if (nova::length(next - p) > 0.000001f) { vertex.position = next; changed = true; }
     }
     if (!changed) return 0;
-    recordUndo();
+    recordUndo(true);
     nova::Mesh sculpted(std::move(vertices), indices);
     sculpted.recalculateNormals();
     if (!gRenderer.uploadMesh(id, sculpted)) return 0;
@@ -1523,8 +1526,9 @@ Java_com_novaingine_v2_NativeBridge_nativeResetScene(
         return;
     }
 
-    recordUndo();
+    recordUndo(true);
     nova::SceneFactory::buildDefaultScene(gScene);
+    gCustomMeshes.clear();
     gRenderer.releaseAllMeshes();
     gCamera.reset();
     gVerticalVelocity = 0.0f;
