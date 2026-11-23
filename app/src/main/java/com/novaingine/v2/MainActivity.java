@@ -469,10 +469,14 @@ public final class MainActivity extends Activity
                 .setTitle("Show / Hide")
                 .setItems(names, (dialog, which) -> {
                     if (which == 0) {
-                        engineSurface.enterSculptMode();
-                    } else {
-                        engineSurface.setShowFlags(flags[which - 1]);
+                        // Route every editor Sculpt entry point to the current
+                        // ManualSculptWorkspace. The legacy nativeEnterSculptMode()
+                        // clears the scene and bypasses the brush touch workspace.
+                        closeToolsDrawer();
+                        openManualSculpting();
+                        return;
                     }
+                    engineSurface.setShowFlags(flags[which - 1]);
                     closeToolsDrawer();
                 }).setNegativeButton("Cancel", null).show();
     }
