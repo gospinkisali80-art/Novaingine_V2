@@ -366,8 +366,13 @@ public:
             }
             if(changed&&b.type!=7&&b.type!=11) {
                 std::vector<uint8_t> touched(positions.size(),0);
-                for(const auto& item:affected)touched[item.index]=1;
-                for(const auto& item:affected)for(uint32_t k=adjacencyOffsets[item.index];k<adjacencyOffsets[item.index+1];k++)touched[adjacency[k]]=1;
+                if(b.type==2) {
+                    for(const auto& item:grabVertices)touched[item.index]=1;
+                    for(const auto& item:grabVertices)for(uint32_t k=adjacencyOffsets[item.index];k<adjacencyOffsets[item.index+1];k++)touched[adjacency[k]]=1;
+                } else {
+                    for(const auto& item:affected)touched[item.index]=1;
+                    for(const auto& item:affected)for(uint32_t k=adjacencyOffsets[item.index];k<adjacencyOffsets[item.index+1];k++)touched[adjacency[k]]=1;
+                }
                 for(size_t i=0;i<touched.size();i++)if(touched[i]) {
                     Vec3 sum;
                     for(uint32_t q=faceOffsets[i];q<faceOffsets[i+1];q++) {
