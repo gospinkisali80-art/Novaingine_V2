@@ -124,14 +124,14 @@ public final class AIEditorAssistant {
 
     private void updateModelInfo() {
         if (modelInfo != null) {
-            modelInfo.setText("Provider: Local on-device runtime  |  llama.cpp  |  Qwen3 4B Q4_K_M");
+            modelInfo.setText("Provider: Local on-device runtime  |  llama.cpp  |  Qwen3 1.7B Q4_K_M");
         }
     }
 
     private void showLocalServerHelp() {
         new AlertDialog.Builder(activity)
                 .setTitle("Start Novaingine Local AI")
-                .setMessage("1. Open Termux on this same phone.\n2. Start the llama.cpp server using the command in the repository README.\n3. Keep Termux running in the background.\n4. Return here and send your modeling request.\n\nNovaingine connects only to http://127.0.0.1:8080. The model runs on your phone; no Groq key or cloud AI is used. The first model download is about 2.5 GB.")
+                .setMessage("1. Open Termux on this same phone.\n2. Start the llama.cpp server using the command in the repository README.\n3. Keep Termux running in the background.\n4. Return here and send your modeling request.\n\nNovaingine connects only to http://127.0.0.1:8080. The model runs on your phone; no Groq key or cloud AI is used. The Qwen3 1.7B model download is about 1.2 GB.")
                 .setPositiveButton("OK", null).show();
     }
 
@@ -185,11 +185,36 @@ public final class AIEditorAssistant {
     }
 
     private String runConversation() throws Exception {
+        // Fast chat path: do not prefill the long scene-agent instructions or old tool history.
+        // Keep only a short system message and the latest user message for ordinary conversation.
+        JSONArray chatMessages = new JSONArray();
+        JSONObject chatSystem = new JSONObject();
+        chatSystem.put("role", "system");
+        chatSystem.put("content", "You are Novaingine's helpful local AI assistant. Answer clearly and briefly. Do not claim to change the 3D scene; use scene tools only for explicit modeling requests.");
+        chatMessages.put(chatSystem);
+
+        JSONObject latestUser = null;
+        for (int i = history.length() - 1; i >= 1; i--) {
+            JSONObject item = history.optJSONObject(i);
+            if (item != null && "user".equals(item.optString("role"))) {
+                latestUser = item;
+                break;
+            }
+        }
+        if (latestUser == null) throw new Exception("No user message was found.");
+        String userText = latestUser.optString("content", "");
+        userText = userText.replaceFirst("^/no_think\\\\n", "");
+        userText = userText.replaceFirst("^/no_think\\n", "");
+        JSONObject chatUser = new JSONObject();
+        chatUser.put("role", "user");
+        chatUser.put("content", userText);
+        chatMessages.put(chatUser);
+
         JSONObject body = new JSONObject();
         body.put("model", getModel());
-        body.put("messages", history);
-        body.put("temperature", 0.7);
-        body.put("max_tokens", 256);
+        body.put("messages", chatMessages);
+        body.put("temperature", 0.6);
+        body.put("max_tokens", 160);
         JSONObject response = postLocalModel(body);
         JSONObject choice = response.getJSONArray("choices").getJSONObject(0);
         JSONObject message = choice.getJSONObject("message");
