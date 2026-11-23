@@ -8,6 +8,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.FrameLayout;
+import android.widget.EditText;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.SeekBar;
@@ -42,6 +43,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private int symmetryAxis = 0;
     private boolean subtract;
     private boolean sculptEnabled = true;
+    private EditText[] positionInputs = new EditText[3];
 
     public ManualSculptWorkspace(Activity activity, EngineSurface engine, Runnable onExit) {
         super(activity);
@@ -175,6 +177,69 @@ public final class ManualSculptWorkspace extends FrameLayout {
         shapeScroll.addView(shapeRow);
         bottom.addView(shapeScroll, 0, new LinearLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT, dp(44)));
+
+        LinearLayout transformRow = new LinearLayout(activity);
+        transformRow.setGravity(Gravity.CENTER_VERTICAL);
+        bottom.addView(transformRow, 1, new LinearLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, dp(42)));
+        String[] axes = {"X", "Y", "Z"};
+        float[] selectedTransform = engine.getSelectedTransform();
+        for (int axis = 0; axis < 3; axis++) {
+            final int index = axis;
+            EditText field = new EditText(activity);
+            positionInputs[axis] = field;
+            field.setSingleLine(true);
+            field.setTextSize(11);
+            field.setTextColor(Color.WHITE);
+            field.setHintTextColor(0xFF9AA8B7);
+            field.setHint(axes[axis]);
+            field.setInputType(android.text.InputType.TYPE_CLASS_NUMBER
+                    | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+                    | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+            field.setPadding(dp(6), 0, dp(6), 0);
+            field.setBackground(background(0xFF26313D));
+            LinearLayout.LayoutParams fieldParams = new LinearLayout.LayoutParams(0, dp(36), 1);
+            fieldParams.setMargins(0, 0, dp(5), 0);
+            transformRow.addView(field, fieldParams);
+            if (selectedTransform != null && selectedTransform.length >= 3) {
+                field.setText(String.valueOf(selectedTransform[axis]));
+            }
+        }
+        TextView applyPosition = button("SET XYZ");
+        transformRow.addView(applyPosition, new LinearLayout.LayoutParams(dp(76), dp(36)));
+        applyPosition.setOnClickListener(v -> {
+            float[] transform = engine.getSelectedTransform();
+            if (transform == null || transform.length < 9) return;
+            try {
+                for (int axis = 0; axis < 3; axis++) {
+                    String value = positionInputs[axis].getText().toString().trim();
+                    if (!value.isEmpty()) transform[axis] = Float.parseFloat(value);
+                }
+                engine.setSelectedTransform(transform);
+                status.setText("Selected mesh position updated.");
+                selectedToolIndicator.setText("ACTIVE: XYZ TRANSFORM  ▴ TOOLS");
+                closeToolDrawer.run();
+            } catch (NumberFormatException error) {
+                status.setText("Enter valid X, Y and Z coordinates.");
+            }
+        });
+
+        LinearLayout transformModes = new LinearLayout(activity);
+        transformModes.setGravity(Gravity.CENTER_VERTICAL);
+        bottom.addView(transformModes, 2, new LinearLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, dp(38)));
+        String[] modes = {"MOVE", "ROTATE", "SCALE"};
+        for (int modeIndex = 0; modeIndex < modes.length; modeIndex++) {
+            final int nativeMode = modeIndex;
+            TextView modeButton = button(modes[modeIndex]);
+            transformModes.addView(modeButton, weighted(0, 1));
+            modeButton.setOnClickListener(v -> {
+                engine.setTransformMode(nativeMode);
+                selectedToolIndicator.setText("ACTIVE: " + modes[nativeMode] + "  ▴ TOOLS");
+                closeToolDrawer.run();
+            });
+        }
+
         String[] shapeNames = {"SPHERE", "PLANE", "CUBE", "CYLINDER", "CONE",
                 "TORUS", "CAPSULE", "WEDGE", "ROUND SPHERE"};
         int[] shapeDensities = {64, 128, 32, 48, 48, 48, 48, 32, 64};
@@ -236,6 +301,12 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         "torus", "capsule", "wedge", "rounded sphere"};
                 status.setText("Sculpt " + names[Math.max(0, Math.min(8, shape))]
                         + " created and selected. Drag to sculpt.");
+                float[] transform = engine.getSelectedTransform();
+                if (transform != null && transform.length >= 3) {
+                    for (int axis = 0; axis < 3; axis++) {
+                        if (positionInputs[axis] != null) positionInputs[axis].setText(String.valueOf(transform[axis]));
+                    }
+                }
             } else {
                 status.setText("Could not create mesh. Try again.");
             }
