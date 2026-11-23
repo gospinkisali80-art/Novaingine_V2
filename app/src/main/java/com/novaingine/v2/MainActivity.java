@@ -508,16 +508,18 @@ public final class MainActivity extends Activity
         VisualScriptEditorView.Node node = graph.getSelectedNode();
         if (node == null) return;
         LinearLayout form = new LinearLayout(this); form.setOrientation(LinearLayout.VERTICAL); form.setPadding(dp(16), dp(8), dp(16), dp(4));
-        String[] labels = {"Target object ID (0 = selected)", "X / Value", "Y / Compare value", "Z", "Condition: 1 = true, 0 = false"};
-        String[] defaults = {String.valueOf(node.objectId), String.valueOf(node.vx), String.valueOf(node.vy), String.valueOf(node.vz), node.condition ? "1" : "0"};
-        EditText[] fields = new EditText[5];
+        String[] labels = {"Target object ID (0 = selected)", "Vector X", "Vector Y", "Vector Z", "Branch value", "Branch compare value", "Condition: 1 = true, 0 = false"};
+        String[] defaults = {String.valueOf(node.objectId), String.valueOf(node.vx), String.valueOf(node.vy), String.valueOf(node.vz), String.valueOf(node.value), String.valueOf(node.compareValue), node.condition ? "1" : "0"};
+        EditText[] fields = new EditText[7];
         for (int i = 0; i < labels.length; i++) { TextView label = new TextView(this); label.setText(labels[i]); label.setTextColor(Color.DKGRAY); form.addView(label); EditText field = new EditText(this); field.setSingleLine(true); field.setText(defaults[i]); field.setInputType(android.text.InputType.TYPE_CLASS_NUMBER | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED); form.addView(field); fields[i] = field; }
         new AlertDialog.Builder(this).setTitle("Edit Node " + node.id).setView(form).setPositiveButton("Apply", (d, w) -> {
             try { node.objectId = Math.max(0, Integer.parseInt(fields[0].getText().toString())); } catch (Exception ignored) {}
             try { node.vx = Float.parseFloat(fields[1].getText().toString()); } catch (Exception ignored) {}
             try { node.vy = Float.parseFloat(fields[2].getText().toString()); } catch (Exception ignored) {}
             try { node.vz = Float.parseFloat(fields[3].getText().toString()); } catch (Exception ignored) {}
-            try { node.condition = Float.parseFloat(fields[4].getText().toString()) >= 0.5f; } catch (Exception ignored) {}
+            try { node.value = Float.parseFloat(fields[4].getText().toString()); } catch (Exception ignored) {}
+            try { node.compareValue = Float.parseFloat(fields[5].getText().toString()); } catch (Exception ignored) {}
+            try { node.condition = Float.parseFloat(fields[6].getText().toString()) >= 0.5f; } catch (Exception ignored) {}
             graph.invalidate();
         }).setNegativeButton("Cancel", null).show();
     }
