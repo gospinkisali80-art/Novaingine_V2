@@ -206,7 +206,7 @@ public final class ViewportInput extends View {
                         || insideStick(x, y, rightCenterX)
                         || upButton.contains(x, y) || downButton.contains(x, y);
                 if (action == MotionEvent.ACTION_DOWN) viewportTouchActive = !controlTouch;
-                if (viewportTouchActive) engineSurface.handleSculptTouch(event, getTop());
+                if (viewportTouchActive) engineSurface.handleSculptTouchFromView(event, this);
                 if (viewportTouchActive && !controlTouch) engineSurface.dispatchTouchEvent(event);
                 if (movePointerId == -1 && insideStick(x, y, leftCenterX)) {
                     movePointerId = pointerId;
@@ -229,7 +229,7 @@ public final class ViewportInput extends View {
 
             case MotionEvent.ACTION_MOVE:
                 if (viewportTouchActive) {
-                    engineSurface.handleSculptTouch(event, getTop());
+                    engineSurface.handleSculptTouchFromView(event, this);
                     engineSurface.dispatchTouchEvent(event);
                 }
                 if (movePointerId != -1) {
@@ -245,7 +245,7 @@ public final class ViewportInput extends View {
             case MotionEvent.ACTION_POINTER_UP:
             case MotionEvent.ACTION_UP:
                 if (viewportTouchActive) {
-                    engineSurface.handleSculptTouch(event, getTop());
+                    engineSurface.handleSculptTouchFromView(event, this);
                     engineSurface.dispatchTouchEvent(event);
                 }
                 releasePointer(pointerId, x, y);
@@ -263,7 +263,7 @@ public final class ViewportInput extends View {
 
             case MotionEvent.ACTION_CANCEL:
                 if (viewportTouchActive) {
-                    engineSurface.handleSculptTouch(event, getTop());
+                    engineSurface.handleSculptTouchFromView(event, this);
                     engineSurface.dispatchTouchEvent(event);
                 }
                 viewportTouchActive = false;
