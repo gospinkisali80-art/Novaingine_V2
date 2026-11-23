@@ -113,6 +113,12 @@ public final class NativeBridge {
     );
 
     public static native int nativeImportGlb(String path);
+    public static native int nativeCreateSculptMesh(int shape, int density);
+    public static native boolean nativeExportSelectedObj(String path);
+    public static native void nativeSetSculptMode(boolean enabled);
+    public static native void nativeBeginSculptStroke();
+    public static native int nativeSculptAtScreen(float x, float y, float radius, float strength, int brush, float falloff, boolean symmetry, float pressure);
+    public static native void nativeEndSculptStroke();
     public static native boolean nativeSetVisualScript(int[] nodeData, float[] nodeValues, boolean enabled);
     public static native int nativeSculptSelectedMesh(float x, float y, float z, float radius, float strength, int mode, boolean symmetry);
 
