@@ -385,7 +385,19 @@ public:
             if(b.symmetryAxis==0){mirrored.x=-mirrored.x;mirroredNormal.x=-mirroredNormal.x;mirroredDelta.x=-mirroredDelta.x;}
             if(b.symmetryAxis==1){mirrored.y=-mirrored.y;mirroredNormal.y=-mirrored.y;mirroredDelta.y=-mirroredDelta.y;}
             if(b.symmetryAxis==2){mirrored.z=-mirrored.z;mirroredNormal.z=-mirroredNormal.z;mirroredDelta.z=-mirroredDelta.z;}
-            if(length(mirrored-center)>0.0001f)changed=applyOne(mirrored,mirroredNormal,mirroredDelta)||changed;
+            if(length(mirrored-center)>0.0001f) {
+                if(b.type==2) {
+                    if(grabCaptured) {
+                        std::vector<WeightedVertex> mirroredAffected;
+                        queryVertices(mirrored,b.radius,b.hardness,mirroredAffected);
+                        for(const auto& item:mirroredAffected) {
+                            bool exists=false;
+                            for(const auto& oldItem:grabVertices)if(oldItem.index==item.index){exists=true;break;}
+                            if(!exists)grabVertices.push_back(item);
+                        }
+                    }
+                } else changed=applyOne(mirrored,mirroredNormal,mirroredDelta)||changed;
+            }
         }
         return changed;
     }
