@@ -532,6 +532,7 @@ public final class EditorToolbar extends LinearLayout {
 
         PopupMenu menu = new PopupMenu(context, anchor);
 
+        addMenuItem(menu, "Sculpt", engineSurface::enterSculptMode);
         addMenuItem(menu, "Show All", () ->
                 engineSurface.setShowFlags(63)
         );
