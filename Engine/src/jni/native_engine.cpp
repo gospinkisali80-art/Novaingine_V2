@@ -1409,6 +1409,7 @@ Java_com_novaingine_v2_NativeBridge_nativeSculptAtScreen(
     return 1;
 }
 
+JNIEXPORT void JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeEndSculptStroke(JNIEnv*, jclass) {
     std::lock_guard<std::mutex> lock(engineMutex);
     if(!gInitialized||!gSculptStrokeActive)return;
