@@ -486,7 +486,9 @@ public final class AIEditorAssistant {
                     float dx = number(a, "dragX", 0), dy = number(a, "dragY", 0), dz = number(a, "dragZ", 0);
                     JSONArray path = a.optJSONArray("points");
                     float[] points;
-                    if (path != null && path.length() >= 3 && path.length() <= 192 && path.length() % 3 == 0) {
+                    if (path != null) {
+                        if (path.length() < 3 || path.length() > 192 || path.length() % 3 != 0)
+                            return "Invalid sculpt path. Provide 1-64 xyz points as a flat list of coordinate triplets.";
                         points = new float[path.length()];
                         for (int i = 0; i < path.length(); i++) {
                             double value = path.optDouble(i, Double.NaN);
