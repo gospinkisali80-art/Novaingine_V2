@@ -19,6 +19,9 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.ScrollView;
+import android.widget.Spinner;
+import android.widget.ArrayAdapter;
+import android.widget.CheckBox;
 
 public final class MainActivity extends Activity
         implements EditorToolbar.ViewportActions {
@@ -292,7 +295,8 @@ public final class MainActivity extends Activity
         addDrawerItem("Redo", "Redo the last undone scene edit", () -> engineSurface.redoScene());
 
         addDrawerSection("WORLD BUILDING");
-        addDrawerItem("Terrain Sculpting", "Generate terrain and raise, lower, smooth or flatten it", this::showTerrainSculptor);
+        addDrawerItem("Terrain Sculpting", "Sculpt the generated terrain surface", this::showTerrainSculptor);
+        addDrawerItem("Mesh Sculpting", "Draw, smooth, flatten or grab imported mesh vertices", this::showMeshSculptor);
         addDrawerItem("Foliage Painting", "Paint trees and bushes into the scene", this::showFoliagePainter);
         addDrawerItem("Import Blender Model (.glb)", "Import a Blender-exported glTF binary model", this::openGlbPicker);
 
@@ -458,6 +462,38 @@ public final class MainActivity extends Activity
         }, "Nova-GLB-Copy").start();
     }
 
+    private void showMeshSculptor() {
+        closeToolsDrawer();
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(16), dp(8), dp(16), dp(4));
+        TextView info = new TextView(this);
+        info.setText("Select an imported Blender mesh first. Brush coordinates are in that mesh's local space. Draw and Grab move vertices along their normals; Smooth averages connected vertices; Flatten moves them toward the brush Y level.");
+        info.setTextColor(Color.DKGRAY); info.setTextSize(12); content.addView(info);
+        Spinner mode = new Spinner(this);
+        String[] modes = {"Draw", "Smooth", "Flatten", "Grab"};
+        mode.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item, modes));
+        content.addView(mode);
+        String[] labels = {"Brush center X", "Brush center Y", "Brush center Z", "Radius", "Strength"};
+        String[] defaults = {"0", "0", "0", "0.5", "0.15"};
+        EditText[] fields = new EditText[labels.length];
+        for (int i = 0; i < labels.length; i++) {
+            TextView label = new TextView(this); label.setText(labels[i]); label.setTextColor(Color.DKGRAY); label.setTextSize(11); content.addView(label);
+            EditText field = new EditText(this); field.setSingleLine(true);
+            field.setInputType(android.text.InputType.TYPE_CLASS_NUMBER | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+            field.setText(defaults[i]); content.addView(field); fields[i] = field;
+        }
+        CheckBox symmetry = new CheckBox(this); symmetry.setText("X-axis symmetry"); symmetry.setTextColor(Color.DKGRAY); symmetry.setChecked(true); content.addView(symmetry);
+        new AlertDialog.Builder(this).setTitle("Mesh Sculpt Mode").setView(content)
+                .setPositiveButton("Apply Brush", (dialog, which) -> {
+                    float[] values = new float[5]; float[] fallback = {0f, 0f, 0f, 0.5f, 0.15f};
+                    for (int i = 0; i < fields.length; i++) { try { values[i] = Float.parseFloat(fields[i].getText().toString().trim()); } catch (Exception ignored) { values[i] = fallback[i]; } }
+                    engineSurface.sculptSelectedMesh(values[0], values[1], values[2], values[3], values[4], mode.getSelectedItemPosition(), symmetry.isChecked(), result -> {
+                        String message = result > 0 ? "Mesh vertices sculpted. Use Undo to reverse." : result < 0 ? "Select an imported Blender mesh in the World Outliner first." : "No vertices were affected. Try a larger brush or adjust its center.";
+                        android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show();
+                    });
+                }).setNegativeButton("Cancel", null).show();
+    }
     private void showFoliagePainter() {
         closeToolsDrawer();
 
