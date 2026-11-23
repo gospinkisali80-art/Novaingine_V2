@@ -195,8 +195,8 @@ public final class MainActivity extends Activity
     private void createEditorPanels() {
         editorPanels = new LinearLayout(this);
         editorPanels.setOrientation(LinearLayout.HORIZONTAL);
-        panel.setPadding(dp(5), dp(4), dp(5), dp(4));
-        panel.setBackgroundColor(0xDD202020);
+        editorPanels.setPadding(dp(5), dp(4), dp(5), dp(4));
+        editorPanels.setBackgroundColor(0xDD202020);
 
         TextView outliner = new TextView(this);
         outliner.setText("WORLD OUTLINER");
@@ -239,10 +239,10 @@ public final class MainActivity extends Activity
                 LinearLayout.LayoutParams.WRAP_CONTENT
         );
         itemParams.setMargins(dp(3), 0, dp(3), 0);
-        panel.addView(outliner, itemParams);
-        panel.addView(details, itemParams);
-        panel.addView(undo, itemParams);
-        panel.addView(redo, itemParams);
+        editorPanels.addView(outliner, itemParams);
+        editorPanels.addView(details, itemParams);
+        editorPanels.addView(undo, itemParams);
+        editorPanels.addView(redo, itemParams);
 
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT,
@@ -250,7 +250,7 @@ public final class MainActivity extends Activity
                 Gravity.TOP | Gravity.END
         );
         params.setMargins(0, dp(55), dp(8), 0);
-        rootLayout.addView(panel, params);
+        rootLayout.addView(editorPanels, params);
     }
 
 
