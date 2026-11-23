@@ -1397,7 +1397,7 @@ Java_com_novaingine_v2_NativeBridge_nativeSculptAtScreen(
     nova::SceneObject* object=gScene.find(id);
     if(!object||id!=gSculptMeshId||!gSculptMesh)return -1;
     nova::Vec3 ray;
-    if(!makeScreenRay(screenX,screenY,ray))return 0;
+    if(!makeScreenRay(screenX,screenY,ray)){gHasPreviousSculptHit=false;gRenderer.setSculptCursor(false,nova::Vec3(),nova::Vec3(0,1,0),0.18f);return 0;}
     const nova::Vec3 localOrigin=gCamera.position-object->transform.position;
     nova::SculptMesh::Hit hit;
     {
@@ -1405,7 +1405,7 @@ Java_com_novaingine_v2_NativeBridge_nativeSculptAtScreen(
         if(!dataLock.owns_lock())return 0;
         hit=gSculptMesh->raycast(localOrigin,ray);
     }
-    if(!hit.found)return 0;
+    if(!hit.found){gHasPreviousSculptHit=false;gRenderer.setSculptCursor(false,nova::Vec3(),nova::Vec3(0,1,0),0.18f);return 0;}
     nova::SculptMesh::Brush brush;
     brush.radius=std::clamp((float)radiusValue,0.02f,1.0f);
     brush.strength=std::clamp((float)strengthValue,0.0f,1.0f);
