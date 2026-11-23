@@ -45,6 +45,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private boolean sculptEnabled = true;
     private EditText[] positionInputs = new EditText[3];
     private int transformComponent = 0;
+    private int activeTransformMode = -1;
 
     public ManualSculptWorkspace(Activity activity, EngineSurface engine, Runnable onExit) {
         super(activity);
@@ -140,6 +141,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
             brushRow.addView(b, p);
             b.setOnClickListener(v -> {
                 selectedBrush = index;
+                activeTransformMode = -1;
+                sculptEnabled = true;
                 updateBrushButtons();
                 applyOptions();
                 selectedToolIndicator.setText("ACTIVE: " + BRUSHES[index] + "  ▴ TOOLS");
@@ -238,6 +241,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
             transformModes.addView(modeButton, weighted(0, 1));
             modeButton.setOnClickListener(v -> {
                 engine.setTransformMode(nativeMode);
+                activeTransformMode = nativeMode;
+                sculptEnabled = false;
+                applyOptions();
                 transformComponent = nativeMode;
                 float[] values = engine.getSelectedTransform();
                 if (values != null && values.length >= 9) {
@@ -262,6 +268,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
             shapeParams.setMargins(0, 0, dp(6), 0);
             shapeRow.addView(shapeButton, shapeParams);
             shapeButton.setOnClickListener(v -> {
+                activeTransformMode = -1;
+                sculptEnabled = true;
+                applyOptions();
                 selectedToolIndicator.setText("ACTIVE: " + shapeNames[shapeId] + "  ▴ TOOLS");
                 createMesh(shapeId, shapeDensities[shapeId]);
                 closeToolDrawer.run();
@@ -458,7 +467,31 @@ public final class ManualSculptWorkspace extends FrameLayout {
             } else if (action == MotionEvent.ACTION_MOVE && !sculptEnabled) {
                 float dx = event.getX() - lastX;
                 float dy = event.getY() - lastY;
-                engine.queueEvent(() -> NativeBridge.nativeTouch(dx, dy));
+                if (activeTransformMode >= 0) {
+                    float[] transform = engine.getSelectedTransform();
+                    if (transform != null && transform.length >= 9) {
+                        if (activeTransformMode == 0) {
+                            // Move in the viewport's screen-aligned XY plane.
+                            transform[0] += dx * 0.008f;
+                            transform[1] -= dy * 0.008f;
+                        } else if (activeTransformMode == 1) {
+                            transform[3] += dy * 0.45f;
+                            transform[4] += dx * 0.45f;
+                        } else {
+                            float factor = (float)Math.exp(-dy * 0.008f);
+                            transform[6] = Math.max(0.01f, Math.min(100.0f, transform[6] * factor));
+                            transform[7] = Math.max(0.01f, Math.min(100.0f, transform[7] * factor));
+                            transform[8] = Math.max(0.01f, Math.min(100.0f, transform[8] * factor));
+                        }
+                        engine.setSelectedTransform(transform);
+                        for (int axis = 0; axis < 3; axis++) {
+                            positionInputs[axis].setText(String.valueOf(
+                                    transform[axis + transformComponent * 3]));
+                        }
+                    }
+                } else {
+                    engine.queueEvent(() -> NativeBridge.nativeTouch(dx, dy));
+                }
                 lastX = event.getX();
                 lastY = event.getY();
             }
