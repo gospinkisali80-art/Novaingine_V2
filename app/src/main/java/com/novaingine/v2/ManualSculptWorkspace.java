@@ -39,7 +39,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private float strength = 0.12f;
     private float falloff = 0.5f;
     private float pressure = 1.0f;
-    private boolean symmetry = true;
+    private int symmetryAxis = 0;
+    private boolean subtract;
     private boolean sculptEnabled = true;
 
     public ManualSculptWorkspace(Activity activity, EngineSurface engine, Runnable onExit) {
@@ -118,14 +119,14 @@ public final class ManualSculptWorkspace extends FrameLayout {
         updateBrushButtons();
 
         addSlider(bottom, "RADIUS", 1, 200, 18, value -> {
-            radius = 0.01f + (value / 200.0f) * 1.99f;
+            radius = 0.02f + (value / 200.0f) * 0.98f;
             applyOptions();
         });
         addSlider(bottom, "STRENGTH", 1, 100, 24, value -> {
-            strength = 0.001f + (value / 100.0f) * 0.499f;
+            strength = value / 100.0f;
             applyOptions();
         });
-        addSlider(bottom, "FALLOFF", 0, 100, 50, value -> {
+        addSlider(bottom, "HARDNESS", 0, 100, 50, value -> {
             falloff = value / 100.0f;
             applyOptions();
         });
@@ -148,15 +149,25 @@ public final class ManualSculptWorkspace extends FrameLayout {
         plane.setOnClickListener(v -> createMesh(1, 128));
         actions.addView(plane, weighted(0, 1));
 
-        TextView mirror = button("X: ON");
+        TextView mirror = button("SYMMETRY: X");
         mirror.setTextColor(ACCENT);
         mirror.setOnClickListener(v -> {
-            symmetry = !symmetry;
-            mirror.setText(symmetry ? "X: ON" : "X: OFF");
-            mirror.setTextColor(symmetry ? ACCENT : Color.WHITE);
+            symmetryAxis = symmetryAxis == 0 ? 1 : symmetryAxis == 1 ? 2 : symmetryAxis == 2 ? -1 : 0;
+            String[] names = {"SYMMETRY: X", "SYMMETRY: Y", "SYMMETRY: Z", "SYMMETRY: OFF"};
+            mirror.setText(names[symmetryAxis < 0 ? 3 : symmetryAxis]);
+            mirror.setTextColor(symmetryAxis < 0 ? Color.WHITE : ACCENT);
             applyOptions();
         });
         actions.addView(mirror, weighted(0, 1));
+
+        TextView subtractButton = button("SUBTRACT: OFF");
+        subtractButton.setOnClickListener(v -> {
+            subtract = !subtract;
+            subtractButton.setText(subtract ? "SUBTRACT: ON" : "SUBTRACT: OFF");
+            subtractButton.setTextColor(subtract ? ACCENT : Color.WHITE);
+            applyOptions();
+        });
+        actions.addView(subtractButton, weighted(0, 1));
 
         TextView mode = button("SCULPT: ON");
         mode.setTextColor(ACCENT);
@@ -224,7 +235,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
 
     private void applyOptions() {
         engine.setSculptOptions(sculptEnabled, selectedBrush, radius, strength,
-                falloff, symmetry, pressure);
+                falloff, symmetryAxis, subtract, pressure);
     }
 
     private void updateBrushButtons() {
