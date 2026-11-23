@@ -396,6 +396,7 @@ public:
                             for(const auto& oldItem:grabVertices)if(oldItem.index==item.index){exists=true;break;}
                             if(!exists)grabVertices.push_back(item);
                         }
+                        grabCaptured=true;grabLastCenter=center;
                     }
                 } else changed=applyOne(mirrored,mirroredNormal,mirroredDelta)||changed;
             }
