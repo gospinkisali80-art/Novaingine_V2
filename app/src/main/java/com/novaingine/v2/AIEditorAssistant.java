@@ -219,14 +219,6 @@ public final class AIEditorAssistant {
     }
 
     private String runConversation() throws Exception {
-        // Fast chat path: do not prefill the long scene-agent instructions or old tool history.
-        // Keep only a short system message and the latest user message for ordinary conversation.
-        JSONArray chatMessages = new JSONArray();
-        JSONObject chatSystem = new JSONObject();
-        chatSystem.put("role", "system");
-        chatSystem.put("content", "You are Novaingine's helpful local AI assistant. Answer clearly and briefly. Do not claim to change the 3D scene; use scene tools only for explicit modeling requests.");
-        chatMessages.put(chatSystem);
-
         JSONObject latestUser = null;
         for (int i = history.length() - 1; i >= 1; i--) {
             JSONObject item = history.optJSONObject(i);
@@ -236,32 +228,17 @@ public final class AIEditorAssistant {
             }
         }
         if (latestUser == null) throw new Exception("No user message was found.");
-        String userText = latestUser.optString("content", "");
-        userText = userText.replaceFirst("^/no_think\\\\n", "");
-        userText = userText.replaceFirst("^/no_think\\n", "");
-        JSONObject chatUser = new JSONObject();
-        chatUser.put("role", "user");
-        chatUser.put("content", userText);
-        chatMessages.put(chatUser);
-
+        JSONArray messages = new JSONArray();
+        messages.put(new JSONObject().put("role", "user")
+                .put("content", latestUser.optString("content", "")));
         JSONObject body = new JSONObject();
         body.put("model", getModel());
-        body.put("messages", chatMessages);
-        body.put("reasoning_effort", "low");
-        body.put("max_completion_tokens", 1024);
-        JSONObject response = postGroqModel(body);
-        JSONObject choice = response.getJSONArray("choices").getJSONObject(0);
-        JSONObject message = choice.getJSONObject("message");
-        String content = message.optString("content", "").trim();
-        if (content.isEmpty()) {
-            String reason = choice.optString("finish_reason", "unknown");
-            throw new Exception("Claude returned no text (finish reason: " + reason
-                    + "). Try a shorter message or check your Groq API access and model availability.");
-        }
-        JSONObject assistant = new JSONObject();
-        assistant.put("role", "assistant");
-        assistant.put("content", content);
-        history.put(assistant);
+        body.put("max_tokens", 1024);
+        body.put("system", "You are Novaingine's helpful Claude AI assistant. Answer clearly and briefly. Do not claim to change the 3D scene; use scene tools only for explicit modelling requests.");
+        body.put("messages", messages);
+        String content = extractClaudeText(postClaudeModel(body)).trim();
+        if (content.isEmpty()) throw new Exception("Claude returned an empty response.");
+        history.put(new JSONObject().put("role", "assistant").put("content", content));
         return content;
     }
 
