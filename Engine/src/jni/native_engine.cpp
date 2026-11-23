@@ -21,6 +21,7 @@
 #include "../Renderer/Renderer.h"
 #include "../Physics/PhysicsWorld.h"
 #include "../Geometry/Mesh.h"
+#include "../Geometry/PrimitiveBuilder.h"
 #include "../Geometry/MeshSculptor.h"
 #include "../Geometry/MeshModeling.h"
 #include "../Geometry/SculptMesh.h"
@@ -1217,36 +1218,82 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateSculptMesh(
 ) {
     std::lock_guard<std::mutex> lock(engineMutex);
     if (!gInitialized) return 0;
-    const int shape = std::clamp(static_cast<int>(shapeValue), 0, 1);
+    // Sculpt Shape Library: sphere, plane, cube, cylinder, cone, torus,
+    // capsule, wedge and a higher-density rounded sphere.
+    const int shape = std::clamp(static_cast<int>(shapeValue), 0, 8);
     const int density = std::clamp(static_cast<int>(densityValue), 16, 128);
     nova::Mesh mesh;
-    if(shape==0) {
+    if (shape == 0 || shape == 8) {
+        auto sculpt = std::make_unique<nova::SculptMesh>(
+            nova::SculptMesh::cubeSphere(shape == 8 ? std::min(128, density * 2) : density, 1.0f));
+        if (!sculpt->toMesh(mesh)) return 0;
+        sculpt->uploadChunks();
         { std::lock_guard<std::mutex> qlock(gSculptQueueMutex); gSculptQueue.clear(); }
-        { std::lock_guard<std::mutex> dataLock(gSculptDataMutex);
-          gSculptMesh.reset(new nova::SculptMesh(nova::SculptMesh::cubeSphere(density,1.0f)));
-          gSculptMeshId=0; }
-        if(!gSculptMesh->toMesh(mesh))return 0;
-        gSculptMesh->uploadChunks();
+        std::lock_guard<std::mutex> dataLock(gSculptDataMutex);
+        gSculptMesh = std::move(sculpt);
+        gSculptMeshId = 0;
     } else {
-        mesh=nova::MeshSculptor::makePlane(density);
-        auto sculpt=std::make_unique<nova::SculptMesh>();
-        const auto& sourceVertices=mesh.getVertices();
+        switch (shape) {
+            case 1: mesh = nova::MeshSculptor::makePlane(density); break;
+            case 2: mesh = nova::PrimitiveBuilder::createCube(); break;
+            case 3: mesh = nova::PrimitiveBuilder::createCylinder(std::min(128, density)); break;
+            case 4: {
+                const int segments = std::clamp(density, 16, 128);
+                const float pi = 3.14159265358979323846f;
+                for (int i = 0; i < segments; ++i) {
+                    const float a0 = 2.0f*pi*i/segments, a1 = 2.0f*pi*(i+1)/segments;
+                    const uint32_t s = static_cast<uint32_t>(mesh.vertexCount());
+                    mesh.addVertex(nova::Vertex(nova::Vec3(0,0.5f,0),nova::Vec3(0,1,0),0.5f,1));
+                    mesh.addVertex(nova::Vertex(nova::Vec3(0.5f*std::cos(a0),-0.5f,0.5f*std::sin(a0)),nova::Vec3(std::cos(a0),0.5f,std::sin(a0)),0,0));
+                    mesh.addVertex(nova::Vertex(nova::Vec3(0.5f*std::cos(a1),-0.5f,0.5f*std::sin(a1)),nova::Vec3(std::cos(a1),0.5f,std::sin(a1)),1,0));
+                    mesh.addTriangle(s,s+1,s+2);
+                    const uint32_t b = static_cast<uint32_t>(mesh.vertexCount());
+                    mesh.addVertex(nova::Vertex(nova::Vec3(0,-0.5f,0),nova::Vec3(0,-1,0),0.5f,0.5f));
+                    mesh.addVertex(nova::Vertex(nova::Vec3(0.5f*std::cos(a1),-0.5f,0.5f*std::sin(a1)),nova::Vec3(0,-1,0),1,0));
+                    mesh.addVertex(nova::Vertex(nova::Vec3(0.5f*std::cos(a0),-0.5f,0.5f*std::sin(a0)),nova::Vec3(0,-1,0),0,0));
+                    mesh.addTriangle(b,b+1,b+2);
+                }
+                mesh.recalculateNormals();
+                break;
+            }
+            case 5: {
+                const int major = std::clamp(density, 16, 96), minor = std::clamp(density/2, 8, 48);
+                const float pi = 3.14159265358979323846f, majorR = 0.34f, tubeR = 0.16f;
+                for (int i=0;i<=major;i++) for(int j=0;j<=minor;j++) {
+                    const float u=2*pi*i/major, v=2*pi*j/minor;
+                    const float rr=majorR+tubeR*std::cos(v);
+                    nova::Vec3 p(rr*std::cos(u),tubeR*std::sin(v),rr*std::sin(u));
+                    mesh.addVertex(nova::Vertex(p,nova::normalize(nova::Vec3(std::cos(v)*std::cos(u),std::sin(v),std::cos(v)*std::sin(u))),static_cast<float>(i)/major,static_cast<float>(j)/minor));
+                }
+                for(int i=0;i<major;i++) for(int j=0;j<minor;j++) {
+                    uint32_t a=i*(minor+1)+j,b=a+minor+1;
+                    mesh.addTriangle(a,b,a+1); mesh.addTriangle(a+1,b,b+1);
+                }
+                break;
+            }
+            case 6: mesh = nova::PrimitiveBuilder::createCapsule(std::min(64, density)); break;
+            case 7: mesh = nova::PrimitiveBuilder::createWedge(); break;
+        }
+        if (!mesh.isValid()) return 0;
+        auto sculpt = std::make_unique<nova::SculptMesh>();
+        const auto& sourceVertices = mesh.getVertices();
         sculpt->positions.reserve(sourceVertices.size());
         sculpt->normals.reserve(sourceVertices.size());
-        for(const auto& vertex:sourceVertices) {
+        for (const auto& vertex : sourceVertices) {
             sculpt->positions.push_back(vertex.position);
             sculpt->normals.push_back(vertex.normal);
         }
-        sculpt->indices=mesh.getIndices();
-        sculpt->mask.assign(sculpt->positions.size(),0.0f);
+        sculpt->indices = mesh.getIndices();
+        sculpt->mask.assign(sculpt->positions.size(), 0.0f);
         sculpt->buildAdjacency();
         sculpt->buildChunks();
         sculpt->buildBVH();
         { std::lock_guard<std::mutex> qlock(gSculptQueueMutex); gSculptQueue.clear(); }
         std::lock_guard<std::mutex> dataLock(gSculptDataMutex);
-        gSculptMesh=std::move(sculpt);gSculptMeshId=0;
-        gSculptMeshDirty.store(false,std::memory_order_release);
-        gSculptMaskDirty.store(false,std::memory_order_release);
+        gSculptMesh = std::move(sculpt);
+        gSculptMeshId = 0;
+        gSculptMeshDirty.store(false, std::memory_order_release);
+        gSculptMaskDirty.store(false, std::memory_order_release);
     }
     if (!mesh.isValid()) return 0;
     recordUndo(true);
@@ -1254,8 +1301,8 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateSculptMesh(
     transform.position = nova::Vec3(0.0f, 1.8f, 0.0f);
     const nova::Color color(0.68f, 0.72f, 0.80f, 1.0f);
     const uint32_t id = gScene.addObject(
-        shape == 0 ? "Sculpt Sphere" : "Sculpt Plane",
-        shape == 0 ? nova::PrimitiveType::Sphere : nova::PrimitiveType::Plane,
+        std::string("Sculpt ") + (shape == 0 ? "Sphere" : shape == 1 ? "Plane" : shape == 2 ? "Cube" : shape == 3 ? "Cylinder" : shape == 4 ? "Cone" : shape == 5 ? "Torus" : shape == 6 ? "Capsule" : shape == 7 ? "Wedge" : "Rounded Sphere"),
+        shape == 1 ? nova::PrimitiveType::Plane : shape == 3 ? nova::PrimitiveType::Cylinder : shape == 6 ? nova::PrimitiveType::Capsule : shape == 0 || shape == 8 ? nova::PrimitiveType::Sphere : nova::PrimitiveType::Cube,
         transform, color);
     if (!gRenderer.uploadMesh(id, mesh)) {
         gScene.removeObject(id);
