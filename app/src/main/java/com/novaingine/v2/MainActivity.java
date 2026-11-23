@@ -35,6 +35,9 @@ public final class MainActivity extends Activity
     private CameraControls cameraControls;
 
     private TextView statisticsText;
+    private LinearLayout editorPanels;
+    private TextView playStopButton;
+    private boolean playMode;
 
     private boolean viewportMaximized;
     private View toolsScrim;
@@ -190,8 +193,8 @@ public final class MainActivity extends Activity
 
 
     private void createEditorPanels() {
-        LinearLayout panel = new LinearLayout(this);
-        panel.setOrientation(LinearLayout.HORIZONTAL);
+        editorPanels = new LinearLayout(this);
+        editorPanels.setOrientation(LinearLayout.HORIZONTAL);
         panel.setPadding(dp(5), dp(4), dp(5), dp(4));
         panel.setBackgroundColor(0xDD202020);
 
@@ -932,6 +935,47 @@ public final class MainActivity extends Activity
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
+    }
+
+    @Override
+    public void onTogglePlay() {
+        playMode = !playMode;
+        if (playMode) {
+            closeToolsDrawer();
+            engineSurface.setEnginePaused(false);
+            engineSurface.setPhysicsEnabled(true);
+            editorToolbar.setVisibility(View.GONE);
+            if (editorPanels != null) editorPanels.setVisibility(View.GONE);
+            statisticsText.setText("PLAY MODE  •  LIVE");
+            statisticsText.setVisibility(View.VISIBLE);
+            if (playStopButton == null) {
+                playStopButton = new TextView(this);
+                playStopButton.setText("■  STOP");
+                playStopButton.setTextColor(Color.WHITE);
+                playStopButton.setTextSize(12);
+                playStopButton.setTypeface(null, android.graphics.Typeface.BOLD);
+                playStopButton.setGravity(Gravity.CENTER);
+                playStopButton.setPadding(dp(14), dp(9), dp(14), dp(9));
+                playStopButton.setBackground(new GradientDrawable(
+                        GradientDrawable.Orientation.LEFT_RIGHT,
+                        new int[]{0xFFE34B4B, 0xFF9E2525}));
+                FrameLayout.LayoutParams stopParams = new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                        Gravity.TOP | Gravity.END);
+                stopParams.setMargins(0, dp(8), dp(10), 0);
+                rootLayout.addView(playStopButton, stopParams);
+                playStopButton.setOnClickListener(v -> onTogglePlay());
+            }
+            playStopButton.setVisibility(View.VISIBLE);
+        } else {
+            engineSurface.setEnginePaused(false);
+            engineSurface.setPhysicsEnabled(false);
+            editorToolbar.setVisibility(View.VISIBLE);
+            if (editorPanels != null) editorPanels.setVisibility(View.VISIBLE);
+            statisticsText.setText("NOVAINGINE V2  |  VIEWPORT");
+            if (playStopButton != null) playStopButton.setVisibility(View.GONE);
+        }
     }
 
     @Override
