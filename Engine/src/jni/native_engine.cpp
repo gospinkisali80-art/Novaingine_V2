@@ -1180,9 +1180,18 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateSculptMesh(
     if (!gInitialized) return 0;
     const int shape = std::clamp(static_cast<int>(shapeValue), 0, 1);
     const int density = std::clamp(static_cast<int>(densityValue), 16, 128);
-    nova::Mesh mesh = shape == 0
-        ? nova::MeshSculptor::makeSphere(density, density * 2)
-        : nova::MeshSculptor::makePlane(density);
+    nova::Mesh mesh;
+    if(shape==0) {
+        { std::lock_guard<std::mutex> dataLock(gSculptDataMutex);
+          gSculptMesh.reset(new nova::SculptMesh(nova::SculptMesh::cubeSphere(density,1.0f)));
+          gSculptMeshId=0; }
+        if(!gSculptMesh->toMesh(mesh))return 0;
+        gSculptMesh->uploadChunks();
+    } else {
+        mesh=nova::MeshSculptor::makePlane(density);
+        std::lock_guard<std::mutex> dataLock(gSculptDataMutex);
+        gSculptMesh.reset();gSculptMeshId=0;
+    }
     if (!mesh.isValid()) return 0;
     recordUndo(true);
     nova::Transform transform;
@@ -1197,7 +1206,14 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateSculptMesh(
         return 0;
     }
     gCustomMeshes[id] = std::move(mesh);
-    gSculptMasks[id] = std::vector<float>(gCustomMeshes[id].vertexCount(), 0.0f);
+    if(shape==0) {
+        std::lock_guard<std::mutex> dataLock(gSculptDataMutex);
+        gSculptMeshId=id;
+        gSculptMeshDirty.store(false,std::memory_order_release);
+        gSculptMasks[id]=gSculptMesh->mask;
+    } else {
+        gSculptMasks[id] = std::vector<float>(gCustomMeshes[id].vertexCount(), 0.0f);
+    }
     if (nova::SceneObject* object = gScene.find(id)) {
         object->material.baseColor = nova::Vec3(0.68f, 0.72f, 0.80f);
         object->material.roughness = 0.72f;
@@ -1217,15 +1233,17 @@ Java_com_novaingine_v2_NativeBridge_nativeEnterSculptMode(JNIEnv*, jclass) {
     gScene.clear();
     gCustomMeshes.clear();
     gSculptMasks.clear();
-    gSculptMesh.reset();
+    { std::lock_guard<std::mutex> dataLock(gSculptDataMutex); gSculptMesh.reset(); }
+    { std::lock_guard<std::mutex> qlock(gSculptQueueMutex); gSculptQueue.clear(); }
+    gSculptMeshDirty.store(false,std::memory_order_release);
     gSculptStrokeActive = false;
     gHasPreviousSculptHit = false;
     gSculptMode = true;
 
-    gSculptMesh.reset(new nova::SculptMesh(nova::SculptMesh::cubeSphere(64, 1.0f)));
+    { std::lock_guard<std::mutex> dataLock(gSculptDataMutex); gSculptMesh.reset(new nova::SculptMesh(nova::SculptMesh::cubeSphere(64, 1.0f))); }
     nova::Mesh renderMesh;
-    if (!gSculptMesh->toMesh(renderMesh)) { gSculptMesh.reset(); return 0; }
-    gSculptMesh->uploadChunks();
+    { std::lock_guard<std::mutex> dataLock(gSculptDataMutex); if (!gSculptMesh->toMesh(renderMesh)) { gSculptMesh.reset(); return 0; }
+    gSculptMesh->uploadChunks(); }
 
     nova::Transform transform;
     transform.position = nova::Vec3(0.0f, 1.8f, 0.0f);
