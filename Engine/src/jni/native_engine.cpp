@@ -1628,7 +1628,12 @@ Java_com_novaingine_v2_NativeBridge_nativeAISculptStroke(
     enqueueSculptJob(SculptDabJob{nova::Vec3(),nova::Vec3(),nova::Vec3(),brush,true,false});
     int dabCount=0;
     const nova::Vec3 up(0.0f,1.0f,0.0f);
-    if(pointCount==1) {
+    if(pointCount==1&&brush.type==2&&nova::length(drag)>1e-7f) {
+        nova::Vec3 start=pointAt(0);
+        enqueueSculptJob(SculptDabJob{start,up,nova::Vec3(),brush,false,false});
+        enqueueSculptJob(SculptDabJob{start+drag,up,drag,brush,false,false});
+        dabCount=2;
+    } else if(pointCount==1) {
         enqueueSculptJob(SculptDabJob{pointAt(0),up,drag,brush,false,false});
         dabCount=1;
     } else {
