@@ -28,12 +28,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Claude cloud agent. Tool calls are validated and executed locally by Novaingine. */
+/** Groq cloud agent. Tool calls are validated and executed locally by Novaingine. */
 public final class AIEditorAssistant {
-    private static final String MODEL_ID = "claude-opus-5-5";
-    private static final String CLAUDE_MESSAGES_URL = "https://api.anthropic.com/v1/messages";
-    private static final String PREFS_NAME = "nova_claude_settings";
-    private static final String PREF_API_KEY = "claude_api_key";
+    private static final String MODEL_ID = "qwen/qwen3.8-27b";
+    private static final String GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions";
+    private static final String PREFS_NAME = "nova_groq_settings";
+    private static final String PREF_API_KEY = "groq_api_key";
     private TextView modelInfo;
     private final Activity activity;
     private final EngineSurface engine;
@@ -52,7 +52,7 @@ public final class AIEditorAssistant {
         JSONObject system = new JSONObject();
         try {
             system.put("role", "system");
-            system.put("content", "You are NOVA AI, powered by Anthropic Claude, the modeling and scene-building assistant inside Novaingine. When asked to build an object, character, vehicle, building, prop or environment, CREATE REAL VISIBLE 3D GEOMETRY IN THE CURRENT SCENE, not just explain how. Prefer create_lathe_mesh for rotational mechanical/architectural parts and create_ellipsoid_mesh for proportioned organic/body forms; these generate real high-resolution meshes locally with very few API tokens. Compose substantial assets from 6-16 distinct, deliberately proportioned parts, not generic stacks of primitives. Use create_mesh_part only for unique irregular geometry; its tool payload is token-expensive. Build recognizable silhouettes, varied cross-sections, layered forms, and connected surfaces. After each logical group inspect_scene, then continue refining. Do not stop after creating a base shape. Each mesh part supports up to 3000 vertices and 6000 triangles, local coordinates -20..20. Use extrude_face, inset_face, bevel_edge, loop_cut, subdivide_mesh, merge_vertices, and knife_cut on the selected mesh to perform real topology edits. Use faceIndex or edgeIndex starting at 0 unless scene inspection supplies a better index. Subdivision is capped at 3 levels and Android mesh complexity is capped. Do not claim a tool operation succeeded unless its result confirms success. Use coherent surfaces and sensible placement; do not make every object from identical boxes. After creating parts, inspect the scene and report exactly what was created. For organic assets, create a dense sculpt mesh first (sphere for characters/creatures/rounded props; plane for terrain-like forms), density 64-80 when mobile performance permits. Then use sculpt_selected_mesh as a real SculptMesh brush stroke tool, not the old low-detail mesh modifier. Brush centers and every point are LOCAL mesh coordinates; X is left/right, Y is up, Z is depth. Use points as a flat list of xyz triplets to draw continuous paths; the engine interpolates dabs at 25% of brush radius. If points are omitted, x/y/z is a single dab. Build organic forms in stages: primary masses with Draw/Clay/Inflate, pull silhouette features with Grab, carve separations with Crease/Pinch, flatten planes with Flatten/Scrape, protect finished regions with Mask, then Smooth lightly to remove lumps. Use several deliberate strokes at different centers and radii rather than one giant dab. Use X symmetry for centered characters and vehicles, Y/Z only when appropriate. Grab accepts dragX/dragY/dragZ for a one-point pull or a points path for a continuous pull. Radius is 0.02-1.0 world units, strength 0-1, hardness/falloff 0-1; subtract reverses Draw, Clay and Inflate. Wait for queued strokes to process before relying on later scene inspection. The AI must make recognizable silhouettes, proportionate anatomy, layered forms, and refined transitions, not merely inflate a sphere. If editing an existing object, inspect and select it first. Preserve all existing scene content unless the user explicitly asks to remove it. Keep Blender desktop bridge and GLB import available. Use existing terrain and scene tools when relevant. Keep operations moderate for Android performance. Never claim a model exists unless creation tools confirm success. If a geometry tool fails, explain the failure. Be honest about current sculpting limits and do not claim Blender or Unreal parity.");
+            system.put("content", "You are NOVA AI, powered by Groq, the modeling and scene-building assistant inside Novaingine. When asked to build an object, character, vehicle, building, prop or environment, CREATE REAL VISIBLE 3D GEOMETRY IN THE CURRENT SCENE, not just explain how. Prefer create_lathe_mesh for rotational mechanical/architectural parts and create_ellipsoid_mesh for proportioned organic/body forms; these generate real high-resolution meshes locally with very few API tokens. Compose substantial assets from 6-16 distinct, deliberately proportioned parts, not generic stacks of primitives. Use create_mesh_part only for unique irregular geometry; its tool payload is token-expensive. Build recognizable silhouettes, varied cross-sections, layered forms, and connected surfaces. After each logical group inspect_scene, then continue refining. Do not stop after creating a base shape. Each mesh part supports up to 3000 vertices and 6000 triangles, local coordinates -20..20. Use extrude_face, inset_face, bevel_edge, loop_cut, subdivide_mesh, merge_vertices, and knife_cut on the selected mesh to perform real topology edits. Use faceIndex or edgeIndex starting at 0 unless scene inspection supplies a better index. Subdivision is capped at 3 levels and Android mesh complexity is capped. Do not claim a tool operation succeeded unless its result confirms success. Use coherent surfaces and sensible placement; do not make every object from identical boxes. After creating parts, inspect the scene and report exactly what was created. For organic assets, create a dense sculpt mesh first (sphere for characters/creatures/rounded props; plane for terrain-like forms), density 64-80 when mobile performance permits. Then use sculpt_selected_mesh as a real SculptMesh brush stroke tool, not the old low-detail mesh modifier. Brush centers and every point are LOCAL mesh coordinates; X is left/right, Y is up, Z is depth. Use points as a flat list of xyz triplets to draw continuous paths; the engine interpolates dabs at 25% of brush radius. If points are omitted, x/y/z is a single dab. Build organic forms in stages: primary masses with Draw/Clay/Inflate, pull silhouette features with Grab, carve separations with Crease/Pinch, flatten planes with Flatten/Scrape, protect finished regions with Mask, then Smooth lightly to remove lumps. Use several deliberate strokes at different centers and radii rather than one giant dab. Use X symmetry for centered characters and vehicles, Y/Z only when appropriate. Grab accepts dragX/dragY/dragZ for a one-point pull or a points path for a continuous pull. Radius is 0.02-1.0 world units, strength 0-1, hardness/falloff 0-1; subtract reverses Draw, Clay and Inflate. Wait for queued strokes to process before relying on later scene inspection. The AI must make recognizable silhouettes, proportionate anatomy, layered forms, and refined transitions, not merely inflate a sphere. If editing an existing object, inspect and select it first. Preserve all existing scene content unless the user explicitly asks to remove it. Keep Blender desktop bridge and GLB import available. Use existing terrain and scene tools when relevant. Keep operations moderate for Android performance. Never claim a model exists unless creation tools confirm success. If a geometry tool fails, explain the failure. Be honest about current sculpting limits and do not claim Blender or Unreal parity.");
             history.put(system);
         } catch (Exception ignored) {}
     }
@@ -66,14 +66,14 @@ public final class AIEditorAssistant {
         LinearLayout top = new LinearLayout(activity);
         top.setGravity(Gravity.CENTER_VERTICAL);
         TextView title = new TextView(activity);
-        title.setText("NOVA AI  •  CLAUDE CLOUD");
+        title.setText("NOVA AI  •  GROQ CLOUD");
         title.setTextColor(0xFFFFB45C);
         title.setTextSize(16);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         top.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
         Button setupButton = new Button(activity);
         setupButton.setText("API KEY");
-        setupButton.setOnClickListener(v -> showClaudeKeyDialog());
+        setupButton.setOnClickListener(v -> showGroqKeyDialog());
         top.addView(setupButton);
         root.addView(top);
 
@@ -89,7 +89,7 @@ public final class AIEditorAssistant {
         transcript.setTextColor(Color.WHITE);
         transcript.setTextSize(13);
         transcript.setPadding(dp(10), dp(10), dp(10), dp(10));
-        transcript.setText("Novaingine Claude AI is ready to connect.\n\nAdd your Anthropic API key using API KEY, then try: “Sculpt a detailed dragon” or “Build a modern house.”\n\nClaude API usage is billed by Anthropic. Have a parent or guardian manage billing and credentials.");
+        transcript.setText("Novaingine Groq AI is ready to connect.\n\nAdd your Groq API key using API KEY, then try: “Sculpt a detailed dragon” or “Build a modern house.”\n\nGroq offers a rate-limited free tier. Check your account limits before sending requests.");
         scroll.addView(transcript);
         LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1);
         scrollParams.topMargin = dp(8);
@@ -128,39 +128,37 @@ public final class AIEditorAssistant {
     private void updateModelInfo() {
         if (modelInfo != null) {
             boolean configured = !getApiKey().isEmpty();
-            modelInfo.setText("Provider: Anthropic Claude Opus 5.5  |  " + (configured ? "API key saved on this device" : "API key required"));
+            modelInfo.setText("Provider: Groq Qwen3.8-27B  |  " + (configured ? "API key saved on this device" : "API key required"));
         }
     }
 
     private String getApiKey() {
-        activity.getSharedPreferences("nova_groq_settings", Activity.MODE_PRIVATE)
-                .edit().remove("groq_api_key").apply();
         return activity.getSharedPreferences(PREFS_NAME, Activity.MODE_PRIVATE)
                 .getString(PREF_API_KEY, "").trim();
     }
 
-    private void showClaudeKeyDialog() {
+    private void showGroqKeyDialog() {
         EditText keyInput = new EditText(activity);
         keyInput.setSingleLine(true);
-        keyInput.setHint("Paste your Anthropic API key");
+        keyInput.setHint("Paste your Groq API key");
         keyInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         keyInput.setText(getApiKey());
         LinearLayout content = new LinearLayout(activity);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(20), dp(8), dp(20), dp(4));
         TextView warning = new TextView(activity);
-        warning.setText("Stored in this app\'s private settings. Never share it or commit it to GitHub. Anthropic API usage can incur charges. Ask a parent or guardian to manage the provider account, billing and API key.");
+        warning.setText("Stored in this app's private settings. Never share it or commit it to GitHub. Groq's free tier has usage limits. Ask a parent or guardian to manage the provider account and API key.");
         warning.setTextColor(0xFFB8C5D5);
         warning.setTextSize(12);
         content.addView(warning);
         content.addView(keyInput);
-        new AlertDialog.Builder(activity).setTitle("Connect Claude").setView(content)
+        new AlertDialog.Builder(activity).setTitle("Connect Groq").setView(content)
                 .setPositiveButton("SAVE KEY", (d, w) -> {
                     String key = keyInput.getText().toString().trim();
                     if (key.isEmpty()) activity.getSharedPreferences(PREFS_NAME, Activity.MODE_PRIVATE).edit().remove(PREF_API_KEY).apply();
                     else activity.getSharedPreferences(PREFS_NAME, Activity.MODE_PRIVATE).edit().putString(PREF_API_KEY, key).apply();
                     updateModelInfo();
-                    append(key.isEmpty() ? "\\nClaude API key cleared.\\n" : "\\nClaude API key saved on this device.\\n");
+                    append(key.isEmpty() ? "\\nGroq API key cleared.\\n" : "\\nGroq API key saved on this device.\\n");
                 })
                 .setNegativeButton("CANCEL", null)
                 .setNeutralButton("CLEAR", (d, w) -> {
@@ -179,8 +177,8 @@ public final class AIEditorAssistant {
         busy = true;
         boolean sceneRequest = isSceneRequest(text);
         append(sceneRequest
-                ? "CLAUDE: Planning and sculpting your scene...\\n"
-                : "CLAUDE: Thinking...\\n");
+                ? "GROQ: Planning and sculpting your scene...\\n"
+                : "GROQ: Thinking...\\n");
         worker.execute(() -> {
             try {
                 JSONObject user = new JSONObject();
@@ -221,6 +219,14 @@ public final class AIEditorAssistant {
     }
 
     private String runConversation() throws Exception {
+        // Fast chat path: do not prefill the long scene-agent instructions or old tool history.
+        // Keep only a short system message and the latest user message for ordinary conversation.
+        JSONArray chatMessages = new JSONArray();
+        JSONObject chatSystem = new JSONObject();
+        chatSystem.put("role", "system");
+        chatSystem.put("content", "You are Novaingine's helpful local AI assistant. Answer clearly and briefly. Do not claim to change the 3D scene; use scene tools only for explicit modeling requests.");
+        chatMessages.put(chatSystem);
+
         JSONObject latestUser = null;
         for (int i = history.length() - 1; i >= 1; i--) {
             JSONObject item = history.optJSONObject(i);
@@ -230,105 +236,96 @@ public final class AIEditorAssistant {
             }
         }
         if (latestUser == null) throw new Exception("No user message was found.");
-        JSONArray messages = new JSONArray();
-        messages.put(new JSONObject().put("role", "user")
-                .put("content", latestUser.optString("content", "")));
+        String userText = latestUser.optString("content", "");
+        userText = userText.replaceFirst("^/no_think\\\\n", "");
+        userText = userText.replaceFirst("^/no_think\\n", "");
+        JSONObject chatUser = new JSONObject();
+        chatUser.put("role", "user");
+        chatUser.put("content", userText);
+        chatMessages.put(chatUser);
+
         JSONObject body = new JSONObject();
         body.put("model", getModel());
-        body.put("max_tokens", 1024);
-        body.put("system", "You are Novaingine's helpful Claude AI assistant. Answer clearly and briefly. Do not claim to change the 3D scene; use scene tools only for explicit modelling requests.");
-        body.put("messages", messages);
-        String content = extractClaudeText(postClaudeModel(body)).trim();
-        if (content.isEmpty()) throw new Exception("Claude returned an empty response.");
-        history.put(new JSONObject().put("role", "assistant").put("content", content));
+        body.put("messages", chatMessages);
+        body.put("reasoning_effort", "low");
+        body.put("max_completion_tokens", 1024);
+        JSONObject response = postGroqModel(body);
+        JSONObject choice = response.getJSONArray("choices").getJSONObject(0);
+        JSONObject message = choice.getJSONObject("message");
+        String content = message.optString("content", "").trim();
+        if (content.isEmpty()) {
+            String reason = choice.optString("finish_reason", "unknown");
+            throw new Exception("Groq returned no text (finish reason: " + reason
+                    + "). Try a shorter message or check your Groq API access and model availability.");
+        }
+        JSONObject assistant = new JSONObject();
+        assistant.put("role", "assistant");
+        assistant.put("content", content);
+        history.put(assistant);
         return content;
     }
 
     private String runAgent() throws Exception {
-        JSONArray openAiTools = buildTools();
-        JSONArray claudeTools = new JSONArray();
-        for (int i = 0; i < openAiTools.length(); i++) {
-            JSONObject fn = openAiTools.getJSONObject(i).getJSONObject("function");
-            claudeTools.put(new JSONObject()
-                    .put("name", fn.getString("name"))
-                    .put("description", fn.optString("description", ""))
-                    .put("input_schema", fn.getJSONObject("parameters")));
-        }
-
-        JSONArray messages = new JSONArray();
-        for (int i = 1; i < history.length(); i++) {
-            JSONObject item = history.optJSONObject(i);
-            if (item == null) continue;
-            String role = item.optString("role", "");
-            if (!"user".equals(role) && !"assistant".equals(role)) continue;
-            Object content = item.opt("content");
-            if (content == null || content == JSONObject.NULL) continue;
-            messages.put(new JSONObject().put("role", role).put("content", content));
-        }
-        if (messages.length() == 0) throw new Exception("No user message was found.");
-
+        JSONArray tools = buildTools();
         int operationCount = 0;
         for (int step = 0; step < 12; step++) {
             JSONObject body = new JSONObject();
             body.put("model", getModel());
-            body.put("max_tokens", 4096);
-            body.put("system", history.getJSONObject(0).optString("content", ""));
-            body.put("messages", messages);
-            body.put("tools", claudeTools);
-            body.put("tool_choice", new JSONObject().put("type", "auto"));
-
-            JSONObject response = postClaudeModel(body);
-            JSONArray blocks = response.optJSONArray("content");
-            JSONArray calls = new JSONArray();
-            if (blocks != null) {
-                for (int i = 0; i < blocks.length(); i++) {
-                    JSONObject block = blocks.optJSONObject(i);
-                    if (block != null && "tool_use".equals(block.optString("type"))) calls.put(block);
+            body.put("messages", history);
+            body.put("tools", tools);
+            body.put("tool_choice", "auto");
+            body.put("reasoning_effort", "medium");
+            body.put("max_completion_tokens", 4096);
+            body.put("parallel_tool_calls", false);
+            JSONObject response = postGroqModel(body);
+            JSONObject message = response.getJSONArray("choices").getJSONObject(0).getJSONObject("message");
+            JSONArray calls = message.optJSONArray("tool_calls");
+            if (calls == null || calls.length() == 0) {
+                String content = message.optString("content", "").trim();
+                JSONObject assistant = new JSONObject();
+                assistant.put("role", "assistant");
+                assistant.put("content", content);
+                history.put(assistant);
+                if (content.isEmpty()) {
+                    return "Groq returned an empty completion. No scene changes were made. Please retry.";
                 }
+                return content;
             }
-
-            if (calls.length() == 0) {
-                String answer = extractClaudeText(response).trim();
-                if (answer.isEmpty()) return "Claude returned an empty completion. No scene changes were made.";
-                history.put(new JSONObject().put("role", "assistant").put("content", answer));
-                return answer;
-            }
-
-            messages.put(new JSONObject().put("role", "assistant").put("content", blocks));
-            JSONArray results = new JSONArray();
+            JSONObject assistant = new JSONObject();
+            assistant.put("role", "assistant");
+            assistant.put("content", message.optString("content", ""));
+            assistant.put("tool_calls", calls);
+            history.put(assistant);
             for (int i = 0; i < calls.length(); i++) {
                 JSONObject call = calls.getJSONObject(i);
-                String name = call.getString("name");
-                JSONObject args = call.optJSONObject("input");
-                if (args == null) args = new JSONObject();
-                if (++operationCount > 48) {
-                    return "I reached the safe 48-operation limit. The scene contains completed operations so far; give me another instruction to continue.";
-                }
+                String id = call.optString("id");
+                JSONObject fn = call.getJSONObject("function");
+                String name = fn.getString("name");
+                JSONObject args = new JSONObject(fn.optString("arguments", "{}"));
+                if (++operationCount > 48) return "I reached the safe 48-operation limit. The scene contains the completed operations so far; give me another instruction to continue.";
                 String result = executeTool(name, args);
-                results.put(new JSONObject()
-                        .put("type", "tool_result")
-                        .put("tool_use_id", call.getString("id"))
-                        .put("content", result));
+                JSONObject toolMessage = new JSONObject();
+                toolMessage.put("role", "tool");
+                toolMessage.put("tool_call_id", id);
+                toolMessage.put("content", result);
+                history.put(toolMessage);
                 final String status = "Tool: " + name + " → " + result + "\n";
                 main.post(() -> append(status));
             }
-            messages.put(new JSONObject().put("role", "user").put("content", results));
         }
         return "I stopped after 12 tool steps to keep the editor responsive. You can give me the next instruction.";
     }
 
-    private JSONObject postClaudeModel(JSONObject body) throws Exception {
+    private JSONObject postGroqModel(JSONObject body) throws Exception {
         String apiKey = getApiKey();
-        if (apiKey.isEmpty()) throw new Exception("Add your Anthropic Claude API key using the API KEY button first.");
-        HttpURLConnection connection = (HttpURLConnection) new URL(CLAUDE_MESSAGES_URL).openConnection();
+        if (apiKey.isEmpty()) throw new Exception("Add your Groq API key using the API KEY button first.");
+        HttpURLConnection connection = (HttpURLConnection) new URL(GROQ_CHAT_URL).openConnection();
         connection.setRequestMethod("POST");
-        connection.setConnectTimeout(10000);
+        connection.setConnectTimeout(5000);
         connection.setReadTimeout(180000);
         connection.setDoOutput(true);
         connection.setRequestProperty("Content-Type", "application/json");
-        connection.setRequestProperty("x-api-key", apiKey);
-        connection.setRequestProperty("anthropic-version", "2023-06-01");
-
+        connection.setRequestProperty("Authorization", "Bearer " + apiKey);
         byte[] data = body.toString().getBytes(StandardCharsets.UTF_8);
         int code;
         String responseText;
@@ -339,43 +336,28 @@ public final class AIEditorAssistant {
                     ? connection.getInputStream() : connection.getErrorStream();
             StringBuilder result = new StringBuilder();
             if (stream != null) {
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(stream, StandardCharsets.UTF_8))) {
                     String line;
                     while ((line = reader.readLine()) != null) result.append(line);
                 }
             }
             responseText = result.toString();
         } catch (java.net.ConnectException ex) {
-            throw new Exception("Could not connect to Anthropic Claude. Check your internet connection.");
+            throw new Exception("Could not connect to Groq. Check your internet connection and try again.");
         } finally {
             connection.disconnect();
         }
-
         JSONObject json;
         try {
             json = new JSONObject(responseText);
         } catch (Exception parseError) {
-            throw new Exception("Claude returned an unreadable response (HTTP " + code + ").");
+            throw new Exception("Groq returned an unreadable response (HTTP " + code + ").");
         }
         if (code >= 200 && code < 300) return json;
-        JSONObject error = json.optJSONObject("error");
-        String message = error == null ? json.toString() : error.optString("message", json.toString());
-        throw new Exception("Claude API HTTP " + code + ": " + message);
-    }
-
-    private String extractClaudeText(JSONObject response) {
-        JSONArray content = response.optJSONArray("content");
-        StringBuilder text = new StringBuilder();
-        if (content != null) {
-            for (int i = 0; i < content.length(); i++) {
-                JSONObject block = content.optJSONObject(i);
-                if (block != null && "text".equals(block.optString("type"))) {
-                    if (text.length() > 0) text.append("\n");
-                    text.append(block.optString("text", ""));
-                }
-            }
-        }
-        return text.toString();
+        String message = json.optJSONObject("error") == null ? json.toString()
+                : json.getJSONObject("error").optString("message", json.toString());
+        throw new Exception("Groq API HTTP " + code + ": " + message);
     }
 
     private void compactHistoryForNextTurn() {
