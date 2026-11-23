@@ -521,6 +521,7 @@ public final class AIEditorAssistant {
         boolean caps = a.optBoolean("caps", true);
         int vertexCount = rings * sides + (caps ? 2 : 0);
         float[] positions = new float[vertexCount * 3];
+        float prevNx = 0, prevNy = 0, prevNz = 0;
         for (int i = 0; i < rings; i++) {
             int prev = Math.max(0, i - 1), next = Math.min(rings - 1, i + 1);
             float tx = centers[next * 3] - centers[prev * 3];
@@ -529,12 +530,28 @@ public final class AIEditorAssistant {
             float tl = (float) Math.sqrt(tx * tx + ty * ty + tz * tz);
             if (tl < 0.0001f) return "Sweep path contains repeated or overlapping points.";
             tx /= tl; ty /= tl; tz /= tl;
-            float ax = Math.abs(ty) < 0.90f ? 0.0f : 1.0f;
-            float ay = Math.abs(ty) < 0.90f ? 1.0f : 0.0f;
-            float nx = -tz * ay, ny = tz * ax, nz = tx * ay - ty * ax;
+            float nx, ny, nz;
+            if (i == 0) {
+                float ax = Math.abs(ty) < 0.90f ? 0.0f : 1.0f;
+                float ay = Math.abs(ty) < 0.90f ? 1.0f : 0.0f;
+                nx = -tz * ay; ny = tz * ax; nz = tx * ay - ty * ax;
+            } else {
+                // Parallel-transport the previous ring frame into the new tangent plane.
+                float projection = prevNx * tx + prevNy * ty + prevNz * tz;
+                nx = prevNx - tx * projection;
+                ny = prevNy - ty * projection;
+                nz = prevNz - tz * projection;
+            }
             float nl = (float) Math.sqrt(nx * nx + ny * ny + nz * nz);
+            if (nl < 0.0001f) {
+                float ax = Math.abs(ty) < 0.90f ? 0.0f : 1.0f;
+                float ay = Math.abs(ty) < 0.90f ? 1.0f : 0.0f;
+                nx = -tz * ay; ny = tz * ax; nz = tx * ay - ty * ax;
+                nl = (float) Math.sqrt(nx * nx + ny * ny + nz * nz);
+            }
             if (nl < 0.0001f) return "Could not construct a stable sweep frame for this path.";
             nx /= nl; ny /= nl; nz /= nl;
+            prevNx = nx; prevNy = ny; prevNz = nz;
             float bx = ty * nz - tz * ny, by = tz * nx - tx * nz, bz = tx * ny - ty * nx;
             for (int j = 0; j < sides; j++) {
                 double angle = Math.PI * 2.0 * j / sides;
