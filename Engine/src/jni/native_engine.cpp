@@ -1622,6 +1622,8 @@ Java_com_novaingine_v2_NativeBridge_nativeAISculptStroke(
             if(estimatedDabs>240)return -6;
         }
     }
+    // Store an undo snapshot for each AI-authored sculpt stroke before it is queued.
+    recordUndo(true);
     startSculptWorker();
     enqueueSculptJob(SculptDabJob{nova::Vec3(),nova::Vec3(),nova::Vec3(),brush,true,false});
     int dabCount=0;
