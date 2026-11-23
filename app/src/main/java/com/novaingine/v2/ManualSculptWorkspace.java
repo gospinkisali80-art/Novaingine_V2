@@ -232,9 +232,10 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private void createMesh(int shape, int density) {
         engine.createSculptMesh(shape, density, id -> {
             if (id > 0) {
-                status.setText(shape == 0
-                        ? "Sculpt sphere created and selected. Drag to sculpt."
-                        : "Dense sculpt plane created and selected. Drag to sculpt.");
+                String[] names = {"sphere", "plane", "cube", "cylinder", "cone",
+                        "torus", "capsule", "wedge", "rounded sphere"};
+                status.setText("Sculpt " + names[Math.max(0, Math.min(8, shape))]
+                        + " created and selected. Drag to sculpt.");
             } else {
                 status.setText("Could not create mesh. Try again.");
             }
