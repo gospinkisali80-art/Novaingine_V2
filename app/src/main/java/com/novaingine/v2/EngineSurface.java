@@ -162,6 +162,13 @@ public final class EngineSurface extends GLSurfaceView
         return NativeBridge.nativePaintFoliage(x, z, radius, count, kind);
     }
 
+    public void sculptSelectedMesh(float x, float y, float z, float radius, float strength, int mode, boolean symmetry, java.util.function.IntConsumer callback) {
+        queueEvent(() -> {
+            int result = NativeBridge.nativeSculptSelectedMesh(x, y, z, radius, strength, mode, symmetry);
+            if (callback != null) post(() -> callback.accept(result));
+        });
+    }
+
     public int clearFoliage() {
         return NativeBridge.nativeClearFoliage();
     }
