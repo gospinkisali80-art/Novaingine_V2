@@ -126,9 +126,14 @@ public:
 
             switch (brush) {
                 case SculptBrush::Draw:
-                case SculptBrush::Inflate:
                     p = original + normal * (strength * w);
                     break;
+                case SculptBrush::Inflate: {
+                    const Vec3 radial = normalize(original - center);
+                    const Vec3 inflateDirection = normalize(normal * 0.65f + radial * 0.35f);
+                    p = original + inflateDirection * (strength * w * 1.35f);
+                    break;
+                }
                 case SculptBrush::Smooth:
                     if (counts[i]) {
                         const Vec3 average = sums[i] * (1.0f / static_cast<float>(counts[i]));
