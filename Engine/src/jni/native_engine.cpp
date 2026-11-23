@@ -13,6 +13,7 @@
 #include <atomic>
 #include <unordered_map>
 #include <vector>
+#include <utility>
 
 #include "../Camera/Camera.h"
 #include "../Scene/Scene.h"
@@ -42,6 +43,10 @@ std::unordered_map<uint32_t, std::vector<float>> gSculptMasks;
 std::unique_ptr<nova::SculptMesh> gSculptMesh;
 uint32_t gSculptMeshId = 0;
 bool gSculptMode = false;
+bool gManualSculptWorkspaceActive = false;
+bool gSculptWorkspacePreviousShowGrid = false;
+bool gSculptWorkspacePreviousShowBounds = false;
+std::vector<std::pair<uint32_t, bool>> gSculptWorkspaceVisibility;
 bool gSculptStrokeActive = false;
 bool gHasPreviousSculptHit = false;
 nova::Vec3 gPreviousSculptHit;
@@ -1378,6 +1383,44 @@ Java_com_novaingine_v2_NativeBridge_nativeExportSelectedObj(
             << c << "/" << c << "/" << c << "\n";
     }
     return out.good() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetManualSculptWorkspace(JNIEnv*, jclass, jboolean enabled) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized) return;
+
+    const bool entering = enabled == JNI_TRUE;
+    if (entering == gManualSculptWorkspaceActive) return;
+
+    RendererSettings settings = gRenderer.getSettings();
+    if (entering) {
+        gSculptWorkspaceVisibility.clear();
+        gSculptWorkspaceVisibility.reserve(gScene.objectCount());
+        for (nova::SceneObject& object : gScene.getObjects()) {
+            gSculptWorkspaceVisibility.emplace_back(object.id, object.visible);
+            // Keep an already active sculpt target visible, but hide every arena
+            // prop, wall, floor mesh and other scene object behind the workspace.
+            if (object.id != gSculptMeshId) object.visible = false;
+        }
+        gSculptWorkspacePreviousShowGrid = settings.showGrid;
+        gSculptWorkspacePreviousShowBounds = settings.showBounds;
+        settings.showGrid = false;
+        settings.showBounds = false;
+        gRenderer.setSettings(settings);
+        gManualSculptWorkspaceActive = true;
+    } else {
+        for (const auto& saved : gSculptWorkspaceVisibility) {
+            if (nova::SceneObject* object = gScene.find(saved.first)) {
+                object->visible = saved.second;
+            }
+        }
+        gSculptWorkspaceVisibility.clear();
+        settings.showGrid = gSculptWorkspacePreviousShowGrid;
+        settings.showBounds = gSculptWorkspacePreviousShowBounds;
+        gRenderer.setSettings(settings);
+        gManualSculptWorkspaceActive = false;
+    }
 }
 
 JNIEXPORT void JNICALL
