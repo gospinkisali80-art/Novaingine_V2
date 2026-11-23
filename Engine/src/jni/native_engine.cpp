@@ -35,6 +35,22 @@ namespace {
 
 std::mutex engineMutex;
 
+Renderer gRenderer;
+nova::Scene gScene;
+std::unordered_map<uint32_t, nova::Mesh> gCustomMeshes;
+std::unordered_map<uint32_t, std::vector<float>> gSculptMasks;
+std::unique_ptr<nova::SculptMesh> gSculptMesh;
+uint32_t gSculptMeshId = 0;
+bool gSculptMode = false;
+bool gSculptStrokeActive = false;
+bool gHasPreviousSculptHit = false;
+nova::Vec3 gPreviousSculptHit;
+nova::Vec3 gPreviousSculptNormal;
+nova::VisualScript gVisualScript;
+nova::VisualScriptRuntime gVisualScriptRuntime;
+bool gVisualScriptStarted = false;
+nova::Camera gCamera;
+
 std::mutex gSculptDataMutex;
 std::mutex gSculptQueueMutex;
 std::condition_variable gSculptQueueCv;
@@ -82,21 +98,7 @@ void enqueueSculptJob(const SculptDabJob& job) {
 
 
 
-Renderer gRenderer;
-nova::Scene gScene;
-std::unordered_map<uint32_t, nova::Mesh> gCustomMeshes;
-std::unordered_map<uint32_t, std::vector<float>> gSculptMasks;
-std::unique_ptr<nova::SculptMesh> gSculptMesh;
-uint32_t gSculptMeshId = 0;
-bool gSculptMode = false;
-bool gSculptStrokeActive = false;
-bool gHasPreviousSculptHit = false;
-nova::Vec3 gPreviousSculptHit;
-nova::Vec3 gPreviousSculptNormal;
-nova::VisualScript gVisualScript;
-nova::VisualScriptRuntime gVisualScriptRuntime;
-bool gVisualScriptStarted = false;
-nova::Camera gCamera;
+
 
 bool gInitialized = false;
 bool gPaused = false;
