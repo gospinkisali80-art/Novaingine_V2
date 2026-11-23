@@ -46,6 +46,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private EditText[] positionInputs = new EditText[3];
     private int transformComponent = 0;
     private int activeTransformMode = -1;
+    private float[] transformDragState;
 
     public ManualSculptWorkspace(Activity activity, EngineSurface engine, Runnable onExit) {
         super(activity);
@@ -242,6 +243,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
             modeButton.setOnClickListener(v -> {
                 engine.setTransformMode(nativeMode);
                 activeTransformMode = nativeMode;
+                transformDragState = engine.getSelectedTransform();
                 sculptEnabled = false;
                 applyOptions();
                 transformComponent = nativeMode;
@@ -468,7 +470,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 float dx = event.getX() - lastX;
                 float dy = event.getY() - lastY;
                 if (activeTransformMode >= 0) {
-                    float[] transform = engine.getSelectedTransform();
+                    float[] transform = transformDragState;
                     if (transform != null && transform.length >= 9) {
                         if (activeTransformMode == 0) {
                             // Move in the viewport's screen-aligned XY plane.
@@ -483,6 +485,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                             transform[7] = Math.max(0.01f, Math.min(100.0f, transform[7] * factor));
                             transform[8] = Math.max(0.01f, Math.min(100.0f, transform[8] * factor));
                         }
+                        transformDragState = transform;
                         engine.setSelectedTransform(transform);
                         for (int axis = 0; axis < 3; axis++) {
                             positionInputs[axis].setText(String.valueOf(
