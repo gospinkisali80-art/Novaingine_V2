@@ -44,6 +44,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private boolean subtract;
     private boolean sculptEnabled = true;
     private EditText[] positionInputs = new EditText[3];
+    private int transformComponent = 0;
 
     public ManualSculptWorkspace(Activity activity, EngineSurface engine, Runnable onExit) {
         super(activity);
@@ -202,7 +203,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
             fieldParams.setMargins(0, 0, dp(5), 0);
             transformRow.addView(field, fieldParams);
             if (selectedTransform != null && selectedTransform.length >= 3) {
-                field.setText(String.valueOf(selectedTransform[axis]));
+                field.setText(String.valueOf(selectedTransform[axis + transformComponent * 3]));
             }
         }
         TextView applyPosition = button("SET XYZ");
@@ -235,6 +236,14 @@ public final class ManualSculptWorkspace extends FrameLayout {
             transformModes.addView(modeButton, weighted(0, 1));
             modeButton.setOnClickListener(v -> {
                 engine.setTransformMode(nativeMode);
+                transformComponent = nativeMode;
+                float[] values = engine.getSelectedTransform();
+                if (values != null && values.length >= 9) {
+                    for (int axis = 0; axis < 3; axis++) {
+                        positionInputs[axis].setText(String.valueOf(values[axis + transformComponent * 3]));
+                    }
+                }
+                applyPosition.setText(nativeMode == 0 ? "SET POS" : nativeMode == 1 ? "SET ROT" : "SET SCALE");
                 selectedToolIndicator.setText("ACTIVE: " + modes[nativeMode] + "  ▴ TOOLS");
                 closeToolDrawer.run();
             });
@@ -302,9 +311,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 status.setText("Sculpt " + names[Math.max(0, Math.min(8, shape))]
                         + " created and selected. Drag to sculpt.");
                 float[] transform = engine.getSelectedTransform();
-                if (transform != null && transform.length >= 3) {
+                if (transform != null && transform.length >= 9) {
                     for (int axis = 0; axis < 3; axis++) {
-                        if (positionInputs[axis] != null) positionInputs[axis].setText(String.valueOf(transform[axis]));
+                        if (positionInputs[axis] != null) positionInputs[axis].setText(String.valueOf(transform[axis + transformComponent * 3]));
                     }
                 }
             } else {
