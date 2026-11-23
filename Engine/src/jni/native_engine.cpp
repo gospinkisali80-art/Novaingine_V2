@@ -15,6 +15,7 @@
 #include "../Renderer/Renderer.h"
 #include "../Physics/PhysicsWorld.h"
 #include "../Geometry/Mesh.h"
+#include "../VisualScripting/VisualScriptRuntime.h"
 #define CGLTF_IMPLEMENTATION
 #include "../ThirdParty/cgltf.h"
 
