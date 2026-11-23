@@ -729,7 +729,7 @@ public final class MainActivity extends Activity
         if (manualSculptWorkspace == null) return;
         rootLayout.removeView(manualSculptWorkspace);
         manualSculptWorkspace = null;
-        engineSurface.setSculptOptions(false, 0, 0.18f, 0.12f, 0.5f, true, 1.0f);
+        engineSurface.setSculptOptions(false, 0, 0.18f, 0.12f, 0.5f, 0, false, 1.0f);
         if (editorToolbar != null) editorToolbar.setVisibility(View.VISIBLE);
         if (viewportInput != null) viewportInput.setVisibility(View.VISIBLE);
         if (statisticsText != null) statisticsText.setVisibility(View.VISIBLE);
