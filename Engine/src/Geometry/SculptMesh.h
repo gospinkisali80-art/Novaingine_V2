@@ -430,6 +430,7 @@ public:
     void releaseGpu(){for(auto& c:chunks)c.release();}
     bool uploadChunks(){
         for(auto& c:chunks){
+            if(c.vao&&!c.dirty)continue;
             std::vector<Vertex> verts;std::vector<uint32_t> inds;verts.reserve(c.triangles.size()*3);inds.reserve(c.triangles.size()*3);
             for(uint32_t t:c.triangles)for(int k=0;k<3;k++){uint32_t src=indices[t*3+k];uint32_t dst=(uint32_t)verts.size();verts.emplace_back(positions[src],normals[src],0,0);inds.push_back(dst);}
             bool fresh=!c.vao;
