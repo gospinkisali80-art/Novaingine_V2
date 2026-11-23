@@ -90,7 +90,32 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM);
         addView(bottom, bottomParams);
 
-        status = label("Create a sphere or plane, then drag on the model to sculpt.", 10, 0xFFB8C4D1, false);
+        final TextView selectedToolIndicator = button("ACTIVE: DRAW  ▴ TOOLS");
+        selectedToolIndicator.setTextColor(ACCENT);
+        FrameLayout.LayoutParams indicatorParams = new FrameLayout.LayoutParams(
+                LayoutParams.WRAP_CONTENT, dp(42), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        indicatorParams.bottomMargin = dp(12);
+        addView(selectedToolIndicator, indicatorParams);
+        final boolean[] drawerOpen = {false};
+        final Runnable closeToolDrawer = () -> {
+            if (!drawerOpen[0]) return;
+            drawerOpen[0] = false;
+            bottom.animate().translationY(bottom.getHeight() + dp(8)).setDuration(220).start();
+            selectedToolIndicator.setTextColor(ACCENT);
+        };
+        selectedToolIndicator.setOnClickListener(v -> {
+            if (drawerOpen[0]) {
+                closeToolDrawer.run();
+            } else {
+                drawerOpen[0] = true;
+                bottom.animate().translationY(0).setDuration(220).start();
+                selectedToolIndicator.setText("CLOSE TOOLS  ▾");
+                selectedToolIndicator.setTextColor(Color.WHITE);
+            }
+        });
+        bottom.post(() -> bottom.setTranslationY(bottom.getHeight() + dp(8)));
+
+        status = label("Choose a shape, then drag on the mesh to sculpt.", 10, 0xFFB8C4D1, false);
         bottom.addView(status);
 
         HorizontalScrollView brushScroll = new HorizontalScrollView(activity);
@@ -114,6 +139,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 selectedBrush = index;
                 updateBrushButtons();
                 applyOptions();
+                selectedToolIndicator.setText("ACTIVE: " + BRUSHES[index] + "  ▴ TOOLS");
+                closeToolDrawer.run();
             });
         }
         updateBrushButtons();
@@ -141,13 +168,29 @@ public final class ManualSculptWorkspace extends FrameLayout {
         bottom.addView(actions, new LinearLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT, dp(42)));
 
-        TextView sphere = button("+ SPHERE");
-        sphere.setOnClickListener(v -> createMesh(0, 64));
-        actions.addView(sphere, weighted(0, 1));
-
-        TextView plane = button("+ PLANE");
-        plane.setOnClickListener(v -> createMesh(1, 128));
-        actions.addView(plane, weighted(0, 1));
+        HorizontalScrollView shapeScroll = new HorizontalScrollView(activity);
+        shapeScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout shapeRow = new LinearLayout(activity);
+        shapeRow.setOrientation(LinearLayout.HORIZONTAL);
+        shapeScroll.addView(shapeRow);
+        bottom.addView(shapeScroll, 0, new LinearLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, dp(44)));
+        String[] shapeNames = {"SPHERE", "PLANE", "CUBE", "CYLINDER", "CONE",
+                "TORUS", "CAPSULE", "WEDGE", "ROUND SPHERE"};
+        int[] shapeDensities = {64, 128, 32, 48, 48, 48, 48, 32, 64};
+        for (int shape = 0; shape < shapeNames.length; shape++) {
+            final int shapeId = shape;
+            TextView shapeButton = button("+ " + shapeNames[shape]);
+            LinearLayout.LayoutParams shapeParams = new LinearLayout.LayoutParams(
+                    LayoutParams.WRAP_CONTENT, dp(36));
+            shapeParams.setMargins(0, 0, dp(6), 0);
+            shapeRow.addView(shapeButton, shapeParams);
+            shapeButton.setOnClickListener(v -> {
+                selectedToolIndicator.setText("ACTIVE: " + shapeNames[shapeId] + "  ▴ TOOLS");
+                createMesh(shapeId, shapeDensities[shapeId]);
+                closeToolDrawer.run();
+            });
+        }
 
         TextView mirror = button("SYMMETRY: X");
         mirror.setTextColor(ACCENT);
