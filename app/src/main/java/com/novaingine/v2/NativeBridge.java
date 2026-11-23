@@ -118,7 +118,7 @@ public final class NativeBridge {
     public static native boolean nativeExportSelectedObj(String path);
     public static native void nativeSetSculptMode(boolean enabled);
     public static native int nativeEnterSculptMode();
-    public static native void nativeUpdateSculptCursor(float x, float y, boolean active);
+    public static native void nativeUpdateSculptCursor(float x, float y, float radius, boolean active);
     public static native void nativeBeginSculptStroke();
     public static native int nativeSculptAtScreen(float x, float y, float radius, float strength, int brush, float falloff, boolean symmetry, float pressure);
     public static native void nativeEndSculptStroke();
