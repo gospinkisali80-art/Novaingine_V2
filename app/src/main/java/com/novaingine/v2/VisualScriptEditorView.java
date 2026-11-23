@@ -70,7 +70,8 @@ public final class VisualScriptEditorView extends View {
 
     public Node addNode(int type) {
         Node node = new Node();
-        node.id = nodes.size() + 1;
+        node.id = 1;
+        for (Node existing : nodes) node.id = Math.max(node.id, existing.id + 1);
         node.type = type;
         node.x = 26.0f + (nodes.size() % 3) * 218.0f;
         node.y = 30.0f + (nodes.size() / 3) * 145.0f;
