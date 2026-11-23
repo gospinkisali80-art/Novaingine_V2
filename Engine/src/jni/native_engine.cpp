@@ -7,6 +7,7 @@
 #include <fstream>
 #include <iomanip>
 #include <mutex>
+#include <unordered_map>
 #include <vector>
 
 #include "../Camera/Camera.h"
@@ -28,6 +29,7 @@ std::mutex engineMutex;
 
 Renderer gRenderer;
 nova::Scene gScene;
+std::unordered_map<uint32_t, nova::Mesh> gCustomMeshes;
 nova::Camera gCamera;
 
 bool gInitialized = false;
@@ -48,6 +50,7 @@ float gCameraSpeed = 3.0f;
 
 struct SceneSnapshot {
     std::vector<nova::SceneObject> objects;
+    std::unordered_map<uint32_t, nova::Mesh> customMeshes;
     uint32_t selectedId = 0;
 };
 
@@ -58,6 +61,7 @@ constexpr size_t MAX_UNDO_STEPS = 64;
 SceneSnapshot captureScene() {
     SceneSnapshot snapshot;
     snapshot.objects = gScene.getObjects();
+    snapshot.customMeshes = gCustomMeshes;
     snapshot.selectedId = gScene.selectedId();
     return snapshot;
 }
@@ -72,6 +76,7 @@ void recordUndo() {
 
 void restoreScene(const SceneSnapshot& snapshot) {
     gScene.clear();
+    gCustomMeshes = snapshot.customMeshes;
     for (const nova::SceneObject& object : snapshot.objects) {
         gScene.addObject(object);
     }
@@ -79,6 +84,7 @@ void restoreScene(const SceneSnapshot& snapshot) {
         gScene.select(snapshot.selectedId);
     }
     gRenderer.releaseAllMeshes();
+    for (const auto& entry : gCustomMeshes) gRenderer.uploadMesh(entry.first, entry.second);
     gVerticalVelocity = 0.0f;
     gPhysicsGrounded = false;
     gJumpWasPressed = false;
@@ -1044,6 +1050,7 @@ Java_com_novaingine_v2_NativeBridge_nativeImportGlb(JNIEnv* env, jclass, jstring
             uint32_t id=gScene.addObject(name,nova::PrimitiveType::Cube,transform,color);
             nova::SceneObject* object=gScene.find(id);
             if (!object || !gRenderer.uploadMesh(id,mesh)) { gScene.removeObject(id); continue; }
+            gCustomMeshes[id] = mesh;
             object->material.baseColor=nova::Vec3(color.r,color.g,color.b);
             object->material.roughness=roughness;
             object->material.metallic=metallic;
