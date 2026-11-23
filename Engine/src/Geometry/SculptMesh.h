@@ -54,6 +54,8 @@ public:
     std::vector<float> mask;
     std::vector<uint32_t> adjacencyOffsets;
     std::vector<uint32_t> adjacency;
+    std::vector<uint32_t> faceOffsets;
+    std::vector<uint32_t> vertexTriangles;
     std::vector<Chunk> chunks;
     std::vector<BVHNode> bvh;
     std::vector<uint32_t> triangleOrder;
@@ -145,6 +147,19 @@ public:
         adjacency.resize(edges.size());
         std::vector<uint32_t> cursor=adjacencyOffsets;
         for(auto e:edges)adjacency[cursor[e.first]++]=e.second;
+        std::vector<std::pair<uint32_t,uint32_t>> incident;
+        incident.reserve(indices.size());
+        for(uint32_t t=0;t<indices.size()/3;t++) for(int k=0;k<3;k++) {
+            uint32_t v=indices[t*3+k];
+            if(v<count) incident.emplace_back(v,t);
+        }
+        std::sort(incident.begin(),incident.end());
+        faceOffsets.assign(count+1,0);
+        for(const auto& e:incident) ++faceOffsets[e.first+1];
+        for(size_t i=1;i<faceOffsets.size();++i) faceOffsets[i]+=faceOffsets[i-1];
+        vertexTriangles.resize(incident.size());
+        std::vector<uint32_t> faceCursor=faceOffsets;
+        for(const auto& e:incident) vertexTriangles[faceCursor[e.first]++]=e.second;
     }
 
     void buildChunks(){
@@ -248,6 +263,6 @@ public:
         glBindVertexArray(0);return true;
     }
 private:
-    void moveFrom(SculptMesh&& o){positions=std::move(o.positions);normals=std::move(o.normals);indices=std::move(o.indices);mask=std::move(o.mask);adjacencyOffsets=std::move(o.adjacencyOffsets);adjacency=std::move(o.adjacency);chunks=std::move(o.chunks);bvh=std::move(o.bvh);triangleOrder=std::move(o.triangleOrder);o.chunks.clear();}
+    void moveFrom(SculptMesh&& o){positions=std::move(o.positions);normals=std::move(o.normals);indices=std::move(o.indices);mask=std::move(o.mask);adjacencyOffsets=std::move(o.adjacencyOffsets);adjacency=std::move(o.adjacency);faceOffsets=std::move(o.faceOffsets);vertexTriangles=std::move(o.vertexTriangles);chunks=std::move(o.chunks);bvh=std::move(o.bvh);triangleOrder=std::move(o.triangleOrder);o.chunks.clear();}
 };
 }
