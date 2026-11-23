@@ -151,12 +151,12 @@ public final class EngineSurface extends GLSurfaceView
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_MOVE) {
             if (event.getPointerCount() != 1) {
-                queueEvent(() -> NativeBridge.nativeUpdateSculptCursor(-1.0f, -1.0f, false));
+                queueEvent(() -> NativeBridge.nativeUpdateSculptCursor(-1.0f, -1.0f, sculptRadius, false));
                 return;
             }
             final float x = event.getX(0);
             final float y = event.getY(0) + viewportTopOffset;
-            queueEvent(() -> NativeBridge.nativeUpdateSculptCursor(x, y, true));
+            queueEvent(() -> NativeBridge.nativeUpdateSculptCursor(x, y, sculptRadius, true));
         } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL
                 || action == MotionEvent.ACTION_POINTER_DOWN || action == MotionEvent.ACTION_POINTER_UP) {
             queueEvent(() -> NativeBridge.nativeUpdateSculptCursor(-1.0f, -1.0f, false));
