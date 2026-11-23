@@ -143,14 +143,17 @@ public final class AIEditorAssistant {
         compactHistoryForNextTurn();
         append("\nYOU: " + text + "\n");
         busy = true;
-        append("NOVA AI: Thinking and checking available scene tools...\n");
+        boolean sceneRequest = isSceneRequest(text);
+        append(sceneRequest
+                ? "NOVA AI: Working on your scene request...\\n"
+                : "NOVA AI: Thinking...\\n");
         worker.execute(() -> {
             try {
                 JSONObject user = new JSONObject();
                 user.put("role", "user");
-                user.put("content", "/no_think\n" + text);
+                user.put("content", "/no_think\\n" + text);
                 history.put(user);
-                String answer = runAgent();
+                String answer = sceneRequest ? runAgent() : runConversation();
                 main.post(() -> {
                     append(answer + "\n");
                     busy = false;
@@ -162,6 +165,45 @@ public final class AIEditorAssistant {
                 });
             }
         });
+    }
+
+    // Ordinary conversation deliberately omits the large scene-tool schema.
+    // This keeps simple chat prompts fast and within the phone's context window.
+    private boolean isSceneRequest(String text) {
+        String q = text.toLowerCase(java.util.Locale.US);
+        String[] actionWords = {
+                "build ", "create ", "make ", "sculpt ", "model ", "generate ",
+                "add ", "paint ", "place ", "move ", "rotate ", "scale ",
+                "select ", "delete ", "remove ", "undo", "redo",
+                "terrain", "mesh", "object", "scene", "house", "building",
+                "character", "human", "face", "tree", "bush", "foliage"
+        };
+        for (String word : actionWords) {
+            if (q.contains(word)) return true;
+        }
+        return false;
+    }
+
+    private String runConversation() throws Exception {
+        JSONObject body = new JSONObject();
+        body.put("model", getModel());
+        body.put("messages", history);
+        body.put("temperature", 0.7);
+        body.put("max_tokens", 256);
+        JSONObject response = postLocalModel(body);
+        JSONObject choice = response.getJSONArray("choices").getJSONObject(0);
+        JSONObject message = choice.getJSONObject("message");
+        String content = message.optString("content", "").trim();
+        if (content.isEmpty()) {
+            String reason = choice.optString("finish_reason", "unknown");
+            throw new Exception("Qwen3 returned no text (finish reason: " + reason
+                    + "). Try a shorter message or check the llama-server log.");
+        }
+        JSONObject assistant = new JSONObject();
+        assistant.put("role", "assistant");
+        assistant.put("content", content);
+        history.put(assistant);
+        return content;
     }
 
     private String runAgent() throws Exception {
