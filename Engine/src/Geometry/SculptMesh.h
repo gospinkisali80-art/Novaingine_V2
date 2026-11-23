@@ -379,6 +379,7 @@ public:
             }
             return changed;
         };
+        bool wasGrabCaptured=grabCaptured;
         bool changed=applyOne(center,hitNormal,dragDelta);
         if(b.symmetryAxis>=0&&b.symmetryAxis<=2) {
             Vec3 mirrored=center,mirroredNormal=hitNormal,mirroredDelta=dragDelta;
@@ -387,7 +388,7 @@ public:
             if(b.symmetryAxis==2){mirrored.z=-mirrored.z;mirroredNormal.z=-mirroredNormal.z;mirroredDelta.z=-mirroredDelta.z;}
             if(length(mirrored-center)>0.0001f) {
                 if(b.type==2) {
-                    if(grabCaptured) {
+                    if(!wasGrabCaptured) {
                         std::vector<WeightedVertex> mirroredAffected;
                         queryVertices(mirrored,b.radius,b.hardness,mirroredAffected);
                         for(const auto& item:mirroredAffected) {
