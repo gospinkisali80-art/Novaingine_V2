@@ -1872,8 +1872,15 @@ Java_com_novaingine_v2_NativeBridge_nativeResetScene(
     }
 
     recordUndo(true);
+    gSculptMode = false;
+    gSculptStrokeActive = false;
+    gHasPreviousSculptHit = false;
+    gSculptMesh.reset();
+    gSculptMeshId = 0;
+    gRenderer.setSculptCursor(false, nova::Vec3(), nova::Vec3(0,1,0), 0.18f);
     nova::SceneFactory::buildDefaultScene(gScene);
     gCustomMeshes.clear();
+    gSculptMasks.clear();
     gRenderer.releaseAllMeshes();
     gCamera.reset();
     gVerticalVelocity = 0.0f;
