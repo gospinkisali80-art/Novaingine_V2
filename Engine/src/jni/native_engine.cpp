@@ -1300,7 +1300,8 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateSculptMesh(
     if (!mesh.isValid()) return 0;
     recordUndo(true);
     nova::Transform transform;
-    transform.position = nova::Vec3(0.0f, 1.8f, 0.0f);
+    // Place new sculpt primitives at the Blender-style world origin.
+    transform.position = nova::Vec3(0.0f, 0.0f, 0.0f);
     const nova::Color color(0.68f, 0.72f, 0.80f, 1.0f);
     const uint32_t id = gScene.addObject(
         std::string("Sculpt ") + (shape == 0 ? "Sphere" : shape == 1 ? "Plane" : shape == 2 ? "Cube" : shape == 3 ? "Cylinder" : shape == 4 ? "Cone" : shape == 5 ? "Torus" : shape == 6 ? "Capsule" : shape == 7 ? "Wedge" : "Rounded Sphere"),
