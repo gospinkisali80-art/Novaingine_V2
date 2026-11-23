@@ -139,33 +139,27 @@ public final class EngineSurface extends GLSurfaceView
         queueEvent(() -> NativeBridge.nativeSetSculptMode(enabled));
     }
 
-    // Brush strokes run locally on the GL thread; they never call Groq.
+    // Sculpt mode is cursor-only in this task: finger movement never deforms the mesh.
+    public void enterSculptMode() {
+        sculptMode = true;
+        sculptStrokeActive = false;
+        queueEvent(() -> NativeBridge.nativeEnterSculptMode());
+    }
+
     public void handleSculptTouch(MotionEvent event, float viewportTopOffset) {
         if (!sculptMode) return;
         int action = event.getActionMasked();
-        if (action == MotionEvent.ACTION_DOWN && event.getPointerCount() == 1) {
-            sculptStrokeActive = true;
-            final float x = event.getX(0);
-            final float y = event.getY(0) + viewportTopOffset;
-            queueEvent(() -> {
-                NativeBridge.nativeBeginSculptStroke();
-                NativeBridge.nativeSculptAtScreen(x, y, sculptRadius, sculptStrength,
-                        sculptBrush, sculptFalloff, sculptSymmetry, sculptPressure);
-            });
-        } else if (action == MotionEvent.ACTION_MOVE && sculptStrokeActive
-                && event.getPointerCount() == 1) {
-            final float x = event.getX(0);
-            final float y = event.getY(0) + viewportTopOffset;
-            queueEvent(() -> NativeBridge.nativeSculptAtScreen(x, y, sculptRadius,
-                    sculptStrength, sculptBrush, sculptFalloff, sculptSymmetry, sculptPressure));
-        } else if (action == MotionEvent.ACTION_POINTER_DOWN
-                || action == MotionEvent.ACTION_POINTER_UP
-                || action == MotionEvent.ACTION_UP
-                || action == MotionEvent.ACTION_CANCEL) {
-            if (sculptStrokeActive) {
-                sculptStrokeActive = false;
-                queueEvent(NativeBridge::nativeEndSculptStroke);
+        if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_MOVE) {
+            if (event.getPointerCount() != 1) {
+                queueEvent(() -> NativeBridge.nativeUpdateSculptCursor(-1.0f, -1.0f, false));
+                return;
             }
+            final float x = event.getX(0);
+            final float y = event.getY(0) + viewportTopOffset;
+            queueEvent(() -> NativeBridge.nativeUpdateSculptCursor(x, y, true));
+        } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL
+                || action == MotionEvent.ACTION_POINTER_DOWN || action == MotionEvent.ACTION_POINTER_UP) {
+            queueEvent(() -> NativeBridge.nativeUpdateSculptCursor(-1.0f, -1.0f, false));
         }
     }
 
