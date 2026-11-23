@@ -70,6 +70,22 @@ for item in plan["objects"]:
     obj.data.materials.append(mat)
     for poly in mesh.polygons:
         poly.use_smooth = True
+    bevel_width = max(0.0, min(float(item.get("bevel", 0.0)), 0.15))
+    if bevel_width > 0.0001:
+        bevel = obj.modifiers.new("Crafted Edge Bevel", "BEVEL")
+        bevel.width = bevel_width
+        bevel.segments = 3
+        bevel.limit_method = "ANGLE"
+    subdivision = max(0, min(int(item.get("subdivision", 0)), 2))
+    if subdivision:
+        sub = obj.modifiers.new("Surface Refinement", "SUBSURF")
+        sub.levels = subdivision
+        sub.render_levels = subdivision
+    voxel_size = max(0.0, min(float(item.get("voxel_remesh", 0.0)), 0.25))
+    if voxel_size > 0.0001:
+        remesh = obj.modifiers.new("Voxel Remesh", "REMESH")
+        remesh.mode = "VOXEL"
+        remesh.voxel_size = voxel_size
     bpy.context.view_layer.objects.active = obj
     obj.select_set(True)
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
@@ -132,7 +148,17 @@ def validate_plan(plan):
             raise ValueError("Roughness must be between 0.04 and 1.")
         if not finite_number(metallic) or not 0 <= metallic <= 1:
             raise ValueError("Metallic must be between 0 and 1.")
+        bevel = obj.get("bevel", 0.02)
+        subdivision = obj.get("subdivision", 1)
+        voxel_remesh = obj.get("voxel_remesh", 0.0)
+        if not finite_number(bevel) or not 0 <= bevel <= 0.15:
+            raise ValueError("Bevel must be between 0 and 0.15.")
+        if not isinstance(subdivision, int) or not 0 <= subdivision <= 2:
+            raise ValueError("Subdivision must be an integer from 0 to 2.")
+        if not finite_number(voxel_remesh) or not 0 <= voxel_remesh <= 0.25:
+            raise ValueError("Voxel remesh size must be between 0 and 0.25.")
         cleaned.append({
+            "bevel": float(bevel), "subdivision": subdivision, "voxel_remesh": float(voxel_remesh),
             "name": str(obj.get("name", "Mesh Part " + str(index + 1)))[:64],
             "vertices": verts, "faces": checked_faces,
             "location": vector("location", [0, 0, 0], 100),
