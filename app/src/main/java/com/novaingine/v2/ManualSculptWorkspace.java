@@ -47,7 +47,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
         this.activity = activity;
         this.engine = engine;
         this.onExit = onExit;
-        setBackgroundColor(BG);
+        // Keep the GL viewport visible beneath the sculpt controls.
+        // An opaque workspace background hides the SurfaceView and makes meshes appear missing.
+        setBackgroundColor(Color.TRANSPARENT);
 
         SculptTouchSurface touch = new SculptTouchSurface();
         addView(touch, new FrameLayout.LayoutParams(
