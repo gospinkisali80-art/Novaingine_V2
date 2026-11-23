@@ -17,6 +17,7 @@
 #include "../Physics/PhysicsWorld.h"
 #include "../Geometry/Mesh.h"
 #include "../Geometry/MeshSculptor.h"
+#include "../Geometry/MeshModeling.h"
 #include "../VisualScripting/VisualScriptRuntime.h"
 #define CGLTF_IMPLEMENTATION
 #include "../ThirdParty/cgltf.h"
@@ -1790,6 +1791,39 @@ Java_com_novaingine_v2_NativeBridge_nativeResetScene(
         "Scene reset. Objects: %zu",
         gScene.objectCount()
     );
+}
+
+
+JNIEXPORT jint JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeModelSelectedMesh(
+    JNIEnv*, jclass, jint operationValue, jint elementIndex, jfloat amountValue
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized) return -2;
+    const uint32_t id = gScene.selectedId();
+    auto found = gCustomMeshes.find(id);
+    if (id == 0 || found == gCustomMeshes.end()) return -1;
+    const int operation = std::clamp(static_cast<int>(operationValue), 0, 6);
+    const int element = std::clamp(static_cast<int>(elementIndex), 0, 300000);
+    const float amount = std::clamp(static_cast<float>(amountValue), 0.001f, 5.0f);
+    nova::Mesh edited = found->second;
+    bool changed = false;
+    switch (operation) {
+        case 0: changed = nova::MeshModeling::extrudeFace(edited, static_cast<size_t>(element), amount); break;
+        case 1: changed = nova::MeshModeling::insetFace(edited, static_cast<size_t>(element), std::clamp(amount, 0.01f, 0.90f)); break;
+        case 2: changed = nova::MeshModeling::bevelEdge(edited, static_cast<size_t>(element), amount); break;
+        case 3: changed = nova::MeshModeling::loopCut(edited); break;
+        case 4: changed = nova::MeshModeling::subdivide(edited, std::clamp(element, 1, 3)); break;
+        case 5: changed = nova::MeshModeling::mergeNearby(edited, amount); break;
+        case 6: changed = nova::MeshModeling::knifeTriangle(edited, static_cast<size_t>(element)); break;
+    }
+    if (!changed || !edited.isValid()) return 0;
+    if (edited.vertexCount() > 180000 || edited.triangleCount() > 300000) return -3;
+    recordUndo(true);
+    if (!gRenderer.uploadMesh(id, edited)) return -4;
+    found->second = std::move(edited);
+    gSculptMasks[id].resize(found->second.vertexCount(), 0.0f);
+    return 1;
 }
 
 } // extern "C"
