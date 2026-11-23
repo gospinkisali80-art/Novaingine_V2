@@ -9,7 +9,7 @@ import sys
 import urllib.error
 import urllib.request
 
-MODEL = "openai/gpt-oss-20b"
+MODEL = "llama-3.3-70b-versatile"
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 SYSTEM_PROMPT = """You are a professional 3D modeler creating a Blender scene for a mobile game engine.
