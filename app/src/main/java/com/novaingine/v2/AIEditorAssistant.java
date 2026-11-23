@@ -52,7 +52,7 @@ public final class AIEditorAssistant {
         JSONObject system = new JSONObject();
         try {
             system.put("role", "system");
-            system.put("content", "You are NOVA AI, powered by Groq, the modeling and scene-building assistant inside Novaingine. When asked to build an object, character, vehicle, building, prop or environment, CREATE REAL VISIBLE 3D GEOMETRY IN THE CURRENT SCENE, not just explain how. Prefer create_lathe_mesh for rotational mechanical/architectural parts and create_ellipsoid_mesh for proportioned organic/body forms; these generate real high-resolution meshes locally with very few API tokens. Compose substantial assets from 6-16 distinct, deliberately proportioned parts, not generic stacks of primitives. Use create_mesh_part only for unique irregular geometry; its tool payload is token-expensive. Build recognizable silhouettes, varied cross-sections, layered forms, and connected surfaces. After each logical group inspect_scene, then continue refining. Do not stop after creating a base shape. Each mesh part supports up to 3000 vertices and 6000 triangles, local coordinates -20..20. Use extrude_face, inset_face, bevel_edge, loop_cut, subdivide_mesh, merge_vertices, and knife_cut on the selected mesh to perform real topology edits. Use faceIndex or edgeIndex starting at 0 unless scene inspection supplies a better index. Subdivision is capped at 3 levels and Android mesh complexity is capped. Do not claim a tool operation succeeded unless its result confirms success. Use coherent surfaces and sensible placement; do not make every object from identical boxes. After creating parts, inspect the scene and report exactly what was created. For organic assets, create a dense sculpt mesh first (sphere for characters/creatures/rounded props; plane for terrain-like forms), density 64-80 when mobile performance permits. Then use sculpt_selected_mesh as a real SculptMesh brush stroke tool, not the old low-detail mesh modifier. Brush centers and every point are LOCAL mesh coordinates; X is left/right, Y is up, Z is depth. Use points as a flat list of xyz triplets to draw continuous paths; the engine interpolates dabs at 25% of brush radius. If points are omitted, x/y/z is a single dab. Build organic forms in stages: primary masses with Draw/Clay/Inflate, pull silhouette features with Grab, carve separations with Crease/Pinch, flatten planes with Flatten/Scrape, protect finished regions with Mask, then Smooth lightly to remove lumps. Use several deliberate strokes at different centers and radii rather than one giant dab. Use X symmetry for centered characters and vehicles, Y/Z only when appropriate. Grab accepts dragX/dragY/dragZ for a one-point pull or a points path for a continuous pull. Radius is 0.02-1.0 world units, strength 0-1, hardness/falloff 0-1; subtract reverses Draw, Clay and Inflate. Wait for queued strokes to process before relying on later scene inspection. The AI must make recognizable silhouettes, proportionate anatomy, layered forms, and refined transitions, not merely inflate a sphere. If editing an existing object, inspect and select it first. Preserve all existing scene content unless the user explicitly asks to remove it. Keep Blender desktop bridge and GLB import available. Use existing terrain and scene tools when relevant. Keep operations moderate for Android performance. Never claim a model exists unless creation tools confirm success. If a geometry or sculpt tool fails, read its exact error, diagnose the likely cause, and automatically try one corrected alternative (adjust parameters, inspect/select the correct mesh, or use a safer supported operation). Do not repeat an identical failing call. If the corrected retry also fails, stop and explain the actual reason. Never claim success without a successful tool result. Be honest about current sculpting limits and do not claim Blender or Unreal parity.");
+            system.put("content", "You are NOVA AI, powered by Groq, the modeling and scene-building assistant inside Novaingine. When asked to build an object, character, vehicle, building, prop or environment, CREATE REAL VISIBLE 3D GEOMETRY IN THE CURRENT SCENE, not just explain how. Prefer create_lathe_mesh for rotational mechanical/architectural parts and create_ellipsoid_mesh for proportioned organic/body forms; these generate real high-resolution meshes locally with very few API tokens. Before building, plan the object's silhouette, proportions, primary masses, secondary forms, and small details. Build substantial assets from 10-24 deliberately proportioned parts when the request needs that complexity, grouped into coherent assemblies; never make a pile of unrelated primitives. Use create_ellipsoid_mesh for smooth organic masses, create_lathe_mesh for rotational parts with varied radius profiles, and create_sweep_mesh for curved limbs, pipes, cables, horns, handles, rails, branches, trim and other continuous forms. Sweep paths must follow the actual shape; vary per-point radii to taper ends and avoid blunt uniform tubes. Use create_mesh_part for distinctive hard-surface or irregular forms. Give every part a purposeful name, plausible scale, sensible overlap/joints, and consistent materials. Make the silhouette recognizable from a distance first, then add layered panels, seams, rims, recesses and small details. Avoid floating disconnected details and excessive symmetry where the real object is asymmetric. After each group inspect_scene, continue refining, and verify the final object count and placement. Build recognizable silhouettes, varied cross-sections, layered forms, and connected surfaces. After each logical group inspect_scene, then continue refining. Do not stop after creating a base shape. Each mesh part supports up to 3000 vertices and 6000 triangles, local coordinates -20..20. Use extrude_face, inset_face, bevel_edge, loop_cut, subdivide_mesh, merge_vertices, and knife_cut on the selected mesh to perform real topology edits. Use faceIndex or edgeIndex starting at 0 unless scene inspection supplies a better index. Subdivision is capped at 3 levels and Android mesh complexity is capped. Do not claim a tool operation succeeded unless its result confirms success. Use coherent surfaces and sensible placement; do not make every object from identical boxes. After creating parts, inspect the scene and report exactly what was created. For organic assets, create a dense sculpt mesh first (sphere for characters/creatures/rounded props; plane for terrain-like forms), density 64-80 when mobile performance permits. Then use sculpt_selected_mesh as a real SculptMesh brush stroke tool, not the old low-detail mesh modifier. Brush centers and every point are LOCAL mesh coordinates; X is left/right, Y is up, Z is depth. Use points as a flat list of xyz triplets to draw continuous paths; the engine interpolates dabs at 25% of brush radius. If points are omitted, x/y/z is a single dab. Build organic forms in stages: primary masses with Draw/Clay/Inflate, pull silhouette features with Grab, carve separations with Crease/Pinch, flatten planes with Flatten/Scrape, protect finished regions with Mask, then Smooth lightly to remove lumps. Use several deliberate strokes at different centers and radii rather than one giant dab. Use X symmetry for centered characters and vehicles, Y/Z only when appropriate. Grab accepts dragX/dragY/dragZ for a one-point pull or a points path for a continuous pull. Radius is 0.02-1.0 world units, strength 0-1, hardness/falloff 0-1; subtract reverses Draw, Clay and Inflate. Wait for queued strokes to process before relying on later scene inspection. The AI must make recognizable silhouettes, proportionate anatomy, layered forms, and refined transitions, not merely inflate a sphere. If editing an existing object, inspect and select it first. Preserve all existing scene content unless the user explicitly asks to remove it. Keep Blender desktop bridge and GLB import available. Use existing terrain and scene tools when relevant. Keep operations moderate for Android performance. Never claim a model exists unless creation tools confirm success. If a geometry or sculpt tool fails, read its exact error, diagnose the likely cause, and automatically try one corrected alternative (adjust parameters, inspect/select the correct mesh, or use a safer supported operation). Do not repeat an identical failing call. If the corrected retry also fails, stop and explain the actual reason. Never claim success without a successful tool result. Be honest about current sculpting limits and do not claim Blender or Unreal parity.");
             history.put(system);
         } catch (Exception ignored) {}
     }
@@ -416,6 +416,7 @@ public final class AIEditorAssistant {
         tools.put(tool("sculpt_terrain", "Sculpt terrain. Optional args: x defaults 0, z defaults -4, radius defaults 3, strength defaults 0.4, mode defaults raise. mode: raise, lower, smooth, flatten.", "{\"type\":\"object\",\"properties\":{\"x\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"},\"radius\":{\"type\":\"number\"},\"strength\":{\"type\":\"number\"},\"mode\":{\"type\":\"string\",\"enum\":[\"raise\",\"lower\",\"smooth\",\"flatten\"]}}}"));
         tools.put(tool("create_lathe_mesh", "Generate a smooth rotational custom mesh from a compact radius/height profile. Excellent for detailed vehicle wheels, columns, barrels, handles, towers, bottles, limbs and mechanical parts. profile is [radius,height,...] with 2-32 pairs; segments 8-48. Coordinates are local; x/y/z place the part in the scene.", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"},\"profile\":{\"type\":\"array\",\"items\":{\"type\":\"number\"},\"minItems\":4,\"maxItems\":64},\"segments\":{\"type\":\"integer\"},\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"},\"r\":{\"type\":\"number\"},\"g\":{\"type\":\"number\"},\"b\":{\"type\":\"number\"}} ,\"required\":[\"profile\"]}"));
         tools.put(tool("create_ellipsoid_mesh", "Generate a smooth custom ellipsoid mesh with independent X/Y/Z radii. Use for anatomically proportioned heads, muscles, tires, body panels and organic forms. rings 8-32, segments 12-48. x/y/z place its center.", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"},\"rx\":{\"type\":\"number\"},\"ry\":{\"type\":\"number\"},\"rz\":{\"type\":\"number\"},\"rings\":{\"type\":\"integer\"},\"segments\":{\"type\":\"integer\"},\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"},\"r\":{\"type\":\"number\"},\"g\":{\"type\":\"number\"},\"b\":{\"type\":\"number\"}}}"));
+        tools.put(tool("create_sweep_mesh", "Create a real smooth tapered tube mesh by sweeping a circular cross-section along a 3D path. Use for curved limbs, fingers, tails, horns, pipes, cables, handles, rails, branches and trim. path is flat xyz triplets in local coordinates (2-24 points); optional radii has one radius per point for tapering; segments 6-20. Caps close both ends. Position x/y/z moves the generated part in the scene.", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"},\"path\":{\"type\":\"array\",\"items\":{\"type\":\"number\"},\"minItems\":6,\"maxItems\":72},\"radii\":{\"type\":\"array\",\"items\":{\"type\":\"number\"},\"minItems\":2,\"maxItems\":24},\"radius\":{\"type\":\"number\"},\"segments\":{\"type\":\"integer\"},\"caps\":{\"type\":\"boolean\"},\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"},\"r\":{\"type\":\"number\"},\"g\":{\"type\":\"number\"},\"b\":{\"type\":\"number\"}},\"required\":[\"path\"]}"));
         tools.put(tool("create_mesh_part", "Create one real custom triangulated mesh part from flat xyz positions and triangle indices. Use 3-300 vertices and 1-600 triangles. Local coordinates must stay within -20..20. Build complex assets from multiple connected parts with sensible proportions and slight overlap at joints.", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"},\"positions\":{\"type\":\"array\",\"items\":{\"type\":\"number\"},\"minItems\":9,\"maxItems\":900},\"triangles\":{\"type\":\"array\",\"items\":{\"type\":\"integer\"},\"minItems\":3,\"maxItems\":1800},\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"},\"r\":{\"type\":\"number\"},\"g\":{\"type\":\"number\"},\"b\":{\"type\":\"number\"}},\"required\":[\"positions\",\"triangles\"]}"));
         tools.put(tool("create_sculpt_mesh", "Create and select an editable dense sphere or plane mesh for sculpting. Use density 32-80 on mobile. This creates actual geometry.", "{\"type\":\"object\",\"properties\":{\"shape\":{\"type\":\"string\",\"enum\":[\"sphere\",\"plane\"]},\"density\":{\"type\":\"integer\"}}}"));
         tools.put(tool("sculpt_selected_mesh", "Use the real BVH-based SculptMesh brush engine on the selected dense sculpt mesh. Brushes: draw, smooth, grab, inflate, pinch, flatten, crease, mask, clay, scrape, layer, unmask. Supply either x/y/z for one dab or points as a flat xyz triplet list for a continuous stroke; the engine interpolates dabs every 25% of radius and processes them on its sculpt worker. Radius 0.02-1.0, strength 0-1, hardness 0-1. symmetryAxis is off/x/y/z; subtract reverses Draw, Clay and Inflate. For Grab use dragX/Y/Z for a one-point pull or a points path. Create a dense sphere or plane with create_sculpt_mesh first. Make multiple carefully planned strokes and refine with Smooth.", "{\"type\":\"object\",\"properties\":{\"brush\":{\"type\":\"string\",\"enum\":[\"draw\",\"smooth\",\"grab\",\"inflate\",\"pinch\",\"flatten\",\"crease\",\"mask\",\"clay\",\"scrape\",\"layer\",\"unmask\"]},\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"},\"points\":{\"type\":\"array\",\"items\":{\"type\":\"number\"},\"minItems\":3,\"maxItems\":192},\"radius\":{\"type\":\"number\"},\"strength\":{\"type\":\"number\"},\"falloff\":{\"type\":\"number\"},\"hardness\":{\"type\":\"number\"},\"symmetryAxis\":{\"type\":\"string\",\"enum\":[\"off\",\"x\",\"y\",\"z\"]},\"symmetry\":{\"type\":\"boolean\"},\"subtract\":{\"type\":\"boolean\"},\"pressure\":{\"type\":\"number\"},\"dragX\":{\"type\":\"number\"},\"dragY\":{\"type\":\"number\"},\"dragZ\":{\"type\":\"number\"}}}"));
@@ -493,6 +494,79 @@ public final class AIEditorAssistant {
         return uploadProceduralMesh(a, p, t, "Lathe mesh");
     }
 
+    private String createSweepMesh(JSONObject a) {
+        JSONArray path = a.optJSONArray("path");
+        if (path == null || path.length() < 6 || path.length() > 72 || path.length() % 3 != 0)
+            return "Sweep path must contain 2-24 xyz points.";
+        int rings = path.length() / 3;
+        float[] centers = new float[path.length()];
+        for (int i = 0; i < path.length(); i++) {
+            double value = path.optDouble(i, Double.NaN);
+            if (!Double.isFinite(value) || Math.abs(value) > 20.0)
+                return "Sweep path coordinates must be finite and within -20..20.";
+            centers[i] = (float) value;
+        }
+        JSONArray radiusArray = a.optJSONArray("radii");
+        if (radiusArray != null && radiusArray.length() != rings)
+            return "Provide exactly one radius per path point, or omit radii.";
+        float baseRadius = Math.max(0.02f, Math.min(3.0f, number(a, "radius", 0.12f)));
+        float[] radii = new float[rings];
+        for (int i = 0; i < rings; i++) {
+            float radius = radiusArray == null ? baseRadius : (float) radiusArray.optDouble(i, Double.NaN);
+            if (!Float.isFinite(radius) || radius < 0.01f || radius > 3.0f)
+                return "Sweep radii must be between 0.01 and 3.0.";
+            radii[i] = radius;
+        }
+        int sides = Math.max(6, Math.min(20, a.optInt("segments", 12)));
+        boolean caps = a.optBoolean("caps", true);
+        int vertexCount = rings * sides + (caps ? 2 : 0);
+        float[] positions = new float[vertexCount * 3];
+        for (int i = 0; i < rings; i++) {
+            int prev = Math.max(0, i - 1), next = Math.min(rings - 1, i + 1);
+            float tx = centers[next * 3] - centers[prev * 3];
+            float ty = centers[next * 3 + 1] - centers[prev * 3 + 1];
+            float tz = centers[next * 3 + 2] - centers[prev * 3 + 2];
+            float tl = (float) Math.sqrt(tx * tx + ty * ty + tz * tz);
+            if (tl < 0.0001f) return "Sweep path contains repeated or overlapping points.";
+            tx /= tl; ty /= tl; tz /= tl;
+            float ax = Math.abs(ty) < 0.90f ? 0.0f : 1.0f;
+            float ay = Math.abs(ty) < 0.90f ? 1.0f : 0.0f;
+            float nx = -tz * ay, ny = tz * ax, nz = tx * ay - ty * ax;
+            float nl = (float) Math.sqrt(nx * nx + ny * ny + nz * nz);
+            if (nl < 0.0001f) return "Could not construct a stable sweep frame for this path.";
+            nx /= nl; ny /= nl; nz /= nl;
+            float bx = ty * nz - tz * ny, by = tz * nx - tx * nz, bz = tx * ny - ty * nx;
+            for (int j = 0; j < sides; j++) {
+                double angle = Math.PI * 2.0 * j / sides;
+                float ca = (float) Math.cos(angle), sa = (float) Math.sin(angle);
+                int k = (i * sides + j) * 3;
+                positions[k] = centers[i * 3] + radii[i] * (nx * ca + bx * sa);
+                positions[k + 1] = centers[i * 3 + 1] + radii[i] * (ny * ca + by * sa);
+                positions[k + 2] = centers[i * 3 + 2] + radii[i] * (nz * ca + bz * sa);
+            }
+        }
+        int startCap = rings * sides, endCap = startCap + 1;
+        if (caps) {
+            System.arraycopy(centers, 0, positions, startCap * 3, 3);
+            System.arraycopy(centers, (rings - 1) * 3, positions, endCap * 3, 3);
+        }
+        int[] triangles = new int[((rings - 1) * sides * 6) + (caps ? sides * 6 : 0)];
+        int cursor = 0;
+        for (int i = 0; i < rings - 1; i++) for (int j = 0; j < sides; j++) {
+            int n = (j + 1) % sides;
+            int a0 = i * sides + j, b0 = i * sides + n;
+            int c0 = (i + 1) * sides + n, d0 = (i + 1) * sides + j;
+            triangles[cursor++] = a0; triangles[cursor++] = b0; triangles[cursor++] = c0;
+            triangles[cursor++] = a0; triangles[cursor++] = c0; triangles[cursor++] = d0;
+        }
+        if (caps) for (int j = 0; j < sides; j++) {
+            int n = (j + 1) % sides;
+            triangles[cursor++] = startCap; triangles[cursor++] = n; triangles[cursor++] = j;
+            int a0 = (rings - 1) * sides + j, b0 = (rings - 1) * sides + n;
+            triangles[cursor++] = endCap; triangles[cursor++] = a0; triangles[cursor++] = b0;
+        }
+        return uploadProceduralMesh(a, positions, triangles, "Swept tube mesh");
+    }
     private String createEllipsoidMesh(JSONObject a) {
         float rx = Math.max(0.05f, Math.min(10f, number(a, "rx", 1f)));
         float ry = Math.max(0.05f, Math.min(10f, number(a, "ry", 1f)));
@@ -562,6 +636,7 @@ public final class AIEditorAssistant {
                 }
                 case "create_lathe_mesh": return createLatheMesh(a);
                 case "create_ellipsoid_mesh": return createEllipsoidMesh(a);
+                case "create_sweep_mesh": return createSweepMesh(a);
                 case "create_mesh_part": {
                     JSONArray pv=a.optJSONArray("positions"), ti=a.optJSONArray("triangles");
                     if(pv==null || ti==null || pv.length()<9 || pv.length()>9000 || pv.length()%3!=0 || ti.length()<3 || ti.length()>18000 || ti.length()%3!=0)
