@@ -203,6 +203,7 @@ public final class ViewportInput extends View {
                         || insideStick(x, y, rightCenterX)
                         || upButton.contains(x, y) || downButton.contains(x, y);
                 if (action == MotionEvent.ACTION_DOWN) viewportTouchActive = !controlTouch;
+                if (viewportTouchActive) engineSurface.handleSculptTouch(event, getTop());
                 if (viewportTouchActive && !controlTouch) engineSurface.dispatchTouchEvent(event);
                 if (movePointerId == -1 && insideStick(x, y, leftCenterX)) {
                     movePointerId = pointerId;
@@ -224,7 +225,10 @@ public final class ViewportInput extends View {
                 return true;
 
             case MotionEvent.ACTION_MOVE:
-                if (viewportTouchActive) engineSurface.dispatchTouchEvent(event);
+                if (viewportTouchActive) {
+                    engineSurface.handleSculptTouch(event, getTop());
+                    engineSurface.dispatchTouchEvent(event);
+                }
                 if (movePointerId != -1) {
                     int moveIndex = event.findPointerIndex(movePointerId);
                     if (moveIndex >= 0) updateStick(event.getX(moveIndex), event.getY(moveIndex), false);
