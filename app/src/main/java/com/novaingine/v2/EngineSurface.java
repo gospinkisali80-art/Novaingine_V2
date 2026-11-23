@@ -32,7 +32,8 @@ public final class EngineSurface extends GLSurfaceView
     private volatile float sculptFalloff = 0.5f;
     private volatile float sculptPressure = 1.0f;
     private volatile int sculptBrush;
-    private volatile boolean sculptSymmetry = true;
+    private volatile int sculptSymmetryAxis = 0;
+    private volatile boolean sculptSubtract;
     private boolean sculptStrokeActive;
 
     public EngineSurface(Context context) {
@@ -128,18 +129,19 @@ public final class EngineSurface extends GLSurfaceView
         });
     }
 
-    public void setSculptOptions(boolean enabled, int brush, float radius, float strength, float falloff, boolean symmetry, float pressure) {
+    public void setSculptOptions(boolean enabled, int brush, float radius, float strength, float falloff, int symmetryAxis, boolean subtract, float pressure) {
         sculptMode = enabled;
         sculptBrush = Math.max(0, Math.min(11, brush));
-        sculptRadius = Math.max(0.01f, Math.min(2.0f, radius));
-        sculptStrength = Math.max(0.001f, Math.min(0.5f, strength));
+        sculptRadius = Math.max(0.02f, Math.min(1.0f, radius));
+        sculptStrength = Math.max(0.0f, Math.min(1.0f, strength));
         sculptFalloff = Math.max(0.0f, Math.min(1.0f, falloff));
-        sculptSymmetry = symmetry;
+        sculptSymmetryAxis = Math.max(-1, Math.min(2, symmetryAxis));
+        sculptSubtract = subtract;
         sculptPressure = Math.max(0.05f, Math.min(1.0f, pressure));
         queueEvent(() -> NativeBridge.nativeSetSculptMode(enabled));
     }
 
-    // Sculpt mode is cursor-only in this task: finger movement never deforms the mesh.
+    // Brush dabs are computed by the native worker; the GL thread only queues samples.
     public void enterSculptMode() {
         sculptMode = true;
         sculptStrokeActive = false;
@@ -149,17 +151,34 @@ public final class EngineSurface extends GLSurfaceView
     public void handleSculptTouch(MotionEvent event, float viewportTopOffset) {
         if (!sculptMode) return;
         int action = event.getActionMasked();
-        if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_MOVE) {
-            if (event.getPointerCount() != 1) {
-                queueEvent(() -> NativeBridge.nativeUpdateSculptCursor(-1.0f, -1.0f, sculptRadius, false));
-                return;
-            }
+        if ((action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_MOVE)
+                && event.getPointerCount() == 1) {
             final float x = event.getX(0);
             final float y = event.getY(0) + viewportTopOffset;
-            queueEvent(() -> NativeBridge.nativeUpdateSculptCursor(x, y, sculptRadius, true));
+            float sensed = event.getPressure(0);
+            final float pressure = (sensed > 0.05f && sensed <= 1.5f ? Math.min(1.0f, sensed) : 1.0f) * sculptPressure;
+            final float radius = sculptRadius;
+            final float strength = sculptStrength;
+            final float hardness = sculptFalloff;
+            final int brush = sculptBrush;
+            final int symmetryAxis = sculptSymmetryAxis;
+            final boolean subtract = sculptSubtract;
+            if (action == MotionEvent.ACTION_DOWN) {
+                sculptStrokeActive = true;
+                queueEvent(() -> NativeBridge.nativeBeginSculptStroke());
+            }
+            queueEvent(() -> {
+                NativeBridge.nativeSculptAtScreen(x, y, radius, strength, brush,
+                        hardness, symmetryAxis, subtract, pressure);
+                NativeBridge.nativeUpdateSculptCursor(x, y, radius, true);
+            });
         } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL
                 || action == MotionEvent.ACTION_POINTER_DOWN || action == MotionEvent.ACTION_POINTER_UP) {
-            queueEvent(() -> NativeBridge.nativeUpdateSculptCursor(-1.0f, -1.0f, false));
+            if (sculptStrokeActive) {
+                sculptStrokeActive = false;
+                queueEvent(() -> NativeBridge.nativeEndSculptStroke());
+            }
+            queueEvent(() -> NativeBridge.nativeUpdateSculptCursor(-1.0f, -1.0f, sculptRadius, false));
         }
     }
 
