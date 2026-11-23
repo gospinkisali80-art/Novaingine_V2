@@ -1224,9 +1224,22 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateSculptMesh(
         gSculptMesh->uploadChunks();
     } else {
         mesh=nova::MeshSculptor::makePlane(density);
+        auto sculpt=std::make_unique<nova::SculptMesh>();
+        const auto& sourceVertices=mesh.getVertices();
+        sculpt->positions.reserve(sourceVertices.size());
+        sculpt->normals.reserve(sourceVertices.size());
+        for(const auto& vertex:sourceVertices) {
+            sculpt->positions.push_back(vertex.position);
+            sculpt->normals.push_back(vertex.normal);
+        }
+        sculpt->indices=mesh.getIndices();
+        sculpt->mask.assign(sculpt->positions.size(),0.0f);
+        sculpt->buildAdjacency();
+        sculpt->buildChunks();
+        sculpt->buildBVH();
         { std::lock_guard<std::mutex> qlock(gSculptQueueMutex); gSculptQueue.clear(); }
         std::lock_guard<std::mutex> dataLock(gSculptDataMutex);
-        gSculptMesh.reset();gSculptMeshId=0;
+        gSculptMesh=std::move(sculpt);gSculptMeshId=0;
         gSculptMeshDirty.store(false,std::memory_order_release);
         gSculptMaskDirty.store(false,std::memory_order_release);
     }
@@ -1244,14 +1257,13 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateSculptMesh(
         return 0;
     }
     gCustomMeshes[id] = std::move(mesh);
-    if(shape==0) {
+    {
         std::lock_guard<std::mutex> dataLock(gSculptDataMutex);
         gSculptMeshId=id;
+        if(gSculptMesh) gSculptMasks[id]=gSculptMesh->mask;
+        else gSculptMasks[id]=std::vector<float>(gCustomMeshes[id].vertexCount(),0.0f);
         gSculptMeshDirty.store(false,std::memory_order_release);
         gSculptMaskDirty.store(false,std::memory_order_release);
-        gSculptMasks[id]=gSculptMesh->mask;
-    } else {
-        gSculptMasks[id] = std::vector<float>(gCustomMeshes[id].vertexCount(), 0.0f);
     }
     if (nova::SceneObject* object = gScene.find(id)) {
         object->material.baseColor = nova::Vec3(0.68f, 0.72f, 0.80f);
@@ -1561,6 +1573,75 @@ Java_com_novaingine_v2_NativeBridge_nativeAISculptSelectedMesh(
     found->second = std::move(edited);
     gSculptMasks[id] = std::move(masks);
     return 1;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeAISculptStroke(
+    JNIEnv* env, jclass, jfloatArray pointArray,
+    jfloat radiusValue, jfloat strengthValue, jint brushValue,
+    jfloat hardnessValue, jint symmetryAxisValue, jboolean subtractValue,
+    jfloat pressureValue, jfloat dragXValue, jfloat dragYValue, jfloat dragZValue
+) {
+    if(!pointArray)return -5;
+    const jsize length=env->GetArrayLength(pointArray);
+    if(length<3||length>192||length%3!=0)return -5;
+    std::vector<jfloat> values(static_cast<size_t>(length));
+    env->GetFloatArrayRegion(pointArray,0,length,values.data());
+    if(env->ExceptionCheck()){env->ExceptionClear();return -5;}
+    for(float value:values)if(!std::isfinite(value)||std::fabs(value)>1000.0f)return -5;
+
+    std::lock_guard<std::mutex> engineLock(engineMutex);
+    if(!gInitialized)return -2;
+    const uint32_t id=gScene.selectedId();
+    if(id==0||id!=gSculptMeshId||gCustomMeshes.find(id)==gCustomMeshes.end())return -1;
+    {
+        std::lock_guard<std::mutex> dataLock(gSculptDataMutex);
+        if(!gSculptMesh)return -4;
+    }
+    nova::SculptMesh::Brush brush;
+    brush.radius=std::clamp(static_cast<float>(radiusValue),0.02f,1.0f);
+    brush.strength=std::clamp(static_cast<float>(strengthValue),0.0f,1.0f);
+    brush.hardness=std::clamp(static_cast<float>(hardnessValue),0.0f,1.0f);
+    brush.pressure=std::clamp(static_cast<float>(pressureValue),0.0f,1.0f);
+    brush.type=std::clamp(static_cast<int>(brushValue),0,11);
+    brush.symmetryAxis=std::clamp(static_cast<int>(symmetryAxisValue),-1,2);
+    brush.subtract=subtractValue==JNI_TRUE;
+    const size_t pointCount=static_cast<size_t>(length/3);
+    const nova::Vec3 drag(
+        std::clamp(static_cast<float>(dragXValue),-2.0f,2.0f),
+        std::clamp(static_cast<float>(dragYValue),-2.0f,2.0f),
+        std::clamp(static_cast<float>(dragZValue),-2.0f,2.0f));
+    auto pointAt=[&](size_t i){return nova::Vec3(values[i*3],values[i*3+1],values[i*3+2]);};
+
+    startSculptWorker();
+    enqueueSculptJob(SculptDabJob{nova::Vec3(),nova::Vec3(),nova::Vec3(),brush,true,false});
+    int dabCount=0;
+    const nova::Vec3 up(0.0f,1.0f,0.0f);
+    if(pointCount==1) {
+        enqueueSculptJob(SculptDabJob{pointAt(0),up,drag,brush,false,false});
+        dabCount=1;
+    } else {
+        const float spacing=std::max(0.005f,brush.radius*0.25f);
+        nova::Vec3 first=pointAt(0);
+        enqueueSculptJob(SculptDabJob{first,up,nova::Vec3(),brush,false,false});
+        dabCount=1;
+        for(size_t segmentIndex=0;segmentIndex+1<pointCount&&dabCount<240;segmentIndex++) {
+            nova::Vec3 a=pointAt(segmentIndex),b=pointAt(segmentIndex+1);
+            nova::Vec3 segment=b-a;
+            float distance=nova::length(segment);
+            int steps=std::max(1,(int)std::ceil(distance/spacing));
+            steps=std::min(steps,240-dabCount);
+            for(int step=1;step<=steps;step++) {
+                float t=(float)step/(float)steps;
+                nova::Vec3 center=a+segment*t;
+                nova::Vec3 delta=segment*(1.0f/(float)steps);
+                enqueueSculptJob(SculptDabJob{center,up,delta,brush,false,false});
+                ++dabCount;
+            }
+        }
+    }
+    enqueueSculptJob(SculptDabJob{nova::Vec3(),nova::Vec3(),nova::Vec3(),brush,false,true});
+    return dabCount;
 }
 
 JNIEXPORT jint JNICALL
