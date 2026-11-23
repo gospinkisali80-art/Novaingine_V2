@@ -39,7 +39,7 @@ public:
             for (int x = 0; x < segments; ++x) {
                 const uint32_t a = static_cast<uint32_t>(y * (segments + 1) + x);
                 const uint32_t b = a + static_cast<uint32_t>(segments + 1);
-                indices.insert(indices.end(), {a, b, a + 1, a + 1, b, b + 1});
+                indices.insert(indices.end(), {a, a + 1, b, a + 1, b + 1, b});
             }
         }
         Mesh mesh(std::move(vertices), std::move(indices));
@@ -68,7 +68,7 @@ public:
                 const uint32_t b = a + 1;
                 const uint32_t c = a + static_cast<uint32_t>(side);
                 const uint32_t d = c + 1;
-                indices.insert(indices.end(), {a, b, c, b, d, c});
+                indices.insert(indices.end(), {a, c, b, b, c, d});
             }
         }
         Mesh mesh(std::move(vertices), std::move(indices));
