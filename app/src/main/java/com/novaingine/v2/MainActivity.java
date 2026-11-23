@@ -484,6 +484,34 @@ public final class MainActivity extends Activity
         addButton.accept("+ VISIBILITY", () -> graph.addNode(VisualScriptEditorView.VISIBILITY));
         addButton.accept("+ BRANCH", () -> graph.addNode(VisualScriptEditorView.BRANCH));
         addButton.accept("+ END", () -> graph.addNode(VisualScriptEditorView.END));
+        addButton.accept("SAVE JSON", () -> {
+            try {
+                File file = new File(getFilesDir(), "NovaingineVisualScript.json");
+                try (FileOutputStream output = new FileOutputStream(file)) {
+                    output.write(graph.toJson().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                }
+                android.widget.Toast.makeText(this, "Graph saved: " + file.getAbsolutePath(), android.widget.Toast.LENGTH_LONG).show();
+            } catch (Exception error) {
+                android.widget.Toast.makeText(this, "Graph save failed: " + error.getMessage(), android.widget.Toast.LENGTH_LONG).show();
+            }
+        });
+        addButton.accept("LOAD JSON", () -> {
+            try {
+                File file = new File(getFilesDir(), "NovaingineVisualScript.json");
+                if (!file.exists()) {
+                    android.widget.Toast.makeText(this, "No saved visual graph yet", android.widget.Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                byte[] bytes = new byte[(int)Math.min(file.length(), 256 * 1024)];
+                try (java.io.FileInputStream input = new java.io.FileInputStream(file)) {
+                    int count = input.read(bytes);
+                    String json = new String(bytes, 0, Math.max(0, count), java.nio.charset.StandardCharsets.UTF_8);
+                    android.widget.Toast.makeText(this, graph.loadJson(json) ? "Graph loaded" : "Invalid graph JSON", android.widget.Toast.LENGTH_SHORT).show();
+                }
+            } catch (Exception error) {
+                android.widget.Toast.makeText(this, "Graph load failed: " + error.getMessage(), android.widget.Toast.LENGTH_LONG).show();
+            }
+        });
         HorizontalScrollView graphScroll = new HorizontalScrollView(this);
         graphScroll.setFillViewport(false);
         ScrollView vertical = new ScrollView(this);
