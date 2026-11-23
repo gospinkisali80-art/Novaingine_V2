@@ -118,11 +118,11 @@ public final class ManualSculptWorkspace extends FrameLayout {
         }
         updateBrushButtons();
 
-        addSlider(bottom, "RADIUS", 1, 200, 18, value -> {
-            radius = 0.02f + (value / 200.0f) * 0.98f;
+        addSlider(bottom, "RADIUS", 1, 200, 33, value -> {
+            radius = 0.02f + ((value - 1) / 199.0f) * 0.98f;
             applyOptions();
         });
-        addSlider(bottom, "STRENGTH", 1, 100, 24, value -> {
+        addSlider(bottom, "STRENGTH", 0, 100, 24, value -> {
             strength = value / 100.0f;
             applyOptions();
         });
