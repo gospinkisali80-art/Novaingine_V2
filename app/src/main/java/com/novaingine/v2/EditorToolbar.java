@@ -60,59 +60,10 @@ public final class EditorToolbar extends LinearLayout {
         setPadding(5, 5, 5, 5);
         setBackground(createBackground(COLOR_BACKGROUND, 10));
 
-        HorizontalScrollView scroll =
-                new HorizontalScrollView(context);
-
-        scroll.setHorizontalScrollBarEnabled(false);
-        scroll.setFillViewport(false);
-
-        LinearLayout toolbarContent =
-                new LinearLayout(context);
-
-        toolbarContent.setOrientation(HORIZONTAL);
-        toolbarContent.setGravity(Gravity.CENTER_VERTICAL);
-
-        addView(
-                scroll,
-                new LayoutParams(
-                        LayoutParams.MATCH_PARENT,
-                        LayoutParams.WRAP_CONTENT
-                )
-        );
-
-        scroll.addView(toolbarContent);
-
-        buildLeftControls(context, toolbarContent);
-
-        addSeparator(context, toolbarContent);
-
-        buildTransformControls(context, toolbarContent);
-
-        addSeparator(context, toolbarContent);
-
-        buildSnapControls(context, toolbarContent);
-
-        addSeparator(context, toolbarContent);
-
-        buildCameraControls(context, toolbarContent);
-
-        addSeparator(context, toolbarContent);
-
-        addButton(
-                context,
-                toolbarContent,
-                "▶ Play",
-                "Enter live play mode",
-                () -> this.actions.onTogglePlay()
-        );
-
-        addButton(
-                context,
-                toolbarContent,
-                "Max",
-                "Maximize viewport",
-                () -> this.actions.onToggleMaximize()
-        );
+        addButton(context, this, "▶ PLAY", "Enter live play mode",
+                () -> this.actions.onTogglePlay());
+        addButton(context, this, "MORE  ☰", "Open the editor sidebar",
+                () -> this.actions.onOpenToolsDrawer());
     }
 
     private GradientDrawable createBackground(
