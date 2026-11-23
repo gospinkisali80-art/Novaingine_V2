@@ -19,6 +19,7 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.ScrollView;
+import android.widget.HorizontalScrollView;
 import android.widget.Spinner;
 import android.widget.ArrayAdapter;
 import android.widget.CheckBox;
@@ -308,7 +309,7 @@ public final class MainActivity extends Activity
         addDrawerItem("Animation", "Keyframes and playback", () -> showToolStatus("Animation"));
         addDrawerItem("Audio", "Sound sources and audio controls", () -> showToolStatus("Audio"));
         addDrawerItem("AI Assistant", "Groq-powered scene-building assistant", this::openAIAssistant);
-        addDrawerItem("Visual Scripting", "Node-based gameplay logic", () -> showToolStatus("Visual Scripting"));
+        addDrawerItem("Visual Scripting", "Create, connect, edit and run gameplay nodes", this::showVisualScriptingEditor);
 
         addDrawerSection("EDITOR");
         addDrawerItem("Physics: " + (drawerPhysicsEnabled ? "ON" : "OFF"), "Toggle collision and gravity", () -> {
@@ -462,6 +463,64 @@ public final class MainActivity extends Activity
         }, "Nova-GLB-Copy").start();
     }
 
+    private void showVisualScriptingEditor() {
+        closeToolsDrawer();
+        VisualScriptEditorView graph = new VisualScriptEditorView(this);
+        LinearLayout content = new LinearLayout(this); content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(8), dp(8), dp(8), dp(8));
+        TextView help = new TextView(this); help.setText("Drag nodes to arrange the graph. Add nodes, then tap AUTO CONNECT to wire them in order. Branch connects to the next two nodes (True / False). Edit the selected node before running."); help.setTextColor(0xFF344050); help.setTextSize(11); content.addView(help);
+        HorizontalScrollView tools = new HorizontalScrollView(this); tools.setHorizontalScrollBarEnabled(false);
+        LinearLayout buttons = new LinearLayout(this); buttons.setOrientation(LinearLayout.HORIZONTAL);
+        tools.addView(buttons); content.addView(tools);
+        java.util.function.BiConsumer<String, Runnable> addButton = (label, action) -> {
+            TextView button = new TextView(this); button.setText(label); button.setTextColor(Color.WHITE); button.setTextSize(10); button.setPadding(dp(10), dp(9), dp(10), dp(9)); button.setBackgroundColor(0xFF354354);
+            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT); p.setMargins(dp(2), dp(4), dp(2), dp(4)); buttons.addView(button, p); button.setOnClickListener(v -> action.run());
+        };
+        addButton.accept("+ BEGIN", () -> graph.addNode(VisualScriptEditorView.BEGIN_PLAY));
+        addButton.accept("+ TICK", () -> graph.addNode(VisualScriptEditorView.TICK));
+        addButton.accept("+ MOVE", () -> graph.addNode(VisualScriptEditorView.MOVE));
+        addButton.accept("+ ROTATE", () -> graph.addNode(VisualScriptEditorView.ROTATE));
+        addButton.accept("+ SCALE", () -> graph.addNode(VisualScriptEditorView.SCALE));
+        addButton.accept("+ VISIBILITY", () -> graph.addNode(VisualScriptEditorView.VISIBILITY));
+        addButton.accept("+ BRANCH", () -> graph.addNode(VisualScriptEditorView.BRANCH));
+        addButton.accept("+ END", () -> graph.addNode(VisualScriptEditorView.END));
+        HorizontalScrollView graphScroll = new HorizontalScrollView(this);
+        graphScroll.setFillViewport(false);
+        ScrollView vertical = new ScrollView(this);
+        vertical.addView(graph, new ScrollView.LayoutParams(dp(760), dp(570)));
+        graphScroll.addView(vertical);
+        LinearLayout.LayoutParams graphParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(570));
+        content.addView(graphScroll, graphParams);
+        LinearLayout actions = new LinearLayout(this); actions.setOrientation(LinearLayout.HORIZONTAL);
+        TextView connect = new TextView(this); connect.setText("AUTO CONNECT"); connect.setTextColor(Color.WHITE); connect.setPadding(dp(10), dp(10), dp(10), dp(10)); connect.setBackgroundColor(0xFF3A725F);
+        TextView edit = new TextView(this); edit.setText("EDIT SELECTED"); edit.setTextColor(Color.WHITE); edit.setPadding(dp(10), dp(10), dp(10), dp(10)); edit.setBackgroundColor(0xFF405A79);
+        TextView run = new TextView(this); run.setText("▶ RUN GRAPH"); run.setTextColor(Color.WHITE); run.setPadding(dp(10), dp(10), dp(10), dp(10)); run.setBackgroundColor(0xFFB66C21);
+        TextView stop = new TextView(this); stop.setText("STOP"); stop.setTextColor(Color.WHITE); stop.setPadding(dp(10), dp(10), dp(10), dp(10)); stop.setBackgroundColor(0xFF8A3C3C);
+        actions.addView(connect); actions.addView(edit); actions.addView(run); actions.addView(stop); content.addView(actions);
+        connect.setOnClickListener(v -> graph.autoConnect());
+        edit.setOnClickListener(v -> editVisualNode(graph));
+        run.setOnClickListener(v -> engineSurface.setVisualScript(graph.buildNodeData(), graph.buildNodeValues(), true, ok -> android.widget.Toast.makeText(this, ok ? "Visual graph sent to engine. Begin Play runs once; Tick runs every frame." : "Graph could not be compiled. Check node links and node count.", android.widget.Toast.LENGTH_LONG).show()));
+        stop.setOnClickListener(v -> engineSurface.setVisualScript(null, null, false, ok -> android.widget.Toast.makeText(this, "Visual script stopped.", android.widget.Toast.LENGTH_SHORT).show()));
+        new AlertDialog.Builder(this).setTitle("NOVA BLUEPRINT GRAPH").setView(content).setNegativeButton("Close", null).show();
+    }
+
+    private void editVisualNode(VisualScriptEditorView graph) {
+        VisualScriptEditorView.Node node = graph.getSelectedNode();
+        if (node == null) return;
+        LinearLayout form = new LinearLayout(this); form.setOrientation(LinearLayout.VERTICAL); form.setPadding(dp(16), dp(8), dp(16), dp(4));
+        String[] labels = {"Target object ID (0 = selected)", "X / Value", "Y / Compare value", "Z", "Condition: 1 = true, 0 = false"};
+        String[] defaults = {String.valueOf(node.objectId), String.valueOf(node.vx), String.valueOf(node.vy), String.valueOf(node.vz), node.condition ? "1" : "0"};
+        EditText[] fields = new EditText[5];
+        for (int i = 0; i < labels.length; i++) { TextView label = new TextView(this); label.setText(labels[i]); label.setTextColor(Color.DKGRAY); form.addView(label); EditText field = new EditText(this); field.setSingleLine(true); field.setText(defaults[i]); field.setInputType(android.text.InputType.TYPE_CLASS_NUMBER | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED); form.addView(field); fields[i] = field; }
+        new AlertDialog.Builder(this).setTitle("Edit Node " + node.id).setView(form).setPositiveButton("Apply", (d, w) -> {
+            try { node.objectId = Math.max(0, Integer.parseInt(fields[0].getText().toString())); } catch (Exception ignored) {}
+            try { node.vx = Float.parseFloat(fields[1].getText().toString()); } catch (Exception ignored) {}
+            try { node.vy = Float.parseFloat(fields[2].getText().toString()); } catch (Exception ignored) {}
+            try { node.vz = Float.parseFloat(fields[3].getText().toString()); } catch (Exception ignored) {}
+            try { node.condition = Float.parseFloat(fields[4].getText().toString()) >= 0.5f; } catch (Exception ignored) {}
+            graph.invalidate();
+        }).setNegativeButton("Cancel", null).show();
+    }
     private void showMeshSculptor() {
         closeToolsDrawer();
         LinearLayout content = new LinearLayout(this);
