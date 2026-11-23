@@ -121,6 +121,7 @@ public final class NativeBridge {
     public static native void nativeEndSculptStroke();
     public static native boolean nativeSetVisualScript(int[] nodeData, float[] nodeValues, boolean enabled);
     public static native int nativeSculptSelectedMesh(float x, float y, float z, float radius, float strength, int mode, boolean symmetry);
+    public static native int nativeAISculptSelectedMesh(float x, float y, float z, float radius, float strength, int brush, float falloff, boolean symmetry, float dragX, float dragY, float dragZ);
 
     public static native int nativeAddPrimitive(int primitive, String name, float x, float y, float z, float sx, float sy, float sz, float r, float g, float b);
 
