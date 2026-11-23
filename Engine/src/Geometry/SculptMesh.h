@@ -41,7 +41,8 @@ public:
         AABB bounds;
         GLuint vao=0,vbo=0,ibo=0;
         GLsizei indexCount=0;
-        bool dirty=true;\n        bool allocated=false;
+        bool dirty=true;
+        bool allocated=false;
         void release(){ if(ibo)glDeleteBuffers(1,&ibo); if(vbo)glDeleteBuffers(1,&vbo); if(vao)glDeleteVertexArrays(1,&vao); vao=vbo=ibo=0; indexCount=0; }
     };
     struct Hit { bool found=false; float distance=0; Vec3 point{},normal{}; uint32_t triangle=0; };
