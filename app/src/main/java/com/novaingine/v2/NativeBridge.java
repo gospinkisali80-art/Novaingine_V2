@@ -125,6 +125,7 @@ public final class NativeBridge {
     public static native boolean nativeSetVisualScript(int[] nodeData, float[] nodeValues, boolean enabled);
     public static native int nativeSculptSelectedMesh(float x, float y, float z, float radius, float strength, int mode, boolean symmetry);
     public static native int nativeAISculptSelectedMesh(float x, float y, float z, float radius, float strength, int brush, float falloff, boolean symmetry, float dragX, float dragY, float dragZ);
+    public static native int nativeAISculptStroke(float[] points, float radius, float strength, int brush, float hardness, int symmetryAxis, boolean subtract, float pressure, float dragX, float dragY, float dragZ);
     // operation: 0 extrude face, 1 inset face, 2 bevel edge, 3 loop cut, 4 subdivision, 5 merge by distance, 6 knife triangle split.
     public static native int nativeModelSelectedMesh(int operation, int elementIndex, float amount);
 
