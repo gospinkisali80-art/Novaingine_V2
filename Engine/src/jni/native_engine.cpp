@@ -1442,6 +1442,12 @@ Java_com_novaingine_v2_NativeBridge_nativeSetManualSculptWorkspace(JNIEnv*, jcla
 
     RendererSettings settings = gRenderer.getSettings();
     if (entering) {
+        // Blender-like sculpt viewport: neutral charcoal world, visible floor grid,
+        // and no arena environment or decorative scene props.
+        settings.showSky = false;
+        settings.showGrid = true;
+        settings.showBounds = false;
+        settings.showShadows = false;
         gSculptWorkspaceVisibility.clear();
         gSculptWorkspaceVisibility.reserve(gScene.objectCount());
         for (nova::SceneObject& object : gScene.getObjects()) {
@@ -1450,10 +1456,8 @@ Java_com_novaingine_v2_NativeBridge_nativeSetManualSculptWorkspace(JNIEnv*, jcla
             // prop, wall, floor mesh and other scene object behind the workspace.
             if (object.id != gSculptMeshId) object.visible = false;
         }
-        gSculptWorkspacePreviousShowGrid = settings.showGrid;
-        gSculptWorkspacePreviousShowBounds = settings.showBounds;
-        settings.showGrid = false;
-        settings.showBounds = false;
+        gSculptWorkspacePreviousShowGrid = gRenderer.getSettings().showGrid;
+        gSculptWorkspacePreviousShowBounds = gRenderer.getSettings().showBounds;
         gRenderer.setSettings(settings);
         gManualSculptWorkspaceActive = true;
     } else {
