@@ -113,6 +113,7 @@ public final class NativeBridge {
     );
 
     public static native int nativeImportGlb(String path);
+    public static native int nativeSculptSelectedMesh(float x, float y, float z, float radius, float strength, int mode, boolean symmetry);
 
     public static native int nativeAddPrimitive(int primitive, String name, float x, float y, float z, float sx, float sy, float sz, float r, float g, float b);
 
