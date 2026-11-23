@@ -190,6 +190,9 @@ public final class ViewportInput extends View {
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
+        // Leave the top editor toolbar interactive while this transparent overlay
+        // captures viewport touches across the full screen.
+        if (event.getY() < 48.0f * density) return false;
         int action = event.getActionMasked();
         int index = event.getActionIndex();
         int pointerId = event.getPointerId(index);
@@ -241,7 +244,10 @@ public final class ViewportInput extends View {
 
             case MotionEvent.ACTION_POINTER_UP:
             case MotionEvent.ACTION_UP:
-                if (viewportTouchActive) engineSurface.dispatchTouchEvent(event);
+                if (viewportTouchActive) {
+                    engineSurface.handleSculptTouch(event, getTop());
+                    engineSurface.dispatchTouchEvent(event);
+                }
                 releasePointer(pointerId, x, y);
                 if (action == MotionEvent.ACTION_UP) {
                     if (movePointerId != -1) resetMoveStick();
@@ -256,7 +262,10 @@ public final class ViewportInput extends View {
                 return true;
 
             case MotionEvent.ACTION_CANCEL:
-                if (viewportTouchActive) engineSurface.dispatchTouchEvent(event);
+                if (viewportTouchActive) {
+                    engineSurface.handleSculptTouch(event, getTop());
+                    engineSurface.dispatchTouchEvent(event);
+                }
                 viewportTouchActive = false;
                 resetMoveStick();
                 resetLookStick();
