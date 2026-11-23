@@ -36,7 +36,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private final TextView[] brushButtons = new TextView[BRUSHES.length];
     private int selectedBrush;
     private float radius = 0.18f;
-    private float strength = 0.12f;
+    private float strength = 0.40f;
     private float falloff = 0.5f;
     private float pressure = 1.0f;
     private int symmetryAxis = 0;
@@ -122,7 +122,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
             radius = 0.02f + ((value - 1) / 199.0f) * 0.98f;
             applyOptions();
         });
-        addSlider(bottom, "STRENGTH", 0, 100, 24, value -> {
+        addSlider(bottom, "STRENGTH", 0, 100, 40, value -> {
             strength = value / 100.0f;
             applyOptions();
         });
