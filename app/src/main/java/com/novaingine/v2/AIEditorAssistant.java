@@ -28,12 +28,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Groq cloud agent. Tool calls are validated and executed locally by Novaingine. */
+/** Claude cloud agent. Tool calls are validated and executed locally by Novaingine. */
 public final class AIEditorAssistant {
-    private static final String MODEL_ID = "openai/gpt-oss-120b";
-    private static final String GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions";
-    private static final String PREFS_NAME = "nova_groq_settings";
-    private static final String PREF_API_KEY = "groq_api_key";
+    private static final String MODEL_ID = "claude-opus-5-5";
+    private static final String CLAUDE_MESSAGES_URL = "https://api.anthropic.com/v1/messages";
+    private static final String PREFS_NAME = "nova_claude_settings";
+    private static final String PREF_API_KEY = "claude_api_key";
     private TextView modelInfo;
     private final Activity activity;
     private final EngineSurface engine;
@@ -52,7 +52,7 @@ public final class AIEditorAssistant {
         JSONObject system = new JSONObject();
         try {
             system.put("role", "system");
-            system.put("content", "You are NOVA AI, powered by Groq, the modeling and scene-building assistant inside Novaingine. When asked to build an object, character, vehicle, building, prop or environment, CREATE REAL VISIBLE 3D GEOMETRY IN THE CURRENT SCENE, not just explain how. Prefer create_lathe_mesh for rotational mechanical/architectural parts and create_ellipsoid_mesh for proportioned organic/body forms; these generate real high-resolution meshes locally with very few API tokens. Compose substantial assets from 6-16 distinct, deliberately proportioned parts, not generic stacks of primitives. Use create_mesh_part only for unique irregular geometry; its tool payload is token-expensive. Build recognizable silhouettes, varied cross-sections, layered forms, and connected surfaces. After each logical group inspect_scene, then continue refining. Do not stop after creating a base shape. Each mesh part supports up to 3000 vertices and 6000 triangles, local coordinates -20..20. Use extrude_face, inset_face, bevel_edge, loop_cut, subdivide_mesh, merge_vertices, and knife_cut on the selected mesh to perform real topology edits. Use faceIndex or edgeIndex starting at 0 unless scene inspection supplies a better index. Subdivision is capped at 3 levels and Android mesh complexity is capped. Do not claim a tool operation succeeded unless its result confirms success. Use coherent surfaces and sensible placement; do not make every object from identical boxes. After creating parts, inspect the scene and report exactly what was created. For organic assets, create a dense sculpt mesh first (sphere for characters/creatures/rounded props; plane for terrain-like forms), density 64-80 when mobile performance permits. Then use sculpt_selected_mesh as a real SculptMesh brush stroke tool, not the old low-detail mesh modifier. Brush centers and every point are LOCAL mesh coordinates; X is left/right, Y is up, Z is depth. Use points as a flat list of xyz triplets to draw continuous paths; the engine interpolates dabs at 25% of brush radius. If points are omitted, x/y/z is a single dab. Build organic forms in stages: primary masses with Draw/Clay/Inflate, pull silhouette features with Grab, carve separations with Crease/Pinch, flatten planes with Flatten/Scrape, protect finished regions with Mask, then Smooth lightly to remove lumps. Use several deliberate strokes at different centers and radii rather than one giant dab. Use X symmetry for centered characters and vehicles, Y/Z only when appropriate. Grab accepts dragX/dragY/dragZ for a one-point pull or a points path for a continuous pull. Radius is 0.02-1.0 world units, strength 0-1, hardness/falloff 0-1; subtract reverses Draw, Clay and Inflate. Wait for queued strokes to process before relying on later scene inspection. The AI must make recognizable silhouettes, proportionate anatomy, layered forms, and refined transitions, not merely inflate a sphere. If editing an existing object, inspect and select it first. Preserve all existing scene content unless the user explicitly asks to remove it. Keep Blender desktop bridge and GLB import available. Use existing terrain and scene tools when relevant. Keep operations moderate for Android performance. Never claim a model exists unless creation tools confirm success. If a geometry tool fails, explain the failure. Be honest about current sculpting limits and do not claim Blender or Unreal parity.");
+            system.put("content", "You are NOVA AI, powered by Anthropic Claude, the modeling and scene-building assistant inside Novaingine. When asked to build an object, character, vehicle, building, prop or environment, CREATE REAL VISIBLE 3D GEOMETRY IN THE CURRENT SCENE, not just explain how. Prefer create_lathe_mesh for rotational mechanical/architectural parts and create_ellipsoid_mesh for proportioned organic/body forms; these generate real high-resolution meshes locally with very few API tokens. Compose substantial assets from 6-16 distinct, deliberately proportioned parts, not generic stacks of primitives. Use create_mesh_part only for unique irregular geometry; its tool payload is token-expensive. Build recognizable silhouettes, varied cross-sections, layered forms, and connected surfaces. After each logical group inspect_scene, then continue refining. Do not stop after creating a base shape. Each mesh part supports up to 3000 vertices and 6000 triangles, local coordinates -20..20. Use extrude_face, inset_face, bevel_edge, loop_cut, subdivide_mesh, merge_vertices, and knife_cut on the selected mesh to perform real topology edits. Use faceIndex or edgeIndex starting at 0 unless scene inspection supplies a better index. Subdivision is capped at 3 levels and Android mesh complexity is capped. Do not claim a tool operation succeeded unless its result confirms success. Use coherent surfaces and sensible placement; do not make every object from identical boxes. After creating parts, inspect the scene and report exactly what was created. For organic assets, create a dense sculpt mesh first (sphere for characters/creatures/rounded props; plane for terrain-like forms), density 64-80 when mobile performance permits. Then use sculpt_selected_mesh as a real SculptMesh brush stroke tool, not the old low-detail mesh modifier. Brush centers and every point are LOCAL mesh coordinates; X is left/right, Y is up, Z is depth. Use points as a flat list of xyz triplets to draw continuous paths; the engine interpolates dabs at 25% of brush radius. If points are omitted, x/y/z is a single dab. Build organic forms in stages: primary masses with Draw/Clay/Inflate, pull silhouette features with Grab, carve separations with Crease/Pinch, flatten planes with Flatten/Scrape, protect finished regions with Mask, then Smooth lightly to remove lumps. Use several deliberate strokes at different centers and radii rather than one giant dab. Use X symmetry for centered characters and vehicles, Y/Z only when appropriate. Grab accepts dragX/dragY/dragZ for a one-point pull or a points path for a continuous pull. Radius is 0.02-1.0 world units, strength 0-1, hardness/falloff 0-1; subtract reverses Draw, Clay and Inflate. Wait for queued strokes to process before relying on later scene inspection. The AI must make recognizable silhouettes, proportionate anatomy, layered forms, and refined transitions, not merely inflate a sphere. If editing an existing object, inspect and select it first. Preserve all existing scene content unless the user explicitly asks to remove it. Keep Blender desktop bridge and GLB import available. Use existing terrain and scene tools when relevant. Keep operations moderate for Android performance. Never claim a model exists unless creation tools confirm success. If a geometry tool fails, explain the failure. Be honest about current sculpting limits and do not claim Blender or Unreal parity.");
             history.put(system);
         } catch (Exception ignored) {}
     }
@@ -66,14 +66,14 @@ public final class AIEditorAssistant {
         LinearLayout top = new LinearLayout(activity);
         top.setGravity(Gravity.CENTER_VERTICAL);
         TextView title = new TextView(activity);
-        title.setText("NOVA AI  •  GROQ CLOUD");
+        title.setText("NOVA AI  •  CLAUDE CLOUD");
         title.setTextColor(0xFFFFB45C);
         title.setTextSize(16);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         top.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
         Button setupButton = new Button(activity);
         setupButton.setText("API KEY");
-        setupButton.setOnClickListener(v -> showGroqKeyDialog());
+        setupButton.setOnClickListener(v -> showClaudeKeyDialog());
         top.addView(setupButton);
         root.addView(top);
 
@@ -89,7 +89,7 @@ public final class AIEditorAssistant {
         transcript.setTextColor(Color.WHITE);
         transcript.setTextSize(13);
         transcript.setPadding(dp(10), dp(10), dp(10), dp(10));
-        transcript.setText("Novaingine Groq AI is ready to connect.\n\nAdd your Groq API key using API KEY, then try: “Sculpt a detailed dragon” or “Build a modern house.”\n\nGroq offers a rate-limited free tier. Check your account limits before sending requests.");
+        transcript.setText("Novaingine Claude AI is ready to connect.\n\nAdd your Anthropic API key using API KEY, then try: “Sculpt a detailed dragon” or “Build a modern house.”\n\nClaude API usage is billed by Anthropic. Have a parent or guardian manage billing and credentials.");
         scroll.addView(transcript);
         LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1);
         scrollParams.topMargin = dp(8);
@@ -128,7 +128,7 @@ public final class AIEditorAssistant {
     private void updateModelInfo() {
         if (modelInfo != null) {
             boolean configured = !getApiKey().isEmpty();
-            modelInfo.setText("Provider: Groq GPT-OSS 120B  |  " + (configured ? "API key saved on this device" : "API key required"));
+            modelInfo.setText("Provider: Anthropic Claude Opus 5.5  |  " + (configured ? "API key saved on this device" : "API key required"));
         }
     }
 
@@ -137,10 +137,10 @@ public final class AIEditorAssistant {
                 .getString(PREF_API_KEY, "").trim();
     }
 
-    private void showGroqKeyDialog() {
+    private void showClaudeKeyDialog() {
         EditText keyInput = new EditText(activity);
         keyInput.setSingleLine(true);
-        keyInput.setHint("Paste your Groq API key");
+        keyInput.setHint("Paste your Anthropic API key");
         keyInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         keyInput.setText(getApiKey());
         LinearLayout content = new LinearLayout(activity);
@@ -152,13 +152,13 @@ public final class AIEditorAssistant {
         warning.setTextSize(12);
         content.addView(warning);
         content.addView(keyInput);
-        new AlertDialog.Builder(activity).setTitle("Connect Groq").setView(content)
+        new AlertDialog.Builder(activity).setTitle("Connect Claude").setView(content)
                 .setPositiveButton("SAVE KEY", (d, w) -> {
                     String key = keyInput.getText().toString().trim();
                     if (key.isEmpty()) activity.getSharedPreferences(PREFS_NAME, Activity.MODE_PRIVATE).edit().remove(PREF_API_KEY).apply();
                     else activity.getSharedPreferences(PREFS_NAME, Activity.MODE_PRIVATE).edit().putString(PREF_API_KEY, key).apply();
                     updateModelInfo();
-                    append(key.isEmpty() ? "\\nGroq API key cleared.\\n" : "\\nGroq API key saved on this device.\\n");
+                    append(key.isEmpty() ? "\\nClaude API key cleared.\\n" : "\\nClaude API key saved on this device.\\n");
                 })
                 .setNegativeButton("CANCEL", null)
                 .setNeutralButton("CLEAR", (d, w) -> {
@@ -177,8 +177,8 @@ public final class AIEditorAssistant {
         busy = true;
         boolean sceneRequest = isSceneRequest(text);
         append(sceneRequest
-                ? "GROQ: Planning and sculpting your scene...\\n"
-                : "GROQ: Thinking...\\n");
+                ? "CLAUDE: Planning and sculpting your scene...\\n"
+                : "CLAUDE: Thinking...\\n");
         worker.execute(() -> {
             try {
                 JSONObject user = new JSONObject();
@@ -255,7 +255,7 @@ public final class AIEditorAssistant {
         String content = message.optString("content", "").trim();
         if (content.isEmpty()) {
             String reason = choice.optString("finish_reason", "unknown");
-            throw new Exception("Groq returned no text (finish reason: " + reason
+            throw new Exception("Claude returned no text (finish reason: " + reason
                     + "). Try a shorter message or check your Groq API access and model availability.");
         }
         JSONObject assistant = new JSONObject();
@@ -287,7 +287,7 @@ public final class AIEditorAssistant {
                 assistant.put("content", content);
                 history.put(assistant);
                 if (content.isEmpty()) {
-                    return "Groq returned an empty completion. No scene changes were made. Please retry.";
+                    return "Claude returned an empty completion. No scene changes were made. Please retry.";
                 }
                 return content;
             }
@@ -344,7 +344,7 @@ public final class AIEditorAssistant {
             }
             responseText = result.toString();
         } catch (java.net.ConnectException ex) {
-            throw new Exception("Could not connect to Groq. Check your internet connection and try again.");
+            throw new Exception("Could not connect to Anthropic Claude. Check your internet connection and try again.");
         } finally {
             connection.disconnect();
         }
@@ -352,12 +352,12 @@ public final class AIEditorAssistant {
         try {
             json = new JSONObject(responseText);
         } catch (Exception parseError) {
-            throw new Exception("Groq returned an unreadable response (HTTP " + code + ").");
+            throw new Exception("Claude returned an unreadable response (HTTP " + code + ").");
         }
         if (code >= 200 && code < 300) return json;
         String message = json.optJSONObject("error") == null ? json.toString()
                 : json.getJSONObject("error").optString("message", json.toString());
-        throw new Exception("Groq API HTTP " + code + ": " + message);
+        throw new Exception("Claude API HTTP " + code + ": " + message);
     }
 
     private void compactHistoryForNextTurn() {
