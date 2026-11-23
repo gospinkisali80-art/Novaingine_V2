@@ -1352,7 +1352,8 @@ void Renderer::renderShadowMap(
 
 void Renderer::renderSky(const Camera& camera) {
     if (!settings_.showSky) {
-        glClearColor(0.66f, 0.80f, 0.91f, 1.0f);
+        // Neutral Blender-like solid viewport background.
+        glClearColor(0.055f, 0.060f, 0.068f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         return;
     }
@@ -1417,6 +1418,18 @@ void Renderer::renderGrid(const Camera& camera) {
 
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
+
+    // Blender-style world axes: X red and Z green, both aligned to the grid.
+    std::vector<RenderLine> axes;
+    axes.reserve(2);
+    axes.push_back({-1000.0f, 0.018f, 0.0f, 1000.0f, 0.018f, 0.0f,
+                    0.72f, 0.20f, 0.19f, 0.95f});
+    axes.push_back({0.0f, 0.018f, -1000.0f, 0.0f, 0.018f, 1000.0f,
+                    0.35f, 0.62f, 0.24f, 0.95f});
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    drawLines(axes, camera);
+    glDepthMask(GL_TRUE);
 
     ++statistics_.drawCalls;
 }
