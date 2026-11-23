@@ -1,6 +1,7 @@
 package com.novaingine.v2;
 
 import android.app.Activity;
+import android.text.InputType;
 import android.app.AlertDialog;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -27,10 +28,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** On-device llama.cpp server agent. Model tool calls are validated and executed locally. */
+/** Grok cloud agent. Tool calls are validated and executed locally by Novaingine. */
 public final class AIEditorAssistant {
-    private static final String MODEL_ID = "nova-local";
-    private static final String LOCAL_CHAT_URL = "http://127.0.0.1:8080/v1/chat/completions";
+    private static final String MODEL_ID = "grok-4.7";
+    private static final String GROK_CHAT_URL = "https://api.x.ai/v1/chat/completions";
+    private static final String PREFS_NAME = "nova_grok_settings";
+    private static final String PREF_API_KEY = "xai_api_key";
     private TextView modelInfo;
     private final Activity activity;
     private final EngineSurface engine;
@@ -49,7 +52,7 @@ public final class AIEditorAssistant {
         JSONObject system = new JSONObject();
         try {
             system.put("role", "system");
-            system.put("content", "You are NOVA AI, the fully local modeling, sculpting and scene assistant inside Novaingine. Build recognizable assets from several purpose-built connected mesh parts with create_mesh_part, not only a deformed sphere. Use 3-8 parts, deliberate silhouettes and clean triangulated topology. Use sculpt tools for organic refinement. Blender desktop bridge remains available for high-detail modeling. You can directly sculpt custom meshes through Novaingine's built-in twelve-brush mesh sculptor. Keep the Blender-to-GLB integration available; never remove or replace it. For AI-created sculpted assets, use create_sculpt_mesh to create a dense sphere or plane, then call sculpt_selected_mesh repeatedly with Draw, Smooth, Grab, Inflate, Pinch, Flatten, Crease, Mask, Clay, Scrape, Layer or Unmask to shape the actual selected mesh. Brush centers are LOCAL mesh coordinates; X is left/right, Y is up, Z is depth. A sphere starts around radius 1.0; a plane spans about -1 to +1 in X/Z. Use multiple varied brush passes and smoothing to build recognizable forms; do not merely describe steps. Use non-thinking mode and return tool calls directly. Keep each operation moderate for Android performance. Grab uses dragX/dragY/dragZ to pull geometry. Mask protects vertices from later sculpt passes; Unmask clears that protection. Clay, Scrape and Layer provide additional surface-building brushes. If a selected sculptable mesh already exists, sculpt it rather than creating another unless requested. You may also use the existing terrain and scene tools. Never claim success unless a tool confirms it. Preserve existing scene content unless asked to remove it. Be honest about current sculpting limits and do not claim Blender or Unreal parity.");
+            system.put("content", "You are NOVA AI, powered by Grok, the modeling, sculpting and scene assistant inside Novaingine. Build recognizable assets from several purpose-built connected mesh parts with create_mesh_part, not only a deformed sphere. Use 3-8 parts, deliberate silhouettes and clean triangulated topology. Use sculpt tools for organic refinement. Blender desktop bridge remains available for high-detail modeling. You can directly sculpt custom meshes through Novaingine's built-in twelve-brush mesh sculptor. Keep the Blender-to-GLB integration available; never remove or replace it. For AI-created sculpted assets, use create_sculpt_mesh to create a dense sphere or plane, then call sculpt_selected_mesh repeatedly with Draw, Smooth, Grab, Inflate, Pinch, Flatten, Crease, Mask, Clay, Scrape, Layer or Unmask to shape the actual selected mesh. Brush centers are LOCAL mesh coordinates; X is left/right, Y is up, Z is depth. A sphere starts around radius 1.0; a plane spans about -1 to +1 in X/Z. Use multiple varied brush passes and smoothing to build recognizable forms; do not merely describe steps. Use non-thinking mode and return tool calls directly. Keep each operation moderate for Android performance. Grab uses dragX/dragY/dragZ to pull geometry. Mask protects vertices from later sculpt passes; Unmask clears that protection. Clay, Scrape and Layer provide additional surface-building brushes. If a selected sculptable mesh already exists, sculpt it rather than creating another unless requested. You may also use the existing terrain and scene tools. Never claim success unless a tool confirms it. Preserve existing scene content unless asked to remove it. Be honest about current sculpting limits and do not claim Blender or Unreal parity.");
             history.put(system);
         } catch (Exception ignored) {}
     }
@@ -63,14 +66,14 @@ public final class AIEditorAssistant {
         LinearLayout top = new LinearLayout(activity);
         top.setGravity(Gravity.CENTER_VERTICAL);
         TextView title = new TextView(activity);
-        title.setText("NOVA AI  •  ON-DEVICE");
+        title.setText("NOVA AI  •  GROK CLOUD");
         title.setTextColor(0xFFFFB45C);
         title.setTextSize(16);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         top.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
         Button setupButton = new Button(activity);
-        setupButton.setText("LOCAL SETUP");
-        setupButton.setOnClickListener(v -> showLocalServerHelp());
+        setupButton.setText("API KEY");
+        setupButton.setOnClickListener(v -> showGrokKeyDialog());
         top.addView(setupButton);
         root.addView(top);
 
@@ -86,7 +89,7 @@ public final class AIEditorAssistant {
         transcript.setTextColor(Color.WHITE);
         transcript.setTextSize(13);
         transcript.setPadding(dp(10), dp(10), dp(10), dp(10));
-        transcript.setText("Novaingine local AI is ready.\n\nStart the llama.cpp server in Termux, then try: “Sculpt a human face” or “Build a detailed tree with trunk, branches and leaves.”\n\nNo Groq key, cloud API or paid service is used. Tap LOCAL SETUP for the phone-side server instructions.");
+        transcript.setText("Novaingine Grok AI is ready to connect.\n\nAdd your xAI API key using API KEY, then try: “Sculpt a detailed dragon” or “Build a modern house.”\n\nGrok API usage may cost money. Check your xAI Console billing and limits before sending requests.");
         scroll.addView(transcript);
         LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1);
         scrollParams.topMargin = dp(8);
@@ -124,15 +127,44 @@ public final class AIEditorAssistant {
 
     private void updateModelInfo() {
         if (modelInfo != null) {
-            modelInfo.setText("Provider: Local on-device runtime  |  llama.cpp  |  Qwen3 1.7B Q4_K_M");
+            boolean configured = !getApiKey().isEmpty();
+            modelInfo.setText("Provider: xAI Grok 4.7  |  " + (configured ? "API key saved on this device" : "API key required"));
         }
     }
 
-    private void showLocalServerHelp() {
-        new AlertDialog.Builder(activity)
-                .setTitle("Start Novaingine Local AI")
-                .setMessage("1. Open Termux on this same phone.\n2. Start the llama.cpp server using the command in the repository README.\n3. Keep Termux running in the background.\n4. Return here and send your modeling request.\n\nNovaingine connects only to http://127.0.0.1:8080. The model runs on your phone; no Groq key or cloud AI is used. The Qwen3 1.7B model download is about 1.2 GB.")
-                .setPositiveButton("OK", null).show();
+    private String getApiKey() {
+        return activity.getSharedPreferences(PREFS_NAME, Activity.MODE_PRIVATE)
+                .getString(PREF_API_KEY, "").trim();
+    }
+
+    private void showGrokKeyDialog() {
+        EditText keyInput = new EditText(activity);
+        keyInput.setSingleLine(true);
+        keyInput.setHint("Paste your xAI API key");
+        keyInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        keyInput.setText(getApiKey());
+        LinearLayout content = new LinearLayout(activity);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(20), dp(8), dp(20), dp(4));
+        TextView warning = new TextView(activity);
+        warning.setText("Stored in this app's private settings. Never share it or commit it to GitHub. Grok API requests may be billed by xAI.");
+        warning.setTextColor(0xFFB8C5D5);
+        warning.setTextSize(12);
+        content.addView(warning);
+        content.addView(keyInput);
+        new AlertDialog.Builder(activity).setTitle("Connect Grok").setView(content)
+                .setPositiveButton("SAVE KEY", (d, w) -> {
+                    String key = keyInput.getText().toString().trim();
+                    if (key.isEmpty()) activity.getSharedPreferences(PREFS_NAME, Activity.MODE_PRIVATE).edit().remove(PREF_API_KEY).apply();
+                    else activity.getSharedPreferences(PREFS_NAME, Activity.MODE_PRIVATE).edit().putString(PREF_API_KEY, key).apply();
+                    updateModelInfo();
+                    append(key.isEmpty() ? "\\nGrok API key cleared.\\n" : "\\nGrok API key saved on this device.\\n");
+                })
+                .setNegativeButton("CANCEL", null)
+                .setNeutralButton("CLEAR", (d, w) -> {
+                    activity.getSharedPreferences(PREFS_NAME, Activity.MODE_PRIVATE).edit().remove(PREF_API_KEY).apply();
+                    updateModelInfo();
+                }).show();
     }
 
     private void sendPrompt() {
@@ -145,8 +177,8 @@ public final class AIEditorAssistant {
         busy = true;
         boolean sceneRequest = isSceneRequest(text);
         append(sceneRequest
-                ? "NOVA AI: Working on your scene request...\\n"
-                : "NOVA AI: Thinking...\\n");
+                ? "GROK: Planning and sculpting your scene...\\n"
+                : "GROK: Thinking...\\n");
         worker.execute(() -> {
             try {
                 JSONObject user = new JSONObject();
@@ -221,8 +253,8 @@ public final class AIEditorAssistant {
         String content = message.optString("content", "").trim();
         if (content.isEmpty()) {
             String reason = choice.optString("finish_reason", "unknown");
-            throw new Exception("Qwen3 returned no text (finish reason: " + reason
-                    + "). Try a shorter message or check the llama-server log.");
+            throw new Exception("Grok returned no text (finish reason: " + reason
+                    + "). Try a shorter message or check your xAI API access and model availability.");
         }
         JSONObject assistant = new JSONObject();
         assistant.put("role", "assistant");
@@ -283,12 +315,15 @@ public final class AIEditorAssistant {
     }
 
     private JSONObject postLocalModel(JSONObject body) throws Exception {
-        HttpURLConnection connection = (HttpURLConnection) new URL(LOCAL_CHAT_URL).openConnection();
+        String apiKey = getApiKey();
+        if (apiKey.isEmpty()) throw new Exception("Add your xAI API key using the API KEY button first.");
+        HttpURLConnection connection = (HttpURLConnection) new URL(GROK_CHAT_URL).openConnection();
         connection.setRequestMethod("POST");
         connection.setConnectTimeout(5000);
         connection.setReadTimeout(180000);
         connection.setDoOutput(true);
         connection.setRequestProperty("Content-Type", "application/json");
+        connection.setRequestProperty("Authorization", "Bearer " + apiKey);
         byte[] data = body.toString().getBytes(StandardCharsets.UTF_8);
         int code;
         String responseText;
@@ -307,7 +342,7 @@ public final class AIEditorAssistant {
             }
             responseText = result.toString();
         } catch (java.net.ConnectException ex) {
-            throw new Exception("Cannot reach local AI. Start llama-server in Termux on 127.0.0.1:8080, then try again.");
+            throw new Exception("Could not connect to xAI. Check your internet connection and try again.");
         } finally {
             connection.disconnect();
         }
@@ -315,12 +350,12 @@ public final class AIEditorAssistant {
         try {
             json = new JSONObject(responseText);
         } catch (Exception parseError) {
-            throw new Exception("Local AI server returned an unreadable response (HTTP " + code + "). Check llama-server and its model.");
+            throw new Exception("Grok returned an unreadable response (HTTP " + code + ").");
         }
         if (code >= 200 && code < 300) return json;
         String message = json.optJSONObject("error") == null ? json.toString()
                 : json.getJSONObject("error").optString("message", json.toString());
-        throw new Exception("Local AI server HTTP " + code + ": " + message);
+        throw new Exception("Grok API HTTP " + code + ": " + message);
     }
 
     private void compactHistoryForNextTurn() {
