@@ -1876,6 +1876,21 @@ void Renderer::render(Scene& scene, Camera& camera) {
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, width_, height_);
+    if (sculptCursorVisible_) {
+        Vec3 n = normalize(sculptCursorNormal_);
+        Vec3 ref = std::fabs(n.y) < 0.92f ? Vec3(0,1,0) : Vec3(1,0,0);
+        Vec3 tangent = normalize(cross(n, ref));
+        Vec3 bitangent = normalize(cross(n, tangent));
+        std::vector<RenderLine> ring; ring.reserve(64);
+        Vec3 center = sculptCursorPoint_ + n * 0.003f;
+        for (int i=0;i<64;i++) {
+            float a0=6.28318530718f*i/64.0f, a1=6.28318530718f*(i+1)/64.0f;
+            Vec3 p0=center+(tangent*std::cos(a0)+bitangent*std::sin(a0))*sculptCursorRadius_;
+            Vec3 p1=center+(tangent*std::cos(a1)+bitangent*std::sin(a1))*sculptCursorRadius_;
+            ring.push_back({p0.x,p0.y,p0.z,p1.x,p1.y,p1.z,1.0f,0.62f,0.08f,1.0f});
+        }
+        glEnable(GL_DEPTH_TEST); glDepthMask(GL_FALSE); drawLines(ring,camera); glDepthMask(GL_TRUE);
+    }
 }
 
 void Renderer::setViewMode(int mode) {
