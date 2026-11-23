@@ -1280,24 +1280,24 @@ Java_com_novaingine_v2_NativeBridge_nativeUpdateSculptCursor(
     JNIEnv*, jclass, jfloat screenX, jfloat screenY, jfloat radiusValue, jboolean active
 ) {
     std::lock_guard<std::mutex> lock(engineMutex);
-    if (!gInitialized || !gSculptMode || !active || !gSculptMesh || gSculptMeshId == 0) {
-        gRenderer.setSculptCursor(false, nova::Vec3(), nova::Vec3(0,1,0), 0.18f);
-        return;
+    if(!gInitialized||!gSculptMode||!active||gSculptMeshId==0) {
+        gRenderer.setSculptCursor(false,nova::Vec3(),nova::Vec3(0,1,0),0.18f);return;
     }
     nova::Vec3 ray;
-    if (!makeScreenRay(static_cast<float>(screenX), static_cast<float>(screenY), ray)) {
-        gRenderer.setSculptCursor(false, nova::Vec3(), nova::Vec3(0,1,0), 0.18f);
-        return;
+    if(!makeScreenRay((float)screenX,(float)screenY,ray)) {
+        gRenderer.setSculptCursor(false,nova::Vec3(),nova::Vec3(0,1,0),0.18f);return;
     }
-    const nova::SceneObject* object = gScene.find(gSculptMeshId);
-    if (!object) { gRenderer.setSculptCursor(false, nova::Vec3(), nova::Vec3(0,1,0), 0.18f); return; }
-    nova::Vec3 localOrigin = gCamera.position - object->transform.position;
-    nova::SculptMesh::Hit hit = gSculptMesh->raycast(localOrigin, ray);
-    if (!hit.found) {
-        gRenderer.setSculptCursor(false, nova::Vec3(), nova::Vec3(0,1,0), 0.18f);
-        return;
+    const nova::SceneObject* object=gScene.find(gSculptMeshId);
+    if(!object)return;
+    std::unique_lock<std::mutex> dataLock(gSculptDataMutex,std::try_to_lock);
+    if(!dataLock.owns_lock()||!gSculptMesh)return;
+    nova::Vec3 localOrigin=gCamera.position-object->transform.position;
+    nova::SculptMesh::Hit hit=gSculptMesh->raycast(localOrigin,ray);
+    if(!hit.found) {
+        gRenderer.setSculptCursor(false,nova::Vec3(),nova::Vec3(0,1,0),0.18f);return;
     }
-    gRenderer.setSculptCursor(true, hit.point + object->transform.position, hit.normal, std::clamp(static_cast<float>(radiusValue), 0.01f, 2.0f));
+    gRenderer.setSculptCursor(true,hit.point+object->transform.position,hit.normal,
+        std::clamp((float)radiusValue,0.02f,1.0f));
 }
 
 JNIEXPORT jboolean JNICALL
