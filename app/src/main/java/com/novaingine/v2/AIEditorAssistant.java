@@ -28,12 +28,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Grok cloud agent. Tool calls are validated and executed locally by Novaingine. */
+/** Groq cloud agent. Tool calls are validated and executed locally by Novaingine. */
 public final class AIEditorAssistant {
-    private static final String MODEL_ID = "grok-4.7";
-    private static final String GROK_CHAT_URL = "https://api.x.ai/v1/chat/completions";
-    private static final String PREFS_NAME = "nova_grok_settings";
-    private static final String PREF_API_KEY = "xai_api_key";
+    private static final String MODEL_ID = "openai/gpt-oss-120b";
+    private static final String GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions";
+    private static final String PREFS_NAME = "nova_groq_settings";
+    private static final String PREF_API_KEY = "groq_api_key";
     private TextView modelInfo;
     private final Activity activity;
     private final EngineSurface engine;
@@ -52,7 +52,7 @@ public final class AIEditorAssistant {
         JSONObject system = new JSONObject();
         try {
             system.put("role", "system");
-            system.put("content", "You are NOVA AI, powered by Grok, the modeling and scene-building assistant inside Novaingine. When asked to build an object, character, vehicle, building, prop or environment, CREATE REAL VISIBLE 3D GEOMETRY IN THE CURRENT SCENE, not just explain how. Use create_mesh_part for actual triangulated mesh geometry. Build recognizable assets from multiple purpose-built parts with deliberate silhouettes, correct proportions, varied shapes and slight overlaps at joints; use about 4-8 mesh parts for a substantial complete asset when appropriate. Keep each part within tool limits: 3-300 vertices, 1-600 triangles, local coordinates -20..20. Use coherent surfaces and sensible placement; do not make every object from identical boxes. After creating parts, inspect the scene and report exactly what was created. For organic assets, create a dense sculpt mesh and apply multiple sculpt_selected_mesh passes with varied brushes to shape actual geometry. Brush centers are LOCAL mesh coordinates; X is left/right, Y is up, Z is depth. A sphere starts around radius 1.0; a plane spans about -1 to +1 in X/Z. Grab uses dragX/dragY/dragZ. Mask protects vertices; Unmask clears protection. Use smoothing and additional passes to refine the silhouette. If editing an existing object, inspect and select it first. Preserve all existing scene content unless the user explicitly asks to remove it. Keep Blender desktop bridge and GLB import available. Use existing terrain and scene tools when relevant. Keep operations moderate for Android performance. Never claim a model exists unless creation tools confirm success. If a geometry tool fails, explain the failure. Be honest about current sculpting limits and do not claim Blender or Unreal parity.");
+            system.put("content", "You are NOVA AI, powered by Groq, the modeling and scene-building assistant inside Novaingine. When asked to build an object, character, vehicle, building, prop or environment, CREATE REAL VISIBLE 3D GEOMETRY IN THE CURRENT SCENE, not just explain how. Use create_mesh_part for actual triangulated mesh geometry. Build recognizable assets from multiple purpose-built parts with deliberate silhouettes, correct proportions, varied shapes and slight overlaps at joints; use about 4-8 mesh parts for a substantial complete asset when appropriate. Keep each part within tool limits: 3-300 vertices, 1-600 triangles, local coordinates -20..20. Use coherent surfaces and sensible placement; do not make every object from identical boxes. After creating parts, inspect the scene and report exactly what was created. For organic assets, create a dense sculpt mesh and apply multiple sculpt_selected_mesh passes with varied brushes to shape actual geometry. Brush centers are LOCAL mesh coordinates; X is left/right, Y is up, Z is depth. A sphere starts around radius 1.0; a plane spans about -1 to +1 in X/Z. Grab uses dragX/dragY/dragZ. Mask protects vertices; Unmask clears protection. Use smoothing and additional passes to refine the silhouette. If editing an existing object, inspect and select it first. Preserve all existing scene content unless the user explicitly asks to remove it. Keep Blender desktop bridge and GLB import available. Use existing terrain and scene tools when relevant. Keep operations moderate for Android performance. Never claim a model exists unless creation tools confirm success. If a geometry tool fails, explain the failure. Be honest about current sculpting limits and do not claim Blender or Unreal parity.");
             history.put(system);
         } catch (Exception ignored) {}
     }
@@ -66,14 +66,14 @@ public final class AIEditorAssistant {
         LinearLayout top = new LinearLayout(activity);
         top.setGravity(Gravity.CENTER_VERTICAL);
         TextView title = new TextView(activity);
-        title.setText("NOVA AI  •  GROK CLOUD");
+        title.setText("NOVA AI  •  GROQ CLOUD");
         title.setTextColor(0xFFFFB45C);
         title.setTextSize(16);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         top.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
         Button setupButton = new Button(activity);
         setupButton.setText("API KEY");
-        setupButton.setOnClickListener(v -> showGrokKeyDialog());
+        setupButton.setOnClickListener(v -> showGroqKeyDialog());
         top.addView(setupButton);
         root.addView(top);
 
@@ -89,7 +89,7 @@ public final class AIEditorAssistant {
         transcript.setTextColor(Color.WHITE);
         transcript.setTextSize(13);
         transcript.setPadding(dp(10), dp(10), dp(10), dp(10));
-        transcript.setText("Novaingine Grok AI is ready to connect.\n\nAdd your xAI API key using API KEY, then try: “Sculpt a detailed dragon” or “Build a modern house.”\n\nGrok API usage may cost money. Check your xAI Console billing and limits before sending requests.");
+        transcript.setText("Novaingine Groq AI is ready to connect.\n\nAdd your Groq API key using API KEY, then try: “Sculpt a detailed dragon” or “Build a modern house.”\n\nGroq offers a rate-limited free tier. Check your account limits before sending requests.");
         scroll.addView(transcript);
         LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1);
         scrollParams.topMargin = dp(8);
@@ -128,7 +128,7 @@ public final class AIEditorAssistant {
     private void updateModelInfo() {
         if (modelInfo != null) {
             boolean configured = !getApiKey().isEmpty();
-            modelInfo.setText("Provider: xAI Grok 4.7  |  " + (configured ? "API key saved on this device" : "API key required"));
+            modelInfo.setText("Provider: Groq GPT-OSS 120B  |  " + (configured ? "API key saved on this device" : "API key required"));
         }
     }
 
@@ -137,28 +137,28 @@ public final class AIEditorAssistant {
                 .getString(PREF_API_KEY, "").trim();
     }
 
-    private void showGrokKeyDialog() {
+    private void showGroqKeyDialog() {
         EditText keyInput = new EditText(activity);
         keyInput.setSingleLine(true);
-        keyInput.setHint("Paste your xAI API key");
+        keyInput.setHint("Paste your Groq API key");
         keyInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         keyInput.setText(getApiKey());
         LinearLayout content = new LinearLayout(activity);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(20), dp(8), dp(20), dp(4));
         TextView warning = new TextView(activity);
-        warning.setText("Stored in this app's private settings. Never share it or commit it to GitHub. Grok API requests may be billed by xAI; only use an account key with the account owner's permission and an approved spending limit.");
+        warning.setText("Stored in this app's private settings. Never share it or commit it to GitHub. Groq's free tier has usage limits. Ask a parent or guardian to manage the provider account and API key.");
         warning.setTextColor(0xFFB8C5D5);
         warning.setTextSize(12);
         content.addView(warning);
         content.addView(keyInput);
-        new AlertDialog.Builder(activity).setTitle("Connect Grok").setView(content)
+        new AlertDialog.Builder(activity).setTitle("Connect Groq").setView(content)
                 .setPositiveButton("SAVE KEY", (d, w) -> {
                     String key = keyInput.getText().toString().trim();
                     if (key.isEmpty()) activity.getSharedPreferences(PREFS_NAME, Activity.MODE_PRIVATE).edit().remove(PREF_API_KEY).apply();
                     else activity.getSharedPreferences(PREFS_NAME, Activity.MODE_PRIVATE).edit().putString(PREF_API_KEY, key).apply();
                     updateModelInfo();
-                    append(key.isEmpty() ? "\\nGrok API key cleared.\\n" : "\\nGrok API key saved on this device.\\n");
+                    append(key.isEmpty() ? "\\nGroq API key cleared.\\n" : "\\nGroq API key saved on this device.\\n");
                 })
                 .setNegativeButton("CANCEL", null)
                 .setNeutralButton("CLEAR", (d, w) -> {
@@ -177,8 +177,8 @@ public final class AIEditorAssistant {
         busy = true;
         boolean sceneRequest = isSceneRequest(text);
         append(sceneRequest
-                ? "GROK: Planning and sculpting your scene...\\n"
-                : "GROK: Thinking...\\n");
+                ? "GROQ: Planning and sculpting your scene...\\n"
+                : "GROQ: Thinking...\\n");
         worker.execute(() -> {
             try {
                 JSONObject user = new JSONObject();
@@ -245,16 +245,16 @@ public final class AIEditorAssistant {
         JSONObject body = new JSONObject();
         body.put("model", getModel());
         body.put("messages", chatMessages);
-        body.put("temperature", 0.7);
+        body.put("reasoning_effort", "low");
         body.put("max_completion_tokens", 1024);
-        JSONObject response = postLocalModel(body);
+        JSONObject response = postGroqModel(body);
         JSONObject choice = response.getJSONArray("choices").getJSONObject(0);
         JSONObject message = choice.getJSONObject("message");
         String content = message.optString("content", "").trim();
         if (content.isEmpty()) {
             String reason = choice.optString("finish_reason", "unknown");
-            throw new Exception("Grok returned no text (finish reason: " + reason
-                    + "). Try a shorter message or check your xAI API access and model availability.");
+            throw new Exception("Groq returned no text (finish reason: " + reason
+                    + "). Try a shorter message or check your Groq API access and model availability.");
         }
         JSONObject assistant = new JSONObject();
         assistant.put("role", "assistant");
@@ -272,10 +272,10 @@ public final class AIEditorAssistant {
             body.put("messages", history);
             body.put("tools", tools);
             body.put("tool_choice", "auto");
-            body.put("temperature", 0.6);
+            body.put("reasoning_effort", "medium");
             body.put("max_completion_tokens", 4096);
             body.put("parallel_tool_calls", false);
-            JSONObject response = postLocalModel(body);
+            JSONObject response = postGroqModel(body);
             JSONObject message = response.getJSONArray("choices").getJSONObject(0).getJSONObject("message");
             JSONArray calls = message.optJSONArray("tool_calls");
             if (calls == null || calls.length() == 0) {
@@ -285,7 +285,7 @@ public final class AIEditorAssistant {
                 assistant.put("content", content);
                 history.put(assistant);
                 if (content.isEmpty()) {
-                    return "The local model returned an empty completion. No scene changes were made. Please retry.";
+                    return "Groq returned an empty completion. No scene changes were made. Please retry.";
                 }
                 return content;
             }
@@ -314,10 +314,10 @@ public final class AIEditorAssistant {
         return "I stopped after 12 tool steps to keep the editor responsive. You can give me the next instruction.";
     }
 
-    private JSONObject postLocalModel(JSONObject body) throws Exception {
+    private JSONObject postGroqModel(JSONObject body) throws Exception {
         String apiKey = getApiKey();
-        if (apiKey.isEmpty()) throw new Exception("Add your xAI API key using the API KEY button first.");
-        HttpURLConnection connection = (HttpURLConnection) new URL(GROK_CHAT_URL).openConnection();
+        if (apiKey.isEmpty()) throw new Exception("Add your Groq API key using the API KEY button first.");
+        HttpURLConnection connection = (HttpURLConnection) new URL(GROQ_CHAT_URL).openConnection();
         connection.setRequestMethod("POST");
         connection.setConnectTimeout(5000);
         connection.setReadTimeout(180000);
@@ -342,7 +342,7 @@ public final class AIEditorAssistant {
             }
             responseText = result.toString();
         } catch (java.net.ConnectException ex) {
-            throw new Exception("Could not connect to xAI. Check your internet connection and try again.");
+            throw new Exception("Could not connect to Groq. Check your internet connection and try again.");
         } finally {
             connection.disconnect();
         }
@@ -350,12 +350,12 @@ public final class AIEditorAssistant {
         try {
             json = new JSONObject(responseText);
         } catch (Exception parseError) {
-            throw new Exception("Grok returned an unreadable response (HTTP " + code + ").");
+            throw new Exception("Groq returned an unreadable response (HTTP " + code + ").");
         }
         if (code >= 200 && code < 300) return json;
         String message = json.optJSONObject("error") == null ? json.toString()
                 : json.getJSONObject("error").optString("message", json.toString());
-        throw new Exception("Grok API HTTP " + code + ": " + message);
+        throw new Exception("Groq API HTTP " + code + ": " + message);
     }
 
     private void compactHistoryForNextTurn() {
