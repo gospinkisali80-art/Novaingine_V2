@@ -214,10 +214,12 @@ public final class ManualSculptWorkspace extends FrameLayout {
             try {
                 for (int axis = 0; axis < 3; axis++) {
                     String value = positionInputs[axis].getText().toString().trim();
-                    if (!value.isEmpty()) transform[axis] = Float.parseFloat(value);
+                    if (!value.isEmpty()) transform[axis + transformComponent * 3] = Float.parseFloat(value);
                 }
                 engine.setSelectedTransform(transform);
-                status.setText("Selected mesh position updated.");
+                status.setText(transformComponent == 0 ? "Selected mesh position updated."
+                        : transformComponent == 1 ? "Selected mesh rotation updated."
+                        : "Selected mesh scale updated.");
                 selectedToolIndicator.setText("ACTIVE: XYZ TRANSFORM  ▴ TOOLS");
                 closeToolDrawer.run();
             } catch (NumberFormatException error) {
@@ -427,7 +429,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
 
         @Override public boolean onTouchEvent(MotionEvent event) {
             int action = event.getActionMasked();
-            engine.handleSculptTouch(event, 0);
+            engine.handleSculptTouch(event, this);
             if (event.getPointerCount() >= 2) {
                 float cx = (event.getX(0) + event.getX(1)) * 0.5f;
                 float cy = (event.getY(0) + event.getY(1)) * 0.5f;
