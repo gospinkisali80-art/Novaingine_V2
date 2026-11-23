@@ -236,7 +236,7 @@ public:
         int symmetryAxis=0;
         bool subtract=false;
     };
-    struct WeightedVertex { uint32_t index=0; float weight=0.0f; };
+    struct WeightedVertex { uint32_t index=0; float weight=0.0f; bool mirrored=false; };
     std::vector<WeightedVertex> grabVertices;
     Vec3 grabLastCenter{};
     bool grabCaptured=false;
@@ -308,7 +308,13 @@ public:
                 } else {
                     for(const auto& item:grabVertices) {
                         float protection=1.0f-std::clamp(mask[item.index],0.0f,1.0f);
-                        Vec3 delta=movement*(item.weight*protection);
+                        Vec3 move=movement;
+                        if(item.mirrored) {
+                            if(b.symmetryAxis==0)move.x=-move.x;
+                            if(b.symmetryAxis==1)move.y=-move.y;
+                            if(b.symmetryAxis==2)move.z=-move.z;
+                        }
+                        Vec3 delta=move*(item.weight*protection);
                         if(length(delta)>1e-7f){positions[item.index]=positions[item.index]+delta;changed=true;}
                     }
                     grabLastCenter=c;
@@ -394,7 +400,7 @@ public:
                         for(const auto& item:mirroredAffected) {
                             bool exists=false;
                             for(const auto& oldItem:grabVertices)if(oldItem.index==item.index){exists=true;break;}
-                            if(!exists)grabVertices.push_back(item);
+                            if(!exists){WeightedVertex mirroredItem=item;mirroredItem.mirrored=true;grabVertices.push_back(mirroredItem);}
                         }
                         grabCaptured=true;grabLastCenter=center;
                     }
