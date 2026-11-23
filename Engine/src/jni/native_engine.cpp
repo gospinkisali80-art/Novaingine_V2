@@ -1368,6 +1368,33 @@ Java_com_novaingine_v2_NativeBridge_nativeAISculptSelectedMesh(
 }
 
 JNIEXPORT jint JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeCreateMeshPart(
+    JNIEnv* env, jclass, jfloatArray positionArray, jintArray triangleArray,
+    jstring nameValue, jfloat x, jfloat y, jfloat z, jfloat red, jfloat green, jfloat blue
+) {
+    if (!positionArray || !triangleArray) return 0;
+    const jsize pc=env->GetArrayLength(positionArray), ic=env->GetArrayLength(triangleArray);
+    if(pc<9 || pc>900 || pc%3 || ic<3 || ic>1800 || ic%3) return 0;
+    std::vector<jfloat> p(static_cast<size_t>(pc)); std::vector<jint> ix(static_cast<size_t>(ic));
+    env->GetFloatArrayRegion(positionArray,0,pc,p.data()); env->GetIntArrayRegion(triangleArray,0,ic,ix.data());
+    if(env->ExceptionCheck()){env->ExceptionClear();return 0;}
+    std::string name="AI Mesh Part";
+    if(nameValue){const char* raw=env->GetStringUTFChars(nameValue,nullptr);if(raw){name=raw;env->ReleaseStringUTFChars(nameValue,raw);}}
+    std::lock_guard<std::mutex> lock(engineMutex); if(!gInitialized)return 0;
+    const size_t vc=static_cast<size_t>(pc/3); nova::Mesh mesh; mesh.reserve(vc,static_cast<size_t>(ic));
+    for(size_t i=0;i<vc;i++){float a=p[i*3],b=p[i*3+1],c=p[i*3+2];if(!std::isfinite(a)||!std::isfinite(b)||!std::isfinite(c)||std::fabs(a)>20||std::fabs(b)>20||std::fabs(c)>20)return 0;mesh.addVertex(nova::Vertex(nova::Vec3(a,b,c),nova::Vec3(0,1,0),0,0));}
+    for(size_t i=0;i<static_cast<size_t>(ic);i+=3){jint a=ix[i],b=ix[i+1],c=ix[i+2];if(a<0||b<0||c<0||static_cast<size_t>(a)>=vc||static_cast<size_t>(b)>=vc||static_cast<size_t>(c)>=vc)return 0;mesh.addTriangle(static_cast<uint32_t>(a),static_cast<uint32_t>(b),static_cast<uint32_t>(c));}
+    if(!mesh.isValid())return 0; mesh.recalculateNormals(); recordUndo(true);
+    nova::Transform transform; transform.position=nova::Vec3(x,y,z);
+    const nova::Color color(std::clamp(red,0.0f,1.0f),std::clamp(green,0.0f,1.0f),std::clamp(blue,0.0f,1.0f),1.0f);
+    const uint32_t id=gScene.addObject(name,nova::PrimitiveType::Cube,transform,color);
+    if(!gRenderer.uploadMesh(id,mesh)){gScene.removeObject(id);return 0;}
+    gCustomMeshes[id]=mesh; gSculptMasks[id]=std::vector<float>(mesh.vertexCount(),0.0f);
+    if(nova::SceneObject* object=gScene.find(id)){object->material.baseColor=nova::Vec3(color.r,color.g,color.b);object->material.roughness=0.58f;object->material.metallic=0.0f;}
+    gScene.select(id); return static_cast<jint>(id);
+}
+
+JNIEXPORT jint JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeAddPrimitive(
     JNIEnv* env, jclass, jint primitiveValue, jstring nameValue,
     jfloat x, jfloat y, jfloat z, jfloat sx, jfloat sy, jfloat sz,
