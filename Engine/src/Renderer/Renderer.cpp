@@ -1850,6 +1850,14 @@ void Renderer::updateStatistics(const Scene& scene) {
     }
 }
 
+void Renderer::setSculptCursor(bool visible, const Vec3& point, const Vec3& normal, float radius) {
+    sculptCursorVisible_ = visible;
+    sculptCursorPoint_ = point;
+    sculptCursorNormal_ = normalize(normal);
+    if (length(sculptCursorNormal_) < 0.0001f) sculptCursorNormal_ = Vec3(0.0f, 1.0f, 0.0f);
+    sculptCursorRadius_ = std::clamp(radius, 0.005f, 5.0f);
+}
+
 void Renderer::render(Scene& scene, Camera& camera) {
     if (!initialized_ || !viewportEnabled_) return;
 
