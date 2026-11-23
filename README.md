@@ -31,7 +31,41 @@ and download the Novaingine-V2-debug artifact.
 Development in progress.
 
 
-## Blender + Groq model pipeline
+## On-device AI assistant (Android)
+
+The in-app AI assistant now connects to a **local llama.cpp server running on the same Android phone**. It does not send prompts to Groq or another cloud AI provider. This is an Ollama-style local OpenAI-compatible endpoint, but it is **llama.cpp, not the official Ollama Android app**.
+
+### Phone setup (Termux)
+
+Use Termux on the same phone as Novaingine. The first setup needs internet to download the runtime and model; after that, inference can run offline.
+
+1. Install the build tools:
+   `pkg update && pkg upgrade -y`
+   `pkg install git cmake clang make curl -y`
+2. Build llama.cpp's server:
+   `git clone https://github.com/ggml-org/llama.cpp.git`
+   `cd llama.cpp`
+   `cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_OPENMP=OFF`
+   `cmake --build build --config Release --target llama-server -j 4`
+3. Download the recommended Qwen3 4B Q4_K_M model (about 2.5 GB):
+   `mkdir -p ~/models`
+   `curl -L --fail -o ~/models/Qwen3-4B-Q4_K_M.gguf https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf`
+4. Start the server and leave Termux running:
+   `~/llama.cpp/build/bin/llama-server -m ~/models/Qwen3-4B-Q4_K_M.gguf --host 127.0.0.1 --port 8080 -c 2048 -t 4 --alias nova-local --jinja`
+5. Open Novaingine → Tools → AI Assistant. It connects to `http://127.0.0.1:8080/v1/chat/completions`.
+
+### Android memory notes
+
+- Start with Qwen3 4B Q4_K_M and a 2048-token context. The model file is approximately 2.5 GB.
+- The phone's 8 GB physical RAM is the relevant capacity; the extra 5 GB extended RAM is storage-backed and much slower.
+- If Android closes Termux or Novaingine due to memory pressure, use a smaller 1.7B GGUF model or reduce the context to 1024.
+- Keep the server bound to `127.0.0.1`; do not expose it to the Wi-Fi network.
+- The assistant's existing scene tools still execute inside Novaingine. Local inference generates the tool calls; the engine validates and applies them.
+- The server must be running before sending a prompt. Novaingine does not yet start or manage the Termux process itself.
+
+Official runtime and model references: [llama.cpp Android guide](https://github.com/ggml-org/llama.cpp/blob/master/docs/android.md), [Qwen3 4B GGUF](https://huggingface.co/Qwen/Qwen3-4B-GGUF).
+
+## Blender desktop companion (separate from Android local AI)
 
 Novaingine can import triangle meshes from binary glTF files (`.glb`) through
 **Tools → WORLD BUILDING → Import Blender Model (.glb)**.
