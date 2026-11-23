@@ -120,7 +120,7 @@ public final class NativeBridge {
     public static native int nativeEnterSculptMode();
     public static native void nativeUpdateSculptCursor(float x, float y, float radius, boolean active);
     public static native void nativeBeginSculptStroke();
-    public static native int nativeSculptAtScreen(float x, float y, float radius, float strength, int brush, float falloff, boolean symmetry, float pressure);
+    public static native int nativeSculptAtScreen(float x, float y, float radius, float strength, int brush, float falloff, int symmetryAxis, boolean subtract, float pressure);
     public static native void nativeEndSculptStroke();
     public static native boolean nativeSetVisualScript(int[] nodeData, float[] nodeValues, boolean enabled);
     public static native int nativeSculptSelectedMesh(float x, float y, float z, float radius, float strength, int mode, boolean symmetry);
