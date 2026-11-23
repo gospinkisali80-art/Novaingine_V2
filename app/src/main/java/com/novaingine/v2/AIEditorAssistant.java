@@ -455,15 +455,16 @@ public final class AIEditorAssistant {
                 int next = (j + 1) % segments;
                 int a0 = ring * segments + j, b0 = ring * segments + next;
                 int c0 = (ring + 1) * segments + next, d0 = (ring + 1) * segments + j;
-                t[cursor++] = a0; t[cursor++] = b0; t[cursor++] = c0;
-                t[cursor++] = a0; t[cursor++] = c0; t[cursor++] = d0;
+                // Profile is ordered bottom-to-top; reverse the side winding for outward normals.
+                t[cursor++] = a0; t[cursor++] = c0; t[cursor++] = b0;
+                t[cursor++] = a0; t[cursor++] = d0; t[cursor++] = c0;
             }
         }
         for (int j = 0; j < segments; j++) {
             int next = (j + 1) % segments;
-            t[cursor++] = bottomCenter; t[cursor++] = next; t[cursor++] = j;
+            t[cursor++] = bottomCenter; t[cursor++] = j; t[cursor++] = next;
             int a0 = (rings - 1) * segments + j, b0 = (rings - 1) * segments + next;
-            t[cursor++] = topCenter; t[cursor++] = a0; t[cursor++] = b0;
+            t[cursor++] = topCenter; t[cursor++] = b0; t[cursor++] = a0;
         }
         return uploadProceduralMesh(a, p, t, "Lathe mesh");
     }
