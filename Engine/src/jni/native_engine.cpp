@@ -92,6 +92,7 @@ bool gSculptMode = false;
 bool gSculptStrokeActive = false;
 bool gHasPreviousSculptHit = false;
 nova::Vec3 gPreviousSculptHit;
+nova::Vec3 gPreviousSculptNormal;
 nova::VisualScript gVisualScript;
 nova::VisualScriptRuntime gVisualScriptRuntime;
 bool gVisualScriptStarted = false;
@@ -579,6 +580,19 @@ Java_com_novaingine_v2_NativeBridge_nativeRender(
                 gVisualScriptStarted = true;
             }
             gVisualScriptRuntime.execute(gVisualScript, gScene, false, dt);
+        }
+    }
+
+    if(gSculptMeshDirty.load(std::memory_order_acquire)) {
+        std::unique_lock<std::mutex> dataLock(gSculptDataMutex,std::try_to_lock);
+        if(dataLock.owns_lock()&&gSculptMesh&&gSculptMeshId!=0) {
+            nova::Mesh updated;
+            if(gSculptMesh->toMesh(updated)) {
+                gCustomMeshes[gSculptMeshId]=std::move(updated);
+                gSculptMasks[gSculptMeshId]=gSculptMesh->mask;
+                gRenderer.uploadMesh(gSculptMeshId,gCustomMeshes[gSculptMeshId]);
+                gSculptMeshDirty.store(false,std::memory_order_release);
+            }
         }
     }
 
@@ -1307,103 +1321,77 @@ JNIEXPORT void JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeBeginSculptStroke(JNIEnv*, jclass) {
     std::lock_guard<std::mutex> lock(engineMutex);
     if (!gInitialized || !gSculptMode) return;
-    const uint32_t id = gScene.selectedId();
-    if (gCustomMeshes.find(id) == gCustomMeshes.end()) return;
+    const uint32_t id=gScene.selectedId();
+    if(id==0||gCustomMeshes.find(id)==gCustomMeshes.end())return;
     recordUndo(true);
-    gSculptStrokeActive = true;
-    gHasPreviousSculptHit = false;
-}
-
-static bool novaRayTriangle(const nova::Vec3& origin, const nova::Vec3& direction,
-                            const nova::Vec3& a, const nova::Vec3& b,
-                            const nova::Vec3& c, float& distance) {
-    const nova::Vec3 edge1 = b - a, edge2 = c - a;
-    const nova::Vec3 p = nova::cross(direction, edge2);
-    const float det = nova::dot(edge1, p);
-    if (std::fabs(det) < 0.000001f) return false;
-    const float inv = 1.0f / det;
-    const nova::Vec3 t = origin - a;
-    const float u = nova::dot(t, p) * inv;
-    if (u < 0.0f || u > 1.0f) return false;
-    const nova::Vec3 q = nova::cross(t, edge1);
-    const float v = nova::dot(direction, q) * inv;
-    if (v < 0.0f || u + v > 1.0f) return false;
-    const float hit = nova::dot(edge2, q) * inv;
-    if (hit <= 0.001f) return false;
-    distance = hit;
-    return true;
+    gSculptStrokeActive=true;
+    gHasPreviousSculptHit=false;
+    enqueueSculptJob(SculptDabJob{nova::Vec3(),nova::Vec3(),nova::Vec3(),nova::SculptMesh::Brush{},true,false});
 }
 
 JNIEXPORT jint JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeSculptAtScreen(
     JNIEnv*, jclass, jfloat screenX, jfloat screenY,
     jfloat radiusValue, jfloat strengthValue, jint brushValue,
-    jfloat falloffValue, jboolean symmetryValue, jfloat pressureValue
+    jfloat falloffValue, jint symmetryAxisValue, jboolean subtractValue,
+    jfloat pressureValue
 ) {
     std::lock_guard<std::mutex> lock(engineMutex);
-    if (!gInitialized || !gSculptMode || !gSculptStrokeActive) return 0;
-    const uint32_t id = gScene.selectedId();
-    auto found = gCustomMeshes.find(id);
-    nova::SceneObject* object = gScene.find(id);
-    if (found == gCustomMeshes.end() || !object) return -1;
-    nova::Vec3 worldRay;
-    if (!makeScreenRay(screenX, screenY, worldRay)) return 0;
-    const nova::Vec3 scale(
-        std::max(0.0001f, std::fabs(object->transform.scale.x)),
-        std::max(0.0001f, std::fabs(object->transform.scale.y)),
-        std::max(0.0001f, std::fabs(object->transform.scale.z)));
-    const nova::Vec3 localOrigin(
-        (gCamera.position.x - object->transform.position.x) / scale.x,
-        (gCamera.position.y - object->transform.position.y) / scale.y,
-        (gCamera.position.z - object->transform.position.z) / scale.z);
-    const nova::Vec3 localRay = nova::normalize(nova::Vec3(
-        worldRay.x / scale.x, worldRay.y / scale.y, worldRay.z / scale.z));
-    const auto& vertices = found->second.getVertices();
-    const auto& indices = found->second.getIndices();
-    float nearest = 1.0e9f;
-    nova::Vec3 hit;
-    bool didHit = false;
-    for (size_t i = 0; i + 2 < indices.size(); i += 3) {
-        const uint32_t ia = indices[i], ib = indices[i + 1], ic = indices[i + 2];
-        if (ia >= vertices.size() || ib >= vertices.size() || ic >= vertices.size()) continue;
-        float distance = 0.0f;
-        if (novaRayTriangle(localOrigin, localRay, vertices[ia].position,
-                            vertices[ib].position, vertices[ic].position, distance) && distance < nearest) {
-            nearest = distance;
-            hit = localOrigin + localRay * distance;
-            didHit = true;
+    if(!gInitialized||!gSculptMode||!gSculptStrokeActive)return 0;
+    const uint32_t id=gScene.selectedId();
+    nova::SceneObject* object=gScene.find(id);
+    if(!object||id!=gSculptMeshId||!gSculptMesh)return -1;
+    nova::Vec3 ray;
+    if(!makeScreenRay(screenX,screenY,ray))return 0;
+    const nova::Vec3 localOrigin=gCamera.position-object->transform.position;
+    nova::SculptMesh::Hit hit;
+    {
+        std::unique_lock<std::mutex> dataLock(gSculptDataMutex,std::try_to_lock);
+        if(!dataLock.owns_lock())return 0;
+        hit=gSculptMesh->raycast(localOrigin,ray);
+    }
+    if(!hit.found)return 0;
+    nova::SculptMesh::Brush brush;
+    brush.radius=std::clamp((float)radiusValue,0.02f,1.0f);
+    brush.strength=std::clamp((float)strengthValue,0.0f,1.0f);
+    brush.hardness=std::clamp((float)falloffValue,0.0f,1.0f);
+    brush.pressure=std::clamp((float)pressureValue,0.0f,1.0f);
+    brush.type=std::clamp((int)brushValue,0,11);
+    brush.symmetryAxis=std::clamp((int)symmetryAxisValue,-1,2);
+    brush.subtract=subtractValue==JNI_TRUE;
+
+    if(!gHasPreviousSculptHit) {
+        enqueueSculptJob(SculptDabJob{hit.point,hit.normal,nova::Vec3(),brush,false,false});
+    } else {
+        nova::Vec3 segment=hit.point-gPreviousSculptHit;
+        nova::Vec3 view=ray;
+        segment=segment-view*nova::dot(segment,view);
+        float distance=nova::length(hit.point-gPreviousSculptHit);
+        float spacing=std::max(0.005f,brush.radius*0.25f);
+        int steps=std::clamp((int)std::ceil(distance/spacing),1,128);
+        nova::Vec3 previous=gPreviousSculptHit;
+        nova::Vec3 previousNormal=gPreviousSculptNormal;
+        for(int step=1;step<=steps;step++) {
+            float t=(float)step/(float)steps;
+            nova::Vec3 point=previous+(hit.point-previous)*t;
+            nova::Vec3 normal=nova::normalize(previousNormal+(hit.normal-previousNormal)*t);
+            enqueueSculptJob(SculptDabJob{point,normal,segment/(float)steps,brush,false,false});
         }
     }
-    if (!didHit) return 0;
-    nova::Vec3 drag;
-    if (gHasPreviousSculptHit) drag = hit - gPreviousSculptHit;
-    gPreviousSculptHit = hit;
-    gHasPreviousSculptHit = true;
-    auto& masks = gSculptMasks[id];
-    const float pressure = std::clamp(static_cast<float>(pressureValue), 0.05f, 1.0f);
-    const float radius = std::clamp(static_cast<float>(radiusValue), 0.01f, 2.0f);
-    const float strength = std::clamp(static_cast<float>(strengthValue) * pressure, 0.001f, 0.5f);
-    const auto brush = static_cast<nova::SculptBrush>(std::clamp(static_cast<int>(brushValue), 0, 11));
-    if (!nova::MeshSculptor::apply(found->second, masks, hit, drag, radius, strength,
-                                   brush, falloffValue, symmetryValue == JNI_TRUE)) return 0;
-    if (brush != nova::SculptBrush::Mask && !gRenderer.uploadMesh(id, found->second)) return 0;
+    gPreviousSculptHit=hit.point;
+    gPreviousSculptNormal=hit.normal;
+    gHasPreviousSculptHit=true;
+    gRenderer.setSculptCursor(true,hit.point+object->transform.position,hit.normal,brush.radius);
     return 1;
 }
 
-JNIEXPORT void JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeEndSculptStroke(JNIEnv*, jclass) {
     std::lock_guard<std::mutex> lock(engineMutex);
-    if (!gInitialized || !gSculptStrokeActive) return;
-    gSculptStrokeActive = false;
-    gHasPreviousSculptHit = false;
-    const uint32_t id = gScene.selectedId();
-    auto found = gCustomMeshes.find(id);
-    if (found != gCustomMeshes.end()) {
-        found->second.recalculateNormals();
-        gRenderer.uploadMesh(id, found->second);
-    }
+    if(!gInitialized||!gSculptStrokeActive)return;
+    gSculptStrokeActive=false;
+    gHasPreviousSculptHit=false;
+    enqueueSculptJob(SculptDabJob{nova::Vec3(),nova::Vec3(),nova::Vec3(),nova::SculptMesh::Brush{},false,true});
 }
-
 JNIEXPORT jint JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeSculptSelectedMesh(
     JNIEnv*, jclass, jfloat cxValue, jfloat cyValue, jfloat czValue,
