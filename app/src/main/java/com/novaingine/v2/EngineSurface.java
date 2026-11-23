@@ -158,6 +158,15 @@ public final class EngineSurface extends GLSurfaceView
         return NativeBridge.nativeLoadScene(path);
     }
 
+    public void setVisualScript(int[] nodeData, float[] nodeValues, boolean enabled, java.util.function.Consumer<Boolean> callback) {
+        int[] dataCopy = nodeData == null ? null : nodeData.clone();
+        float[] valuesCopy = nodeValues == null ? null : nodeValues.clone();
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeSetVisualScript(dataCopy, valuesCopy, enabled);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
+    }
+
     public int paintFoliage(float x, float z, float radius, int count, int kind) {
         return NativeBridge.nativePaintFoliage(x, z, radius, count, kind);
     }
