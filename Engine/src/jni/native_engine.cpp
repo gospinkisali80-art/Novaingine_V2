@@ -1375,7 +1375,7 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateMeshPart(
 ) {
     if (!positionArray || !triangleArray) return 0;
     const jsize pc=env->GetArrayLength(positionArray), ic=env->GetArrayLength(triangleArray);
-    if(pc<9 || pc>900 || pc%3 || ic<3 || ic>1800 || ic%3) return 0;
+    if(pc<9 || pc>9000 || pc%3 || ic<3 || ic>18000 || ic%3) return 0;
     std::vector<jfloat> p(static_cast<size_t>(pc)); std::vector<jint> ix(static_cast<size_t>(ic));
     env->GetFloatArrayRegion(positionArray,0,pc,p.data()); env->GetIntArrayRegion(triangleArray,0,ic,ix.data());
     if(env->ExceptionCheck()){env->ExceptionClear();return 0;}
