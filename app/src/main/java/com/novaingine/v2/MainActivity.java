@@ -137,7 +137,7 @@ public final class MainActivity extends Activity
         FrameLayout.LayoutParams inputParams =
                 new FrameLayout.LayoutParams(
                         FrameLayout.LayoutParams.MATCH_PARENT,
-                        normalInputHeight,
+                        FrameLayout.LayoutParams.MATCH_PARENT,
                         Gravity.BOTTOM
                 );
 
