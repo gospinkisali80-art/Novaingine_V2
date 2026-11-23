@@ -1065,6 +1065,74 @@ Java_com_novaingine_v2_NativeBridge_nativeImportGlb(JNIEnv* env, jclass, jstring
 }
 
 JNIEXPORT jint JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSculptSelectedMesh(
+    JNIEnv*, jclass, jfloat cxValue, jfloat cyValue, jfloat czValue,
+    jfloat radiusValue, jfloat strengthValue, jint modeValue, jboolean symmetryValue
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized) return 0;
+    const uint32_t id = gScene.selectedId();
+    auto found = gCustomMeshes.find(id);
+    if (id == 0 || found == gCustomMeshes.end()) return -1;
+    const float cx = std::clamp(static_cast<float>(cxValue), -1000.0f, 1000.0f);
+    const float cy = std::clamp(static_cast<float>(cyValue), -1000.0f, 1000.0f);
+    const float cz = std::clamp(static_cast<float>(czValue), -1000.0f, 1000.0f);
+    const float radius = std::clamp(static_cast<float>(radiusValue), 0.01f, 100.0f);
+    const float strength = std::clamp(static_cast<float>(strengthValue), 0.001f, 2.0f);
+    const int mode = std::clamp(static_cast<int>(modeValue), 0, 3);
+    const bool symmetry = symmetryValue == JNI_TRUE;
+    const nova::Mesh& source = found->second;
+    std::vector<nova::Vertex> vertices = source.getVertices();
+    const std::vector<uint32_t>& indices = source.getIndices();
+    std::vector<nova::Vec3> neighborSums;
+    std::vector<uint32_t> neighborCounts;
+    if (mode == 1) {
+        neighborSums.resize(vertices.size());
+        neighborCounts.resize(vertices.size(), 0);
+        for (size_t i = 0; i + 2 < indices.size(); i += 3) {
+            const uint32_t a = indices[i], b = indices[i + 1], d = indices[i + 2];
+            if (a >= vertices.size() || b >= vertices.size() || d >= vertices.size()) continue;
+            neighborSums[a] = neighborSums[a] + vertices[b].position + vertices[d].position;
+            neighborSums[b] = neighborSums[b] + vertices[a].position + vertices[d].position;
+            neighborSums[d] = neighborSums[d] + vertices[a].position + vertices[b].position;
+            neighborCounts[a] += 2; neighborCounts[b] += 2; neighborCounts[d] += 2;
+        }
+    }
+    bool changed = false;
+    const nova::Vec3 center(cx, cy, cz);
+    for (size_t vi = 0; vi < vertices.size(); ++vi) {
+        nova::Vertex& vertex = vertices[vi];
+        const nova::Vec3 p = vertex.position;
+        const nova::Vec3 mirrored(-p.x, p.y, p.z);
+        const float primaryDistance = nova::length(p - center);
+        const float mirroredDistance = symmetry ? nova::length(mirrored - center) : 1.0e9f;
+        const bool useMirror = mirroredDistance < primaryDistance;
+        const float distance = std::min(primaryDistance, mirroredDistance);
+        if (distance > radius) continue;
+        const float t = 1.0f - distance / radius;
+        const float falloff = t * t * (3.0f - 2.0f * t);
+        nova::Vec3 next = p;
+        if (mode == 0 || mode == 3) {
+            nova::Vec3 normal = vertex.normal;
+            if (useMirror) normal.x = -normal.x;
+            next = p + normal * (strength * falloff);
+        } else if (mode == 1 && neighborCounts[vi] > 0) {
+            const nova::Vec3 average = neighborSums[vi] * (1.0f / static_cast<float>(neighborCounts[vi]));
+            next = p + (average - p) * std::min(1.0f, strength * falloff);
+        } else if (mode == 2) {
+            next.y += (cy - p.y) * std::min(1.0f, strength * falloff);
+        }
+        if (nova::length(next - p) > 0.000001f) { vertex.position = next; changed = true; }
+    }
+    if (!changed) return 0;
+    recordUndo();
+    nova::Mesh sculpted(std::move(vertices), indices);
+    sculpted.recalculateNormals();
+    if (!gRenderer.uploadMesh(id, sculpted)) return 0;
+    found->second = std::move(sculpted);
+    return 1;
+}
+JNIEXPORT jint JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeAddPrimitive(
     JNIEnv* env, jclass, jint primitiveValue, jstring nameValue,
     jfloat x, jfloat y, jfloat z, jfloat sx, jfloat sy, jfloat sz,
