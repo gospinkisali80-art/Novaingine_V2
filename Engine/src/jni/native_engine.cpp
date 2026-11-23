@@ -18,6 +18,8 @@
 #include "../Geometry/Mesh.h"
 #include "../Geometry/MeshSculptor.h"
 #include "../Geometry/MeshModeling.h"
+#include "../Geometry/SculptMesh.h"
+#include <memory>
 #include "../VisualScripting/VisualScriptRuntime.h"
 #define CGLTF_IMPLEMENTATION
 #include "../ThirdParty/cgltf.h"
@@ -33,6 +35,8 @@ Renderer gRenderer;
 nova::Scene gScene;
 std::unordered_map<uint32_t, nova::Mesh> gCustomMeshes;
 std::unordered_map<uint32_t, std::vector<float>> gSculptMasks;
+std::unique_ptr<nova::SculptMesh> gSculptMesh;
+uint32_t gSculptMeshId = 0;
 bool gSculptMode = false;
 bool gSculptStrokeActive = false;
 bool gHasPreviousSculptHit = false;
@@ -1119,6 +1123,79 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateSculptMesh(
     }
     gScene.select(id);
     return static_cast<jint>(id);
+}
+
+
+JNIEXPORT jint JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeEnterSculptMode(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized) return 0;
+    gRenderer.setSculptCursor(false, nova::Vec3(), nova::Vec3(0,1,0), 0.18f);
+    gRenderer.releaseAllMeshes();
+    gScene.clear();
+    gCustomMeshes.clear();
+    gSculptMasks.clear();
+    gSculptMesh.reset();
+    gSculptStrokeActive = false;
+    gHasPreviousSculptHit = false;
+    gSculptMode = true;
+
+    gSculptMesh.reset(new nova::SculptMesh(nova::SculptMesh::cubeSphere(64, 1.0f)));
+    nova::Mesh renderMesh;
+    if (!gSculptMesh->toMesh(renderMesh)) { gSculptMesh.reset(); return 0; }
+    gSculptMesh->uploadChunks();
+
+    nova::Transform transform;
+    transform.position = nova::Vec3(0.0f, 1.8f, 0.0f);
+    gSculptMeshId = gScene.addObject("Sculpt Sphere", nova::PrimitiveType::Sphere,
+        transform, nova::Color(0.68f, 0.72f, 0.80f, 1.0f));
+    if (!gRenderer.uploadMesh(gSculptMeshId, renderMesh)) {
+        gScene.clear(); gSculptMesh.reset(); gSculptMeshId = 0; return 0;
+    }
+    gCustomMeshes[gSculptMeshId] = std::move(renderMesh);
+    gSculptMasks[gSculptMeshId].assign(gSculptMesh->positions.size(), 0.0f);
+    if (nova::SceneObject* object = gScene.find(gSculptMeshId)) {
+        object->material.baseColor = nova::Vec3(0.68f,0.72f,0.80f);
+        object->material.roughness = 0.72f;
+        object->material.metallic = 0.0f;
+        object->castsShadow = true;
+    }
+    gScene.select(gSculptMeshId);
+    gCamera.position = nova::Vec3(0.0f, 1.8f, 4.2f);
+    setCameraDirection(nova::Vec3(0.0f, 0.0f, -1.0f));
+    RendererSettings settings = gRenderer.getSettings();
+    settings.showGrid = false;
+    settings.showBounds = false;
+    settings.showSky = true;
+    settings.showShadows = true;
+    settings.showSelectionOutline = false;
+    gRenderer.setSettings(settings);
+    return static_cast<jint>(gSculptMeshId);
+}
+
+JNIEXPORT void JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeUpdateSculptCursor(
+    JNIEnv*, jclass, jfloat screenX, jfloat screenY, jboolean active
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized || !gSculptMode || !active || !gSculptMesh || gSculptMeshId == 0) {
+        gRenderer.setSculptCursor(false, nova::Vec3(), nova::Vec3(0,1,0), 0.18f);
+        return;
+    }
+    nova::Vec3 ray;
+    if (!makeScreenRay(static_cast<float>(screenX), static_cast<float>(screenY), ray)) {
+        gRenderer.setSculptCursor(false, nova::Vec3(), nova::Vec3(0,1,0), 0.18f);
+        return;
+    }
+    const nova::SceneObject* object = gScene.find(gSculptMeshId);
+    if (!object) { gRenderer.setSculptCursor(false, nova::Vec3(), nova::Vec3(0,1,0), 0.18f); return; }
+    nova::Vec3 localOrigin = gCamera.position - object->transform.position;
+    nova::SculptMesh::Hit hit = gSculptMesh->raycast(localOrigin, ray);
+    if (!hit.found) {
+        gRenderer.setSculptCursor(false, nova::Vec3(), nova::Vec3(0,1,0), 0.18f);
+        return;
+    }
+    gRenderer.setSculptCursor(true, hit.point + object->transform.position, hit.normal, 0.18f);
 }
 
 JNIEXPORT jboolean JNICALL
