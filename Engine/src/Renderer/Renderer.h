@@ -109,6 +109,7 @@ public:
 
     void beginFrame();
     void render(Scene& scene, Camera& camera);
+    void setSculptCursor(bool visible, const Vec3& point, const Vec3& normal, float radius);
     void endFrame();
 
     bool uploadMesh(uint32_t objectId, const Mesh& mesh);
@@ -293,6 +294,10 @@ private:
     GLuint lineVBO_ = 0;
 
     std::vector<RenderLine> frameLines_;
+    bool sculptCursorVisible_ = false;
+    Vec3 sculptCursorPoint_;
+    Vec3 sculptCursorNormal_{0.0f, 1.0f, 0.0f};
+    float sculptCursorRadius_ = 0.18f;
 
     GLuint whiteTexture_ = 0;
 
