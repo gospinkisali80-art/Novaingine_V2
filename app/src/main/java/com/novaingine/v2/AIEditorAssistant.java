@@ -33,7 +33,7 @@ import java.util.concurrent.Executors;
 public final class AIEditorAssistant {
     private static final String PREFS = "nova_ai_settings";
     private static final String KEY = "groq_api_key";
-    private static final String MODEL_ID = "qwen/qwen3.8-27b";
+    private static final String MODEL_ID = "openai/gpt-oss-120b";
     private TextView modelInfo;
     private final Activity activity;
     private final EngineSurface engine;
@@ -130,7 +130,7 @@ public final class AIEditorAssistant {
 
     private void updateModelInfo() {
         if (modelInfo != null) {
-            modelInfo.setText("Provider: Groq  |  Model: Qwen 3.8 27B (" + MODEL_ID + ")  |  AI scene assistant");
+            modelInfo.setText("Provider: Groq  |  Model: OpenAI GPT-OSS 120B (" + MODEL_ID + ")  |  AI scene assistant");
         }
     }
 
@@ -195,10 +195,10 @@ public final class AIEditorAssistant {
             body.put("messages", history);
             body.put("tools", tools);
             body.put("tool_choice", "auto");
-            body.put("temperature", 1.0);
+            body.put("temperature", 0.6);
             body.put("max_completion_tokens", 2048);
             body.put("reasoning_effort", "medium");
-            body.put("reasoning_format", "hidden");
+            body.put("include_reasoning", false);
             body.put("parallel_tool_calls", false);
             JSONObject response = postGroq(body);
             JSONObject message = response.getJSONArray("choices").getJSONObject(0).getJSONObject("message");
@@ -240,101 +240,58 @@ public final class AIEditorAssistant {
     }
 
     private JSONObject postGroq(JSONObject body) throws Exception {
-        final int maxRetries = 3;
-        for (int attempt = 0; ; attempt++) {
-            HttpURLConnection connection = (HttpURLConnection) new URL(
-                    "https://api.groq.com/openai/v1/chat/completions").openConnection();
-            connection.setRequestMethod("POST");
-            connection.setConnectTimeout(20000);
-            connection.setReadTimeout(60000);
-            connection.setDoOutput(true);
-            connection.setRequestProperty("Authorization", "Bearer " + getKey());
-            connection.setRequestProperty("Content-Type", "application/json");
-            byte[] data = body.toString().getBytes(StandardCharsets.UTF_8);
-            int code;
-            String responseText;
-            String retryAfter;
-            String resetTokens;
-            try {
-                try (OutputStream out = connection.getOutputStream()) { out.write(data); }
-                code = connection.getResponseCode();
-                retryAfter = connection.getHeaderField("Retry-After");
-                resetTokens = connection.getHeaderField("x-ratelimit-reset-tokens");
-                java.io.InputStream stream = code >= 200 && code < 300
-                        ? connection.getInputStream() : connection.getErrorStream();
-                StringBuilder result = new StringBuilder();
-                if (stream != null) {
-                    try (BufferedReader reader = new BufferedReader(
-                            new InputStreamReader(stream, StandardCharsets.UTF_8))) {
-                        String line;
-                        while ((line = reader.readLine()) != null) result.append(line);
-                    }
+        HttpURLConnection connection = (HttpURLConnection) new URL(
+                "https://api.groq.com/openai/v1/chat/completions").openConnection();
+        connection.setRequestMethod("POST");
+        connection.setConnectTimeout(20000);
+        connection.setReadTimeout(60000);
+        connection.setDoOutput(true);
+        connection.setRequestProperty("Authorization", "Bearer " + getKey());
+        connection.setRequestProperty("Content-Type", "application/json");
+        byte[] data = body.toString().getBytes(StandardCharsets.UTF_8);
+        int code;
+        String responseText;
+        String retryAfter;
+        try {
+            try (OutputStream out = connection.getOutputStream()) { out.write(data); }
+            code = connection.getResponseCode();
+            retryAfter = connection.getHeaderField("Retry-After");
+            java.io.InputStream stream = code >= 200 && code < 300
+                    ? connection.getInputStream() : connection.getErrorStream();
+            StringBuilder result = new StringBuilder();
+            if (stream != null) {
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) result.append(line);
                 }
-                responseText = result.toString();
-            } finally {
-                connection.disconnect();
             }
-
-            JSONObject json;
-            try {
-                json = new JSONObject(responseText);
-            } catch (Exception parseError) {
-                if (code >= 200 && code < 300) throw new Exception("Groq returned an unreadable response.");
-                throw new Exception("Groq HTTP " + code + ": " + responseText);
-            }
-
-            if (code >= 200 && code < 300) return json;
-            String message = json.optJSONObject("error") == null ? json.toString()
-                    : json.getJSONObject("error").optString("message", json.toString());
-
-            if (code == 429 && attempt < maxRetries) {
-                long delayMs = retryDelayMillis(retryAfter, resetTokens, message, attempt);
-                final long shownDelay = delayMs;
-                main.post(() -> append("NOVA AI: Groq rate limit reached. Retrying automatically in "
-                        + String.format(java.util.Locale.US, "%.1f", shownDelay / 1000.0)
-                        + " seconds...\n"));
-                try {
-                    Thread.sleep(delayMs);
-                } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                    throw new Exception("Automatic retry was interrupted. Your prompt was not discarded.");
-                }
-                continue;
-            }
-            if (code == 429) {
-                throw new Exception("Groq HTTP 429: Rate limit still active after automatic retries. "
-                        + message + " Your prompt is preserved; try again when the limit resets.");
-            }
-            throw new Exception("Groq HTTP " + code + ": " + message);
+            responseText = result.toString();
+        } finally {
+            connection.disconnect();
         }
-    }
 
-    private long retryDelayMillis(String retryAfter, String resetTokens, String message, int attempt) {
-        long delay = parseDelayMillis(retryAfter, true);
-        if (delay <= 0) delay = parseDelayMillis(resetTokens, false);
-        if (delay <= 0) delay = parseDelayMillis(message, false);
-        if (delay <= 0) delay = 1000L * (1L << Math.min(attempt, 5));
-        return Math.max(500L, Math.min(delay + 250L, 60000L));
-    }
+        JSONObject json;
+        try {
+            json = new JSONObject(responseText);
+        } catch (Exception parseError) {
+            if (code >= 200 && code < 300) throw new Exception("Groq returned an unreadable response.");
+            throw new Exception("Groq HTTP " + code + ": " + responseText);
+        }
 
-    private long parseDelayMillis(String value, boolean plainNumberIsSeconds) {
-        if (value == null || value.trim().isEmpty()) return -1L;
-        String text = value.trim();
-        if (plainNumberIsSeconds) {
-            try { return (long)(Double.parseDouble(text) * 1000.0); }
-            catch (NumberFormatException ignored) {}
+        if (code >= 200 && code < 300) return json;
+        String message = json.optJSONObject("error") == null ? json.toString()
+                : json.getJSONObject("error").optString("message", json.toString());
+
+        if (code == 429) {
+            String wait = (retryAfter == null || retryAfter.trim().isEmpty())
+                    ? "" : " Groq says to retry after " + retryAfter + " seconds.";
+            throw new Exception("Groq HTTP 429: GPT-OSS 120B is rate-limited for this API key."
+                    + wait + " I stopped automatic retries so Novaingine will not keep restarting. "
+                    + "Your prompt is preserved; wait for the limit to reset, then press SEND again. "
+                    + message);
         }
-        java.util.regex.Matcher matcher = java.util.regex.Pattern
-                .compile("(?i)([0-9]+(?:\\.[0-9]+)?)\\s*(milliseconds?|ms|seconds?|secs?|s|minutes?|mins?|m)")
-                .matcher(text);
-        if (matcher.find()) {
-            double amount = Double.parseDouble(matcher.group(1));
-            String unit = matcher.group(2).toLowerCase(java.util.Locale.US);
-            double multiplier = unit.equals("ms") || unit.startsWith("millisecond") ? 1.0
-                    : (unit.startsWith("m") ? 60000.0 : 1000.0);
-            return (long)(amount * multiplier);
-        }
-        return -1L;
+        throw new Exception("Groq HTTP " + code + ": " + message);
     }
 
     private void compactHistoryForNextTurn() {
