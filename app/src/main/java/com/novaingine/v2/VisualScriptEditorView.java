@@ -7,6 +7,9 @@ import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
 import android.view.MotionEvent;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import org.json.JSONException;
 import android.view.View;
 
 import java.util.ArrayList;
@@ -46,6 +49,12 @@ public final class VisualScriptEditorView extends View {
     private float lastX;
     private float lastY;
     private boolean dragging;
+    private boolean panning;
+    private float panX;
+    private float panY;
+    private float zoom = 1.0f;
+    private float lastPinchDistance;
+    private int pendingOutputNode;
     private static final float NODE_W = 178.0f;
     private static final float NODE_H = 102.0f;
 
@@ -154,15 +163,19 @@ public final class VisualScriptEditorView extends View {
         for (int x = 0; x < getWidth(); x += 24) canvas.drawLine(x, 0, x, getHeight(), paint);
         for (int y = 0; y < getHeight(); y += 24) canvas.drawLine(0, y, getWidth(), y, paint);
 
+        canvas.save();
+        canvas.translate(panX, panY);
+        canvas.scale(zoom, zoom);
+
         // Draw execution wires behind the nodes.
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(3.0f);
         for (Node n : nodes) {
             if (n.type == BRANCH) {
-                drawWire(canvas, n, n.trueNext, 0xFFFFB44C, -12.0f);
-                drawWire(canvas, n, n.falseNext, 0xFF4DA8FF, 12.0f);
+                drawWire(canvas, n, n.trueNext, Color.WHITE, -12.0f);
+                drawWire(canvas, n, n.falseNext, Color.WHITE, 12.0f);
             } else {
-                drawWire(canvas, n, n.next, 0xFF55C9A5, 0.0f);
+                drawWire(canvas, n, n.next, Color.WHITE, 0.0f);
             }
         }
 
@@ -192,6 +205,7 @@ public final class VisualScriptEditorView extends View {
             paint.setColor(0xFF4DA8FF);
             canvas.drawCircle(n.x + 5, n.y + NODE_H * 0.5f, 6, paint);
         }
+        canvas.restore();
     }
 
     private void drawWire(Canvas canvas, Node from, int targetId, int color, float offset) {
@@ -213,36 +227,119 @@ public final class VisualScriptEditorView extends View {
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
-        float x = event.getX();
-        float y = event.getY();
-        if (event.getAction() == MotionEvent.ACTION_DOWN) {
-            lastX = x; lastY = y; dragging = false;
+        final int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_POINTER_DOWN && event.getPointerCount() >= 2) {
+            dragging = false; panning = false;
+            lastPinchDistance = distance(event);
+            lastX = (event.getX(0) + event.getX(1)) * 0.5f;
+            lastY = (event.getY(0) + event.getY(1)) * 0.5f;
+            return true;
+        }
+        if (action == MotionEvent.ACTION_MOVE && event.getPointerCount() >= 2) {
+            float d = distance(event);
+            float cx = (event.getX(0) + event.getX(1)) * 0.5f;
+            float cy = (event.getY(0) + event.getY(1)) * 0.5f;
+            if (lastPinchDistance > 0.0f && d > 0.0f) {
+                zoom = Math.max(0.45f, Math.min(2.0f, zoom * d / lastPinchDistance));
+                panX += cx - lastX; panY += cy - lastY;
+            }
+            lastPinchDistance = d; lastX = cx; lastY = cy;
+            invalidate(); return true;
+        }
+        if (action == MotionEvent.ACTION_DOWN) {
+            lastX = event.getX(); lastY = event.getY();
+            dragging = false; panning = false;
+            float wx = (lastX - panX) / zoom;
+            float wy = (lastY - panY) / zoom;
             for (int i = nodes.size() - 1; i >= 0; i--) {
                 Node n = nodes.get(i);
-                if (x >= n.x && x <= n.x + NODE_W && y >= n.y && y <= n.y + NODE_H) {
-                    selectedIndex = i;
-                    dragging = true;
-                    invalidate();
-                    return true;
+                if (Math.hypot(wx - (n.x + NODE_W - 5), wy - (n.y + NODE_H * 0.5f)) < 17) {
+                    pendingOutputNode = n.id; selectedIndex = i; invalidate(); return true;
+                }
+                if (Math.hypot(wx - (n.x + 5), wy - (n.y + NODE_H * 0.5f)) < 17
+                        && pendingOutputNode != 0 && pendingOutputNode != n.id) {
+                    Node from = findNode(pendingOutputNode);
+                    if (from != null) {
+                        if (from.type == BRANCH) {
+                            if (from.trueNext == 0) from.trueNext = n.id;
+                            else from.falseNext = n.id;
+                        } else if (from.type != END) from.next = n.id;
+                    }
+                    pendingOutputNode = 0; invalidate(); return true;
                 }
             }
-            return true;
-        }
-        if (event.getAction() == MotionEvent.ACTION_MOVE && dragging) {
-            Node n = getSelectedNode();
-            if (n != null) {
-                n.x = Math.max(0, n.x + x - lastX);
-                n.y = Math.max(0, n.y + y - lastY);
-                lastX = x; lastY = y;
-                invalidate();
+            for (int i = nodes.size() - 1; i >= 0; i--) {
+                Node n = nodes.get(i);
+                if (wx >= n.x && wx <= n.x + NODE_W && wy >= n.y && wy <= n.y + NODE_H) {
+                    selectedIndex = i; dragging = true; invalidate(); return true;
+                }
             }
-            return true;
+            panning = true; return true;
         }
-        if (event.getAction() == MotionEvent.ACTION_UP) {
-            performClick();
-            return true;
+        if (action == MotionEvent.ACTION_MOVE) {
+            float dx = event.getX() - lastX, dy = event.getY() - lastY;
+            if (dragging) {
+                Node n = getSelectedNode();
+                if (n != null) { n.x = Math.max(0, n.x + dx / zoom); n.y = Math.max(0, n.y + dy / zoom); }
+            } else if (panning) { panX += dx; panY += dy; }
+            lastX = event.getX(); lastY = event.getY();
+            invalidate(); return true;
+        }
+        if (action == MotionEvent.ACTION_POINTER_UP) {
+            lastPinchDistance = 0; dragging = false; panning = false; return true;
+        }
+        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+            dragging = false; panning = false; lastPinchDistance = 0;
+            performClick(); return true;
         }
         return true;
+    }
+
+    private float distance(MotionEvent e) {
+        float dx = e.getX(0) - e.getX(1);
+        float dy = e.getY(0) - e.getY(1);
+        return (float)Math.sqrt(dx * dx + dy * dy);
+    }
+
+    public String toJson() {
+        try {
+            JSONObject root = new JSONObject();
+            root.put("version", 1);
+            JSONArray array = new JSONArray();
+            for (Node n : nodes) {
+                JSONObject item = new JSONObject();
+                item.put("id", n.id); item.put("type", n.type);
+                item.put("next", n.next); item.put("trueNext", n.trueNext); item.put("falseNext", n.falseNext);
+                item.put("objectId", n.objectId); item.put("x", n.x); item.put("y", n.y);
+                item.put("vx", n.vx); item.put("vy", n.vy); item.put("vz", n.vz);
+                item.put("value", n.value); item.put("compareValue", n.compareValue); item.put("condition", n.condition);
+                array.put(item);
+            }
+            root.put("nodes", array);
+            return root.toString(2);
+        } catch (JSONException error) { return "{}"; }
+    }
+
+    public boolean loadJson(String json) {
+        try {
+            JSONObject root = new JSONObject(json);
+            JSONArray array = root.getJSONArray("nodes");
+            if (array.length() == 0 || array.length() > 128) return false;
+            List<Node> loaded = new ArrayList<>();
+            for (int i = 0; i < array.length(); i++) {
+                JSONObject item = array.getJSONObject(i);
+                Node n = new Node();
+                n.id = item.getInt("id"); n.type = item.getInt("type");
+                if (n.id <= 0 || n.type < BEGIN_PLAY || n.type > SCALE) return false;
+                n.next = item.optInt("next"); n.trueNext = item.optInt("trueNext"); n.falseNext = item.optInt("falseNext");
+                n.objectId = item.optInt("objectId"); n.x = (float)item.optDouble("x"); n.y = (float)item.optDouble("y");
+                n.vx = (float)item.optDouble("vx"); n.vy = (float)item.optDouble("vy"); n.vz = (float)item.optDouble("vz");
+                n.value = (float)item.optDouble("value", 1.0); n.compareValue = (float)item.optDouble("compareValue");
+                n.condition = item.optBoolean("condition", true);
+                loaded.add(n);
+            }
+            nodes.clear(); nodes.addAll(loaded); selectedIndex = 0; pendingOutputNode = 0; invalidate(); return true;
+        } catch (Exception error) { return false; }
     }
 
     @Override
