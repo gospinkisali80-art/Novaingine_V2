@@ -305,7 +305,8 @@ public:
             if(b.type==2) {
                 if(!grabCaptured) {
                     grabVertices=affected;grabLastCenter=c;grabCaptured=true;
-                } else {
+                }
+                if(length(movement)>1e-7f) {
                     for(const auto& item:grabVertices) {
                         float protection=1.0f-std::clamp(mask[item.index],0.0f,1.0f);
                         Vec3 move=movement;
@@ -317,8 +318,8 @@ public:
                         Vec3 delta=move*(item.weight*protection);
                         if(length(delta)>1e-7f){positions[item.index]=positions[item.index]+delta;changed=true;}
                     }
-                    grabLastCenter=c;
                 }
+                grabLastCenter=c;
             } else {
                 for(const auto& item:affected) {
                     uint32_t i=item.index;float w=item.weight;
