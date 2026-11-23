@@ -64,6 +64,7 @@ std::deque<SculptDabJob> gSculptQueue;
 std::thread gSculptWorker;
 std::atomic<bool> gSculptWorkerStarted{false};
 std::atomic<bool> gSculptMeshDirty{false};
+std::atomic<bool> gSculptMaskDirty{false};
 
 
 
@@ -83,8 +84,10 @@ void startSculptWorker() {
             if(!gSculptMesh)continue;
             if(job.begin){gSculptMesh->beginStroke();continue;}
             if(job.end){gSculptMesh->endStroke();continue;}
-            if(gSculptMesh->applyDab(job.center,job.normal,job.delta,job.brush))
-                gSculptMeshDirty.store(true,std::memory_order_release);
+            if(gSculptMesh->applyDab(job.center,job.normal,job.delta,job.brush)) {
+                if(job.brush.type==7||job.brush.type==11)gSculptMaskDirty.store(true,std::memory_order_release);
+                else gSculptMeshDirty.store(true,std::memory_order_release);
+            }
         }
     }).detach();
 }
@@ -175,6 +178,7 @@ void restoreScene(const SceneSnapshot& snapshot) {
             gSculptMesh->buildAdjacency();gSculptMesh->buildChunks();gSculptMesh->buildBVH();
         } else if(gSculptMode) { gSculptMesh.reset();gSculptMeshId=0; }
         gSculptMeshDirty.store(false,std::memory_order_release);
+    gSculptMaskDirty.store(false,std::memory_order_release);
     }
     gVerticalVelocity = 0.0f;
     gPhysicsGrounded = false;
@@ -605,6 +609,13 @@ Java_com_novaingine_v2_NativeBridge_nativeRender(
         }
     }
 
+    if(gSculptMaskDirty.load(std::memory_order_acquire)) {
+        std::unique_lock<std::mutex> dataLock(gSculptDataMutex,std::try_to_lock);
+        if(dataLock.owns_lock()&&gSculptMesh&&gSculptMeshId!=0) {
+            gSculptMasks[gSculptMeshId]=gSculptMesh->mask;
+            gSculptMaskDirty.store(false,std::memory_order_release);
+        }
+    }
     if(gSculptMeshDirty.load(std::memory_order_acquire)) {
         std::unique_lock<std::mutex> dataLock(gSculptDataMutex,std::try_to_lock);
         if(dataLock.owns_lock()&&gSculptMesh&&gSculptMeshId!=0) {
