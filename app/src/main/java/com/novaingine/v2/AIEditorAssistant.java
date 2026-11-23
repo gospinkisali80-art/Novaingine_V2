@@ -33,7 +33,7 @@ import java.util.concurrent.Executors;
 public final class AIEditorAssistant {
     private static final String PREFS = "nova_ai_settings";
     private static final String KEY = "groq_api_key";
-    private static final String MODEL_ID = "openai/gpt-oss-120b";
+    private static final String MODEL_ID = "openai/gpt-oss-20b";
     private TextView modelInfo;
     private final Activity activity;
     private final EngineSurface engine;
@@ -130,7 +130,7 @@ public final class AIEditorAssistant {
 
     private void updateModelInfo() {
         if (modelInfo != null) {
-            modelInfo.setText("Provider: Groq  |  Model: OpenAI GPT-OSS 120B (" + MODEL_ID + ")  |  AI scene assistant");
+            modelInfo.setText("Provider: Groq  |  Model: OpenAI GPT-OSS 20B (" + MODEL_ID + ")  |  AI scene assistant");
         }
     }
 
