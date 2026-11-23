@@ -26,6 +26,7 @@ public final class ViewportInput extends View {
     private boolean lookActive;
     private boolean movingUp;
     private boolean movingDown;
+    private boolean viewportTouchActive;
 
     private final RectF upButton = new RectF();
     private final RectF downButton = new RectF();
@@ -198,6 +199,11 @@ public final class ViewportInput extends View {
         switch (action) {
             case MotionEvent.ACTION_DOWN:
             case MotionEvent.ACTION_POINTER_DOWN:
+                boolean controlTouch = insideStick(x, y, leftCenterX)
+                        || insideStick(x, y, rightCenterX)
+                        || upButton.contains(x, y) || downButton.contains(x, y);
+                if (action == MotionEvent.ACTION_DOWN) viewportTouchActive = !controlTouch;
+                if (viewportTouchActive && !controlTouch) engineSurface.dispatchTouchEvent(event);
                 if (movePointerId == -1 && insideStick(x, y, leftCenterX)) {
                     movePointerId = pointerId;
                     moveActive = true;
@@ -218,6 +224,7 @@ public final class ViewportInput extends View {
                 return true;
 
             case MotionEvent.ACTION_MOVE:
+                if (viewportTouchActive) engineSurface.dispatchTouchEvent(event);
                 if (movePointerId != -1) {
                     int moveIndex = event.findPointerIndex(movePointerId);
                     if (moveIndex >= 0) updateStick(event.getX(moveIndex), event.getY(moveIndex), false);
@@ -230,6 +237,7 @@ public final class ViewportInput extends View {
 
             case MotionEvent.ACTION_POINTER_UP:
             case MotionEvent.ACTION_UP:
+                if (viewportTouchActive) engineSurface.dispatchTouchEvent(event);
                 releasePointer(pointerId, x, y);
                 if (action == MotionEvent.ACTION_UP) {
                     if (movePointerId != -1) resetMoveStick();
@@ -239,10 +247,13 @@ public final class ViewportInput extends View {
                     movingUp = false;
                     movingDown = false;
                     updateVerticalMovement();
+                    viewportTouchActive = false;
                 }
                 return true;
 
             case MotionEvent.ACTION_CANCEL:
+                if (viewportTouchActive) engineSurface.dispatchTouchEvent(event);
+                viewportTouchActive = false;
                 resetMoveStick();
                 resetLookStick();
                 upPointerId = -1;
