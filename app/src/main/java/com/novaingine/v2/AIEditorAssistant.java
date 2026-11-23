@@ -133,6 +133,8 @@ public final class AIEditorAssistant {
     }
 
     private String getApiKey() {
+        activity.getSharedPreferences("nova_groq_settings", Activity.MODE_PRIVATE)
+                .edit().remove("groq_api_key").apply();
         return activity.getSharedPreferences(PREFS_NAME, Activity.MODE_PRIVATE)
                 .getString(PREF_API_KEY, "").trim();
     }
@@ -147,7 +149,7 @@ public final class AIEditorAssistant {
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(20), dp(8), dp(20), dp(4));
         TextView warning = new TextView(activity);
-        warning.setText("Stored in this app's private settings. Never share it or commit it to GitHub. Groq's free tier has usage limits. Ask a parent or guardian to manage the provider account and API key.");
+        warning.setText("Stored in this app\'s private settings. Never share it or commit it to GitHub. Anthropic API usage can incur charges. Ask a parent or guardian to manage the provider account, billing and API key.");
         warning.setTextColor(0xFFB8C5D5);
         warning.setTextSize(12);
         content.addView(warning);
