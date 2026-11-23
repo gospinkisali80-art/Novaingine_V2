@@ -47,6 +47,8 @@ bool gSculptMode = false;
 bool gManualSculptWorkspaceActive = false;
 bool gSculptWorkspacePreviousShowGrid = false;
 bool gSculptWorkspacePreviousShowBounds = false;
+bool gSculptWorkspacePreviousShowSky = true;
+bool gSculptWorkspacePreviousShowShadows = true;
 std::vector<std::pair<uint32_t, bool>> gSculptWorkspaceVisibility;
 bool gSculptStrokeActive = false;
 bool gHasPreviousSculptHit = false;
@@ -1456,8 +1458,11 @@ Java_com_novaingine_v2_NativeBridge_nativeSetManualSculptWorkspace(JNIEnv*, jcla
             // prop, wall, floor mesh and other scene object behind the workspace.
             if (object.id != gSculptMeshId) object.visible = false;
         }
-        gSculptWorkspacePreviousShowGrid = gRenderer.getSettings().showGrid;
-        gSculptWorkspacePreviousShowBounds = gRenderer.getSettings().showBounds;
+        const RendererSettings previousSettings = gRenderer.getSettings();
+        gSculptWorkspacePreviousShowGrid = previousSettings.showGrid;
+        gSculptWorkspacePreviousShowBounds = previousSettings.showBounds;
+        gSculptWorkspacePreviousShowSky = previousSettings.showSky;
+        gSculptWorkspacePreviousShowShadows = previousSettings.showShadows;
         gRenderer.setSettings(settings);
         gManualSculptWorkspaceActive = true;
     } else {
@@ -1469,6 +1474,8 @@ Java_com_novaingine_v2_NativeBridge_nativeSetManualSculptWorkspace(JNIEnv*, jcla
         gSculptWorkspaceVisibility.clear();
         settings.showGrid = gSculptWorkspacePreviousShowGrid;
         settings.showBounds = gSculptWorkspacePreviousShowBounds;
+        settings.showSky = gSculptWorkspacePreviousShowSky;
+        settings.showShadows = gSculptWorkspacePreviousShowShadows;
         gRenderer.setSettings(settings);
         gManualSculptWorkspaceActive = false;
     }
