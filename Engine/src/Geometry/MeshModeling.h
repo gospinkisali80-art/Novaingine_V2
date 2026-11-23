@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <unordered_map>
 #include <vector>
+#include <utility>
 
 namespace nova {
 class MeshModeling {
@@ -42,7 +43,7 @@ public:
         mesh.setData(std::move(v),std::move(ix)); mesh.recalculateNormals(); return mesh.isValid();
     }
     static bool bevelEdge(Mesh& mesh,size_t edge,float width) {
-        if(!mesh.isValid() || edge>=mesh.indexCount()/2 || width<=0.0f) return false;
+        if(!mesh.isValid() || edge>=mesh.triangleCount()*3 || width<=0.0f) return false;
         auto v=mesh.getVertices(); auto ix=mesh.getIndices();
         size_t tri=(edge/3), local=edge%3, k=tri*3;
         uint32_t a=ix[k+local], b=ix[k+(local+1)%3];
@@ -70,6 +71,7 @@ public:
     static bool subdivide(Mesh& mesh,int levels) {
         if(!mesh.isValid() || levels<1 || levels>3) return false;
         for(int level=0;level<levels;level++) {
+            if(mesh.triangleCount()>75000) return false;
             auto v=mesh.getVertices(); const auto ix=mesh.getIndices();
             std::unordered_map<uint64_t,uint32_t> mids;
             auto getMid=[&](uint32_t a,uint32_t b)->uint32_t {
@@ -90,7 +92,7 @@ public:
         return mesh.isValid();
     }
     static bool mergeNearby(Mesh& mesh,float tolerance) {
-        if(!mesh.isValid() || tolerance<=0.0f) return false;
+        if(!mesh.isValid() || tolerance<=0.0f || mesh.vertexCount()>12000) return false;
         auto v=mesh.getVertices(); const auto ix=mesh.getIndices();
         std::vector<uint32_t> remap(v.size());
         for(size_t i=0;i<v.size();i++) {
