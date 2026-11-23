@@ -175,34 +175,50 @@ void setCameraDirection(const nova::Vec3& direction) {
     );
 }
 
-bool makeScreenRay(
-    float screenX,
-    float screenY,
-    nova::Vec3& ray
-) {
-    if (gViewportWidth <= 0 || gViewportHeight <= 0) {
-        return false;
+nova::Mat4 multiplyMat4(const nova::Mat4& a, const nova::Mat4& b) {
+    nova::Mat4 out;
+    for (int col=0;col<4;col++) for(int row=0;row<4;row++) {
+        out.m[col*4+row]=0.0f;
+        for(int k=0;k<4;k++) out.m[col*4+row]+=a.m[k*4+row]*b.m[col*4+k];
     }
-
-    float nx = (2.0f * screenX / gViewportWidth) - 1.0f;
-    float ny = 1.0f - (2.0f * screenY / gViewportHeight);
-
-    float aspect =
-        static_cast<float>(gViewportWidth) /
-        static_cast<float>(gViewportHeight);
-
-    float tangent = std::tan(radians(gCamera.fieldOfView) * 0.5f);
-
-    nova::Vec3 direction =
-        gCamera.forward() +
-        gCamera.right() * (nx * tangent * aspect) +
-        gCamera.up() * (ny * tangent);
-
-    ray = nova::normalize(direction);
-
-    return nova::length(ray) > 0.0001f;
+    return out;
 }
 
+bool invertMat4(const nova::Mat4& input, nova::Mat4& output) {
+    float a[4][8]{};
+    for(int r=0;r<4;r++){for(int col=0;col<4;col++)a[r][col]=input.m[col*4+r];a[r][r+4]=1.0f;}
+    for(int col=0;col<4;col++){
+        int pivot=col;for(int r=col+1;r<4;r++)if(std::fabs(a[r][col])>std::fabs(a[pivot][col]))pivot=r;
+        if(std::fabs(a[pivot][col])<1e-9f)return false;
+        if(pivot!=col)for(int k=0;k<8;k++)std::swap(a[pivot][k],a[col][k]);
+        float d=a[col][col];for(int k=0;k<8;k++)a[col][k]/=d;
+        for(int r=0;r<4;r++)if(r!=col){float q=a[r][col];for(int k=0;k<8;k++)a[r][k]-=q*a[col][k];}
+    }
+    for(int r=0;r<4;r++)for(int col=0;col<4;col++)output.m[col*4+r]=a[r][col+4];
+    return true;
+}
+
+nova::Vec3 unprojectPoint(const nova::Mat4& inverse, float x, float y, float z, bool& ok) {
+    float v[4]={x,y,z,1.0f},o[4]={0,0,0,0};
+    for(int row=0;row<4;row++)for(int col=0;col<4;col++)o[row]+=inverse.m[col*4+row]*v[col];
+    if(std::fabs(o[3])<1e-8f){ok=false;return nova::Vec3();}
+    ok=true;return nova::Vec3(o[0]/o[3],o[1]/o[3],o[2]/o[3]);
+}
+
+bool makeScreenRay(float screenX, float screenY, nova::Vec3& ray) {
+    if(gViewportWidth<=0||gViewportHeight<=0)return false;
+    float nx=(2.0f*screenX/gViewportWidth)-1.0f;
+    float ny=1.0f-(2.0f*screenY/gViewportHeight);
+    nova::Mat4 vp=multiplyMat4(gCamera.projectionMatrix((float)gViewportWidth/(float)gViewportHeight),gCamera.viewMatrix());
+    nova::Mat4 inverse;
+    if(!invertMat4(vp,inverse))return false;
+    bool nearOk=false,farOk=false;
+    nova::Vec3 nearPoint=unprojectPoint(inverse,nx,ny,-1.0f,nearOk);
+    nova::Vec3 farPoint=unprojectPoint(inverse,nx,ny,1.0f,farOk);
+    if(!nearOk||!farOk)return false;
+    ray=nova::normalize(farPoint-nearPoint);
+    return nova::length(ray)>0.0001f;
+}
 bool selectObjectAt(float screenX, float screenY) {
     nova::Vec3 ray;
 
