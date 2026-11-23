@@ -243,66 +243,90 @@ public final class AIEditorAssistant {
     }
 
     private String runAgent() throws Exception {
-        JSONArray tools = buildTools();
+        JSONArray openAiTools = buildTools();
+        JSONArray claudeTools = new JSONArray();
+        for (int i = 0; i < openAiTools.length(); i++) {
+            JSONObject fn = openAiTools.getJSONObject(i).getJSONObject("function");
+            claudeTools.put(new JSONObject()
+                    .put("name", fn.getString("name"))
+                    .put("description", fn.optString("description", ""))
+                    .put("input_schema", fn.getJSONObject("parameters")));
+        }
+
+        JSONArray messages = new JSONArray();
+        for (int i = 1; i < history.length(); i++) {
+            JSONObject item = history.optJSONObject(i);
+            if (item == null) continue;
+            String role = item.optString("role", "");
+            if (!"user".equals(role) && !"assistant".equals(role)) continue;
+            Object content = item.opt("content");
+            if (content == null || content == JSONObject.NULL) continue;
+            messages.put(new JSONObject().put("role", role).put("content", content));
+        }
+        if (messages.length() == 0) throw new Exception("No user message was found.");
+
         int operationCount = 0;
         for (int step = 0; step < 12; step++) {
             JSONObject body = new JSONObject();
             body.put("model", getModel());
-            body.put("messages", history);
-            body.put("tools", tools);
-            body.put("tool_choice", "auto");
-            body.put("reasoning_effort", "medium");
-            body.put("max_completion_tokens", 4096);
-            body.put("parallel_tool_calls", false);
-            JSONObject response = postGroqModel(body);
-            JSONObject message = response.getJSONArray("choices").getJSONObject(0).getJSONObject("message");
-            JSONArray calls = message.optJSONArray("tool_calls");
-            if (calls == null || calls.length() == 0) {
-                String content = message.optString("content", "").trim();
-                JSONObject assistant = new JSONObject();
-                assistant.put("role", "assistant");
-                assistant.put("content", content);
-                history.put(assistant);
-                if (content.isEmpty()) {
-                    return "Claude returned an empty completion. No scene changes were made. Please retry.";
+            body.put("max_tokens", 4096);
+            body.put("system", history.getJSONObject(0).optString("content", ""));
+            body.put("messages", messages);
+            body.put("tools", claudeTools);
+            body.put("tool_choice", new JSONObject().put("type", "auto"));
+
+            JSONObject response = postClaudeModel(body);
+            JSONArray blocks = response.optJSONArray("content");
+            JSONArray calls = new JSONArray();
+            if (blocks != null) {
+                for (int i = 0; i < blocks.length(); i++) {
+                    JSONObject block = blocks.optJSONObject(i);
+                    if (block != null && "tool_use".equals(block.optString("type"))) calls.put(block);
                 }
-                return content;
             }
-            JSONObject assistant = new JSONObject();
-            assistant.put("role", "assistant");
-            assistant.put("content", message.optString("content", ""));
-            assistant.put("tool_calls", calls);
-            history.put(assistant);
+
+            if (calls.length() == 0) {
+                String answer = extractClaudeText(response).trim();
+                if (answer.isEmpty()) return "Claude returned an empty completion. No scene changes were made.";
+                history.put(new JSONObject().put("role", "assistant").put("content", answer));
+                return answer;
+            }
+
+            messages.put(new JSONObject().put("role", "assistant").put("content", blocks));
+            JSONArray results = new JSONArray();
             for (int i = 0; i < calls.length(); i++) {
                 JSONObject call = calls.getJSONObject(i);
-                String id = call.optString("id");
-                JSONObject fn = call.getJSONObject("function");
-                String name = fn.getString("name");
-                JSONObject args = new JSONObject(fn.optString("arguments", "{}"));
-                if (++operationCount > 48) return "I reached the safe 48-operation limit. The scene contains the completed operations so far; give me another instruction to continue.";
+                String name = call.getString("name");
+                JSONObject args = call.optJSONObject("input");
+                if (args == null) args = new JSONObject();
+                if (++operationCount > 48) {
+                    return "I reached the safe 48-operation limit. The scene contains completed operations so far; give me another instruction to continue.";
+                }
                 String result = executeTool(name, args);
-                JSONObject toolMessage = new JSONObject();
-                toolMessage.put("role", "tool");
-                toolMessage.put("tool_call_id", id);
-                toolMessage.put("content", result);
-                history.put(toolMessage);
+                results.put(new JSONObject()
+                        .put("type", "tool_result")
+                        .put("tool_use_id", call.getString("id"))
+                        .put("content", result));
                 final String status = "Tool: " + name + " → " + result + "\n";
                 main.post(() -> append(status));
             }
+            messages.put(new JSONObject().put("role", "user").put("content", results));
         }
         return "I stopped after 12 tool steps to keep the editor responsive. You can give me the next instruction.";
     }
 
-    private JSONObject postGroqModel(JSONObject body) throws Exception {
+    private JSONObject postClaudeModel(JSONObject body) throws Exception {
         String apiKey = getApiKey();
-        if (apiKey.isEmpty()) throw new Exception("Add your Groq API key using the API KEY button first.");
-        HttpURLConnection connection = (HttpURLConnection) new URL(GROQ_CHAT_URL).openConnection();
+        if (apiKey.isEmpty()) throw new Exception("Add your Anthropic Claude API key using the API KEY button first.");
+        HttpURLConnection connection = (HttpURLConnection) new URL(CLAUDE_MESSAGES_URL).openConnection();
         connection.setRequestMethod("POST");
-        connection.setConnectTimeout(5000);
+        connection.setConnectTimeout(10000);
         connection.setReadTimeout(180000);
         connection.setDoOutput(true);
         connection.setRequestProperty("Content-Type", "application/json");
-        connection.setRequestProperty("Authorization", "Bearer " + apiKey);
+        connection.setRequestProperty("x-api-key", apiKey);
+        connection.setRequestProperty("anthropic-version", "2023-06-01");
+
         byte[] data = body.toString().getBytes(StandardCharsets.UTF_8);
         int code;
         String responseText;
@@ -313,18 +337,18 @@ public final class AIEditorAssistant {
                     ? connection.getInputStream() : connection.getErrorStream();
             StringBuilder result = new StringBuilder();
             if (stream != null) {
-                try (BufferedReader reader = new BufferedReader(
-                        new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
                     String line;
                     while ((line = reader.readLine()) != null) result.append(line);
                 }
             }
             responseText = result.toString();
         } catch (java.net.ConnectException ex) {
-            throw new Exception("Could not connect to Anthropic Claude. Check your internet connection and try again.");
+            throw new Exception("Could not connect to Anthropic Claude. Check your internet connection.");
         } finally {
             connection.disconnect();
         }
+
         JSONObject json;
         try {
             json = new JSONObject(responseText);
@@ -332,9 +356,24 @@ public final class AIEditorAssistant {
             throw new Exception("Claude returned an unreadable response (HTTP " + code + ").");
         }
         if (code >= 200 && code < 300) return json;
-        String message = json.optJSONObject("error") == null ? json.toString()
-                : json.getJSONObject("error").optString("message", json.toString());
+        JSONObject error = json.optJSONObject("error");
+        String message = error == null ? json.toString() : error.optString("message", json.toString());
         throw new Exception("Claude API HTTP " + code + ": " + message);
+    }
+
+    private String extractClaudeText(JSONObject response) {
+        JSONArray content = response.optJSONArray("content");
+        StringBuilder text = new StringBuilder();
+        if (content != null) {
+            for (int i = 0; i < content.length(); i++) {
+                JSONObject block = content.optJSONObject(i);
+                if (block != null && "text".equals(block.optString("type"))) {
+                    if (text.length() > 0) text.append("\n");
+                    text.append(block.optString("text", ""));
+                }
+            }
+        }
+        return text.toString();
     }
 
     private void compactHistoryForNextTurn() {
