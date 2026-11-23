@@ -277,6 +277,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
         SculptTouchSurface() {
             super(activity);
             setBackgroundColor(Color.TRANSPARENT);
+            setClickable(true);
+            setFocusable(true);
         }
 
         private float distance(MotionEvent e) {
