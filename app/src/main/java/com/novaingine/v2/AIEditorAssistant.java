@@ -52,7 +52,7 @@ public final class AIEditorAssistant {
         JSONObject system = new JSONObject();
         try {
             system.put("role", "system");
-            system.put("content", "You are NOVA AI, the Groq-powered sculpting and scene assistant inside Novaingine. You can directly sculpt custom meshes through Novaingine's built-in eight-brush mesh sculptor. Keep the Blender-to-GLB integration available; never remove or replace it. For AI-created sculpted assets, use create_sculpt_mesh to create a dense sphere or plane, then call sculpt_selected_mesh repeatedly with Draw, Smooth, Grab, Inflate, Pinch, Flatten, Crease or Mask to shape the actual selected mesh. Brush centers are LOCAL mesh coordinates; X is left/right, Y is up, Z is depth. A sphere starts around radius 1.0; a plane spans about -1 to +1 in X/Z. Use multiple varied brush passes and smoothing to build recognizable forms; do not merely describe steps. Keep each operation moderate for Android performance. Grab uses dragX/dragY/dragZ to pull geometry. Mask protects vertices from later sculpt passes. If a selected sculptable mesh already exists, sculpt it rather than creating another unless requested. You may also use the existing terrain and scene tools. Never claim success unless a tool confirms it. Preserve existing scene content unless asked to remove it. Be honest about current sculpting limits and do not claim Blender or Unreal parity.");
+            system.put("content", "You are NOVA AI, the Groq-powered modeling, sculpting and scene assistant inside Novaingine. Build recognizable assets from several purpose-built connected mesh parts with create_mesh_part, not only a deformed sphere. Use 3-8 parts, deliberate silhouettes and clean triangulated topology. Use sculpt tools for organic refinement. Blender desktop bridge remains available for high-detail modeling. You can directly sculpt custom meshes through Novaingine's built-in eight-brush mesh sculptor. Keep the Blender-to-GLB integration available; never remove or replace it. For AI-created sculpted assets, use create_sculpt_mesh to create a dense sphere or plane, then call sculpt_selected_mesh repeatedly with Draw, Smooth, Grab, Inflate, Pinch, Flatten, Crease, Mask, Clay, Scrape, Layer or Unmask to shape the actual selected mesh. Brush centers are LOCAL mesh coordinates; X is left/right, Y is up, Z is depth. A sphere starts around radius 1.0; a plane spans about -1 to +1 in X/Z. Use multiple varied brush passes and smoothing to build recognizable forms; do not merely describe steps. Keep each operation moderate for Android performance. Grab uses dragX/dragY/dragZ to pull geometry. Mask protects vertices from later sculpt passes. If a selected sculptable mesh already exists, sculpt it rather than creating another unless requested. You may also use the existing terrain and scene tools. Never claim success unless a tool confirms it. Preserve existing scene content unless asked to remove it. Be honest about current sculpting limits and do not claim Blender or Unreal parity.");
             history.put(system);
         } catch (Exception ignored) {}
     }
@@ -286,7 +286,7 @@ public final class AIEditorAssistant {
         if (code == 429) {
             String wait = (retryAfter == null || retryAfter.trim().isEmpty())
                     ? "" : " Groq says to retry after " + retryAfter + " seconds.";
-            throw new Exception("Groq HTTP 429: GPT-OSS 120B is rate-limited for this API key."
+            throw new Exception("Groq HTTP 429: GPT-OSS 20B is rate-limited for this API key."
                     + wait + " I stopped automatic retries so Novaingine will not keep restarting. "
                     + "Your prompt is preserved; wait for the limit to reset, then press SEND again. "
                     + message);
@@ -324,7 +324,7 @@ public final class AIEditorAssistant {
         tools.put(tool("inspect_scene", "List scene object IDs and names, and the selected object's transform.", "{\"type\":\"object\",\"properties\":{}}"));
         tools.put(tool("create_terrain", "Generate or replace the editable terrain patch.", "{\"type\":\"object\",\"properties\":{}}"));
         tools.put(tool("sculpt_terrain", "Sculpt terrain. Optional args: x defaults 0, z defaults -4, radius defaults 3, strength defaults 0.4, mode defaults raise. mode: raise, lower, smooth, flatten.", "{\"type\":\"object\",\"properties\":{\"x\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"},\"radius\":{\"type\":\"number\"},\"strength\":{\"type\":\"number\"},\"mode\":{\"type\":\"string\",\"enum\":[\"raise\",\"lower\",\"smooth\",\"flatten\"]}}}"));
-        tools.put(tool("create_sculpt_mesh", "Create and select an editable dense sphere or plane mesh for sculpting. Use density 32-80 on mobile. This creates actual geometry.", "{\"type\":\"object\",\"properties\":{\"shape\":{\"type\":\"string\",\"enum\":[\"sphere\",\"plane\"]},\"density\":{\"type\":\"integer\"}}}"));
+        tools.put(tool("create_mesh_part", "Create one real custom triangulated mesh part from flat xyz positions and triangle indices. Use 3-300 vertices and 1-600 triangles. Local coordinates must stay within -20..20. Build complex assets from multiple connected parts with sensible proportions and slight overlap at joints.", "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"},\"positions\":{\"type\":\"array\",\"items\":{\"type\":\"number\"},\"minItems\":9,\"maxItems\":900},\"triangles\":{\"type\":\"array\",\"items\":{\"type\":\"integer\"},\"minItems\":3,\"maxItems\":1800},\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"},\"r\":{\"type\":\"number\"},\"g\":{\"type\":\"number\"},\"b\":{\"type\":\"number\"}},\"required\":[\"positions\",\"triangles\"]}"));\n        tools.put(tool("create_sculpt_mesh", "Create and select an editable dense sphere or plane mesh for sculpting. Use density 32-80 on mobile. This creates actual geometry.", "{\"type\":\"object\",\"properties\":{\"shape\":{\"type\":\"string\",\"enum\":[\"sphere\",\"plane\"]},\"density\":{\"type\":\"integer\"}}}"));
         tools.put(tool("sculpt_selected_mesh", "Apply one real brush pass to the selected custom mesh. brush: draw, smooth, grab, inflate, pinch, flatten, crease or mask. x/y/z are local mesh coordinates. radius 0.01-3; strength 0.001-0.5; falloff 0-1; symmetry mirrors across X. Grab uses dragX/dragY/dragZ. Call repeatedly with different centers and brushes to build a shape.", "{\"type\":\"object\",\"properties\":{\"brush\":{\"type\":\"string\",\"enum\":[\"draw\",\"smooth\",\"grab\",\"inflate\",\"pinch\",\"flatten\",\"crease\",\"mask\"]},\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"},\"radius\":{\"type\":\"number\"},\"strength\":{\"type\":\"number\"},\"falloff\":{\"type\":\"number\"},\"symmetry\":{\"type\":\"boolean\"},\"dragX\":{\"type\":\"number\"},\"dragY\":{\"type\":\"number\"},\"dragZ\":{\"type\":\"number\"}}}"));
         tools.put(tool("paint_foliage", "Paint trees or bushes around world X/Z. kind is tree or bush. Count is limited for mobile performance.", "{\"type\":\"object\",\"properties\":{\"x\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"},\"radius\":{\"type\":\"number\"},\"count\":{\"type\":\"integer\"},\"kind\":{\"type\":\"string\",\"enum\":[\"tree\",\"bush\"]}},\"required\":[\"x\",\"z\",\"radius\",\"count\",\"kind\"]}"));
         tools.put(tool("clear_foliage", "Remove all generated foliage objects.", "{\"type\":\"object\",\"properties\":{}}"));
@@ -366,6 +366,20 @@ public final class AIEditorAssistant {
                     boolean sculpted = runOnRenderThread(() -> NativeBridge.nativeSculptTerrain(x,z,radius,strength,mode));
                     return sculpted ? "Terrain sculpted successfully." : "No terrain changed. Generate terrain first or adjust the brush.";
                 }
+                case "create_mesh_part": {
+                    JSONArray pv=a.optJSONArray("positions"), ti=a.optJSONArray("triangles");
+                    if(pv==null || ti==null || pv.length()<9 || pv.length()>900 || pv.length()%3!=0 || ti.length()<3 || ti.length()>1800 || ti.length()%3!=0)
+                        return "Invalid mesh arrays. Provide 3-300 vertices and triangle indices.";
+                    float[] positions=new float[pv.length()]; int[] triangles=new int[ti.length()];
+                    for(int i=0;i<pv.length();i++){ double v=pv.optDouble(i,Double.NaN); if(!Double.isFinite(v)||Math.abs(v)>20) return "Vertex coordinate outside safe range."; positions[i]=(float)v; }
+                    int vc=positions.length/3;
+                    for(int i=0;i<ti.length();i++){ int v=ti.optInt(i,-1); if(v<0||v>=vc) return "Triangle index outside vertex array."; triangles[i]=v; }
+                    String name=a.optString("name","AI Mesh Part");
+                    float x=number(a,"x",0), y=number(a,"y",0), z=number(a,"z",0);
+                    float red=Math.max(0,Math.min(1,number(a,"r",0.62f))), green=Math.max(0,Math.min(1,number(a,"g",0.68f))), blue=Math.max(0,Math.min(1,number(a,"b",0.76f)));
+                    int id=runOnRenderThread(() -> NativeBridge.nativeCreateMeshPart(positions,triangles,name,x,y,z,red,green,blue));
+                    return id>0 ? "Created mesh part "+name+" with "+vc+" vertices and "+(triangles.length/3)+" triangles. ID "+id : "Mesh part rejected or GPU upload failed.";
+                }
                 case "create_sculpt_mesh": {
                     String shapeName = a.optString("shape", "sphere").toLowerCase(java.util.Locale.US);
                     int shape = shapeName.equals("plane") ? 1 : 0;
@@ -383,7 +397,7 @@ public final class AIEditorAssistant {
                             : brushName.equals("pinch") ? 4
                             : brushName.equals("flatten") ? 5
                             : brushName.equals("crease") ? 6
-                            : brushName.equals("mask") ? 7 : 0;
+                            : brushName.equals("mask") ? 7 : brushName.equals("clay") ? 8 : brushName.equals("scrape") ? 9 : brushName.equals("layer") ? 10 : brushName.equals("unmask") ? 11 : 0;
                     float x = number(a, "x", 0), y = number(a, "y", 0), z = number(a, "z", 0);
                     float radius = Math.max(0.01f, Math.min(3.0f, number(a, "radius", 0.35f)));
                     float strength = Math.max(0.001f, Math.min(0.5f, number(a, "strength", 0.12f)));
