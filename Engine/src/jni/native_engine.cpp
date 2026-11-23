@@ -1191,7 +1191,7 @@ Java_com_novaingine_v2_NativeBridge_nativeEnterSculptMode(JNIEnv*, jclass) {
 
 JNIEXPORT void JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeUpdateSculptCursor(
-    JNIEnv*, jclass, jfloat screenX, jfloat screenY, jboolean active
+    JNIEnv*, jclass, jfloat screenX, jfloat screenY, jfloat radiusValue, jboolean active
 ) {
     std::lock_guard<std::mutex> lock(engineMutex);
     if (!gInitialized || !gSculptMode || !active || !gSculptMesh || gSculptMeshId == 0) {
@@ -1211,7 +1211,7 @@ Java_com_novaingine_v2_NativeBridge_nativeUpdateSculptCursor(
         gRenderer.setSculptCursor(false, nova::Vec3(), nova::Vec3(0,1,0), 0.18f);
         return;
     }
-    gRenderer.setSculptCursor(true, hit.point + object->transform.position, hit.normal, 0.18f);
+    gRenderer.setSculptCursor(true, hit.point + object->transform.position, hit.normal, std::clamp(static_cast<float>(radiusValue), 0.01f, 2.0f));
 }
 
 JNIEXPORT jboolean JNICALL
