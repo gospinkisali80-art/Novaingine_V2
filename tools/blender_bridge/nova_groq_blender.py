@@ -9,7 +9,7 @@ import sys
 import urllib.error
 import urllib.request
 
-MODEL = "qwen/qwen3.8-27b"
+MODEL = "openai/gpt-oss-20b"
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 SYSTEM_PROMPT = """You are a professional 3D modeler creating a Blender scene for a mobile game engine.
@@ -34,7 +34,7 @@ Create actual connected, closed or intentionally open polygon meshes, not descri
 Use clean topology, consistent winding, useful bevel-like supporting geometry, realistic proportions,
 separate logical mesh parts, and coherent materials. Coordinates are local to each object.
 Keep the full asset centered near the origin and fit within roughly 20 Blender units.
-Create between 3 and 12 mesh objects. Each object may have at most 500 vertices and 800 faces.
+Create between 3 and 12 mesh objects. Each object may have at most 500 vertices and 800 faces. Build recognizable assets from separate connected body parts, with intentional proportions and coherent topology.
 Use triangles or quads. Face indices are zero-based. Do not include scripts, markdown, comments,
 external files, textures, or unsupported fields. Avoid excessive tiny details. Make the requested
 asset recognizable and structurally coherent. All numeric values must be finite.
@@ -151,9 +151,9 @@ def groq_generate(prompt, api_key):
             {"role": "user", "content": "Create this 3D asset: " + prompt}
         ],
         "temperature": 0.25,
-        "max_completion_tokens": 12000,
+        "max_completion_tokens": 6000,
         "reasoning_effort": "low",
-        "reasoning_format": "hidden",
+        "include_reasoning": False,
         "response_format": {"type": "json_object"}
     }
     request = urllib.request.Request(
