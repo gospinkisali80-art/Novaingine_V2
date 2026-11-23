@@ -375,10 +375,10 @@ public final class AIEditorAssistant {
                     for(int i=0;i<pv.length();i++){ double v=pv.optDouble(i,Double.NaN); if(!Double.isFinite(v)||Math.abs(v)>20) return "Vertex coordinate outside safe range."; positions[i]=(float)v; }
                     int vc=positions.length/3;
                     for(int i=0;i<ti.length();i++){ int v=ti.optInt(i,-1); if(v<0||v>=vc) return "Triangle index outside vertex array."; triangles[i]=v; }
-                    String name=a.optString("name","AI Mesh Part");
+                    String meshPartName=a.optString("name","AI Mesh Part");
                     float x=number(a,"x",0), y=number(a,"y",0), z=number(a,"z",0);
                     float red=Math.max(0,Math.min(1,number(a,"r",0.62f))), green=Math.max(0,Math.min(1,number(a,"g",0.68f))), blue=Math.max(0,Math.min(1,number(a,"b",0.76f)));
-                    int id=runOnRenderThread(() -> NativeBridge.nativeCreateMeshPart(positions,triangles,name,x,y,z,red,green,blue));
+                    int id=runOnRenderThread(() -> NativeBridge.nativeCreateMeshPart(positions,triangles,meshPartName,x,y,z,red,green,blue));
                     return id>0 ? "Created mesh part "+name+" with "+vc+" vertices and "+(triangles.length/3)+" triangles. ID "+id : "Mesh part rejected or GPU upload failed.";
                 }
                 case "create_sculpt_mesh": {
