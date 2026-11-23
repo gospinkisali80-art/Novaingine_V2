@@ -26,6 +26,13 @@ public final class EngineSurface extends GLSurfaceView
     private volatile float lookVertical;
 
     private boolean enginePaused;
+    private volatile boolean sculptMode;
+    private volatile float sculptRadius = 0.18f;
+    private volatile float sculptStrength = 0.12f;
+    private volatile float sculptFalloff = 0.5f;
+    private volatile float sculptPressure = 1.0f;
+    private volatile int sculptBrush;
+    private volatile boolean sculptSymmetry = true;
 
     public EngineSurface(Context context) {
         super(context);
@@ -118,6 +125,25 @@ public final class EngineSurface extends GLSurfaceView
             int imported = NativeBridge.nativeImportGlb(path);
             if (callback != null) post(() -> callback.accept(imported));
         });
+    }
+
+    public void setSculptOptions(boolean enabled, int brush, float radius, float strength, float falloff, boolean symmetry, float pressure) {
+        sculptMode = enabled;
+        sculptBrush = Math.max(0, Math.min(7, brush));
+        sculptRadius = Math.max(0.01f, Math.min(2.0f, radius));
+        sculptStrength = Math.max(0.001f, Math.min(0.5f, strength));
+        sculptFalloff = Math.max(0.0f, Math.min(1.0f, falloff));
+        sculptSymmetry = symmetry;
+        sculptPressure = Math.max(0.05f, Math.min(1.0f, pressure));
+        queueEvent(() -> NativeBridge.nativeSetSculptMode(enabled));
+    }
+
+    public void createSculptMesh(int shape, int density, java.util.function.IntConsumer callback) {
+        queueEvent(() -> { int id = NativeBridge.nativeCreateSculptMesh(shape, density); if (callback != null) post(() -> callback.accept(id)); });
+    }
+
+    public void exportSelectedObj(String path, java.util.function.Consumer<Boolean> callback) {
+        queueEvent(() -> { boolean ok = NativeBridge.nativeExportSelectedObj(path); if (callback != null) post(() -> callback.accept(ok)); });
     }
 
     public int getFps() {
