@@ -153,12 +153,32 @@ public final class EngineSurface extends GLSurfaceView
     }
 
     public void handleSculptTouch(MotionEvent event, float viewportTopOffset) {
+        handleSculptTouch(event, viewportTopOffset, 0.0f, 0.0f);
+    }
+
+    // Convert overlay coordinates into the actual GL SurfaceView coordinate space.
+    public void handleSculptTouch(MotionEvent event, View sourceView) {
+        if (sourceView == null) {
+            handleSculptTouch(event, 0.0f);
+            return;
+        }
+        int[] sourceLocation = new int[2];
+        int[] surfaceLocation = new int[2];
+        sourceView.getLocationOnScreen(sourceLocation);
+        getLocationOnScreen(surfaceLocation);
+        handleSculptTouch(event, 0.0f,
+                sourceLocation[0] - surfaceLocation[0],
+                sourceLocation[1] - surfaceLocation[1]);
+    }
+
+    private void handleSculptTouch(MotionEvent event, float viewportTopOffset,
+                                   float coordinateOffsetX, float coordinateOffsetY) {
         if (!sculptMode) return;
         int action = event.getActionMasked();
         if ((action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_MOVE)
                 && event.getPointerCount() == 1) {
-            final float x = event.getX(0);
-            final float y = event.getY(0) + viewportTopOffset;
+            final float x = event.getX(0) + coordinateOffsetX;
+            final float y = event.getY(0) + viewportTopOffset + coordinateOffsetY;
             float sensed = event.getPressure(0);
             final float pressure = (sensed > 0.05f && sensed <= 1.5f ? Math.min(1.0f, sensed) : 1.0f) * sculptPressure;
             final float radius = sculptRadius;
