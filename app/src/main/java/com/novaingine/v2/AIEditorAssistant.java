@@ -33,7 +33,7 @@ import java.util.concurrent.Executors;
 public final class AIEditorAssistant {
     private static final String PREFS = "nova_ai_settings";
     private static final String KEY = "groq_api_key";
-    private static final String MODEL_ID = "openai/gpt-oss-20b";
+    private static final String MODEL_ID = "llama-3.3-70b-versatile";
     private TextView modelInfo;
     private final Activity activity;
     private final EngineSurface engine;
@@ -130,7 +130,7 @@ public final class AIEditorAssistant {
 
     private void updateModelInfo() {
         if (modelInfo != null) {
-            modelInfo.setText("Provider: Groq  |  Model: OpenAI GPT-OSS 20B (" + MODEL_ID + ")  |  AI scene assistant");
+            modelInfo.setText("Provider: Groq  |  Model: Llama 3.3 70B (" + MODEL_ID + ")  |  AI modeling + sculpting assistant");
         }
     }
 
@@ -196,9 +196,7 @@ public final class AIEditorAssistant {
             body.put("tools", tools);
             body.put("tool_choice", "auto");
             body.put("temperature", 0.6);
-            body.put("max_completion_tokens", 2048);
-            body.put("reasoning_effort", "medium");
-            body.put("include_reasoning", false);
+            body.put("max_completion_tokens", 1024);
             body.put("parallel_tool_calls", false);
             JSONObject response = postGroq(body);
             JSONObject message = response.getJSONArray("choices").getJSONObject(0).getJSONObject("message");
@@ -286,7 +284,7 @@ public final class AIEditorAssistant {
         if (code == 429) {
             String wait = (retryAfter == null || retryAfter.trim().isEmpty())
                     ? "" : " Groq says to retry after " + retryAfter + " seconds.";
-            throw new Exception("Groq HTTP 429: GPT-OSS 20B is rate-limited for this API key."
+            throw new Exception("Groq HTTP 429: Llama 3.3 70B has reached this API key rate limit."
                     + wait + " I stopped automatic retries so Novaingine will not keep restarting. "
                     + "Your prompt is preserved; wait for the limit to reset, then press SEND again. "
                     + message);
