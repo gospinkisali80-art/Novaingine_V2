@@ -1402,7 +1402,7 @@ Java_com_novaingine_v2_NativeBridge_nativeUpdateSculptCursor(
         gRenderer.setSculptCursor(false,nova::Vec3(),nova::Vec3(0,1,0),0.18f);return;
     }
     gRenderer.setSculptCursor(true,hit.point+object->transform.position,hit.normal,
-        std::clamp((float)radiusValue,0.02f,1.0f));
+        std::clamp((float)radiusValue,0.02f,3.0f));
 }
 
 JNIEXPORT jboolean JNICALL
@@ -1527,7 +1527,7 @@ Java_com_novaingine_v2_NativeBridge_nativeSculptAtScreen(
     }
     if(!hit.found){gHasPreviousSculptHit=false;gRenderer.setSculptCursor(false,nova::Vec3(),nova::Vec3(0,1,0),0.18f);return 0;}
     nova::SculptMesh::Brush brush;
-    brush.radius=std::clamp((float)radiusValue,0.02f,1.0f);
+    brush.radius=std::clamp((float)radiusValue,0.02f,3.0f);
     brush.strength=std::clamp((float)strengthValue,0.0f,1.0f);
     brush.hardness=std::clamp((float)falloffValue,0.0f,1.0f);
     brush.pressure=std::clamp((float)pressureValue,0.0f,1.0f);
@@ -1701,7 +1701,7 @@ Java_com_novaingine_v2_NativeBridge_nativeAISculptStroke(
         if(!gSculptMesh)return -4;
     }
     nova::SculptMesh::Brush brush;
-    brush.radius=std::clamp(static_cast<float>(radiusValue),0.02f,1.0f);
+    brush.radius=std::clamp(static_cast<float>(radiusValue),0.02f,3.0f);
     brush.strength=std::clamp(static_cast<float>(strengthValue),0.0f,1.0f);
     brush.hardness=std::clamp(static_cast<float>(hardnessValue),0.0f,1.0f);
     brush.pressure=std::clamp(static_cast<float>(pressureValue),0.0f,1.0f);
