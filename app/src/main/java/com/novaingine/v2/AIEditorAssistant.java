@@ -440,8 +440,8 @@ public final class AIEditorAssistant {
                 }
                 case "create_mesh_part": {
                     JSONArray pv=a.optJSONArray("positions"), ti=a.optJSONArray("triangles");
-                    if(pv==null || ti==null || pv.length()<9 || pv.length()>900 || pv.length()%3!=0 || ti.length()<3 || ti.length()>1800 || ti.length()%3!=0)
-                        return "Invalid mesh arrays. Provide 3-300 vertices and triangle indices.";
+                    if(pv==null || ti==null || pv.length()<9 || pv.length()>9000 || pv.length()%3!=0 || ti.length()<3 || ti.length()>18000 || ti.length()%3!=0)
+                        return "Invalid mesh arrays. Provide 3-3000 vertices and triangle indices.";
                     float[] positions=new float[pv.length()]; int[] triangles=new int[ti.length()];
                     for(int i=0;i<pv.length();i++){ double v=pv.optDouble(i,Double.NaN); if(!Double.isFinite(v)||Math.abs(v)>20) return "Vertex coordinate outside safe range."; positions[i]=(float)v; }
                     int vc=positions.length/3;
