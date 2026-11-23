@@ -30,6 +30,9 @@ std::mutex engineMutex;
 Renderer gRenderer;
 nova::Scene gScene;
 std::unordered_map<uint32_t, nova::Mesh> gCustomMeshes;
+nova::VisualScript gVisualScript;
+nova::VisualScriptRuntime gVisualScriptRuntime;
+bool gVisualScriptStarted = false;
 nova::Camera gCamera;
 
 bool gInitialized = false;
@@ -488,8 +491,13 @@ Java_com_novaingine_v2_NativeBridge_nativeRender(
     );
 
     if (!gPaused) {
-        // Camera input is processed independently.
-        // The editor scene remains stationary unless edited.
+        if (gVisualScript.enabled) {
+            if (!gVisualScriptStarted) {
+                gVisualScriptRuntime.execute(gVisualScript, gScene, true, dt);
+                gVisualScriptStarted = true;
+            }
+            gVisualScriptRuntime.execute(gVisualScript, gScene, false, dt);
+        }
     }
 
     gRenderer.beginFrame();
@@ -1448,6 +1456,46 @@ Java_com_novaingine_v2_NativeBridge_nativeGetTriangles(
     );
 }
 
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetVisualScript(
+    JNIEnv* env, jclass, jintArray nodeData, jfloatArray nodeValues, jboolean enabled
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized) return JNI_FALSE;
+    if (enabled != JNI_TRUE || !nodeData || !nodeValues) {
+        gVisualScript.nodes.clear(); gVisualScript.enabled = false; gVisualScriptStarted = false;
+        return JNI_TRUE;
+    }
+    const jsize dataLength = env->GetArrayLength(nodeData);
+    const jsize valueLength = env->GetArrayLength(nodeValues);
+    if (dataLength <= 0 || dataLength % 6 != 0 || valueLength != (dataLength / 6) * 6 || dataLength / 6 > 128) return JNI_FALSE;
+    std::vector<jint> data(static_cast<size_t>(dataLength));
+    std::vector<jfloat> values(static_cast<size_t>(valueLength));
+    env->GetIntArrayRegion(nodeData, 0, dataLength, data.data());
+    env->GetFloatArrayRegion(nodeValues, 0, valueLength, values.data());
+    if (env->ExceptionCheck()) { env->ExceptionClear(); return JNI_FALSE; }
+    nova::VisualScript next;
+    next.enabled = true; next.runOnBeginPlay = true; next.runOnTick = true;
+    next.nodes.reserve(static_cast<size_t>(dataLength / 6));
+    for (jsize i = 0; i < dataLength / 6; ++i) {
+        const size_t d = static_cast<size_t>(i) * 6;
+        const size_t v = static_cast<size_t>(i) * 6;
+        if (data[d] <= 0 || data[d + 1] < 0 || data[d + 1] > 8) return JNI_FALSE;
+        nova::VisualNode node;
+        node.id = static_cast<uint32_t>(data[d]);
+        node.type = static_cast<nova::VisualNodeType>(data[d + 1]);
+        node.next = static_cast<uint32_t>(std::max(0, data[d + 2]));
+        node.trueNext = static_cast<uint32_t>(std::max(0, data[d + 3]));
+        node.falseNext = static_cast<uint32_t>(std::max(0, data[d + 4]));
+        node.objectId = static_cast<uint32_t>(std::max(0, data[d + 5]));
+        node.vectorValue = nova::Vec3(values[v], values[v + 1], values[v + 2]);
+        node.value = values[v + 3]; node.compareValue = values[v + 4]; node.condition = values[v + 5] >= 0.5f;
+        next.nodes.push_back(node);
+    }
+    gVisualScript = std::move(next);
+    gVisualScriptStarted = false;
+    return JNI_TRUE;
+}
 JNIEXPORT jboolean JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeUndo(
     JNIEnv*, jclass
