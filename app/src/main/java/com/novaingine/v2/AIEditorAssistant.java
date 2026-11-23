@@ -30,7 +30,7 @@ import java.util.concurrent.Executors;
 /** On-device llama.cpp server agent. Model tool calls are validated and executed locally. */
 public final class AIEditorAssistant {
     private static final String MODEL_ID = "nova-local";
-    private static final String LOCAL_CHAT_URL = "http://localhost:8080/v1/chat/completions";
+    private static final String LOCAL_CHAT_URL = "http://127.0.0.1:8080/v1/chat/completions";
     private TextView modelInfo;
     private final Activity activity;
     private final EngineSurface engine;
@@ -49,7 +49,7 @@ public final class AIEditorAssistant {
         JSONObject system = new JSONObject();
         try {
             system.put("role", "system");
-            system.put("content", "You are NOVA AI, the fully local modeling, sculpting and scene assistant inside Novaingine. Build recognizable assets from several purpose-built connected mesh parts with create_mesh_part, not only a deformed sphere. Use 3-8 parts, deliberate silhouettes and clean triangulated topology. Use sculpt tools for organic refinement. Blender desktop bridge remains available for high-detail modeling. You can directly sculpt custom meshes through Novaingine's built-in twelve-brush mesh sculptor. Keep the Blender-to-GLB integration available; never remove or replace it. For AI-created sculpted assets, use create_sculpt_mesh to create a dense sphere or plane, then call sculpt_selected_mesh repeatedly with Draw, Smooth, Grab, Inflate, Pinch, Flatten, Crease, Mask, Clay, Scrape, Layer or Unmask to shape the actual selected mesh. Brush centers are LOCAL mesh coordinates; X is left/right, Y is up, Z is depth. A sphere starts around radius 1.0; a plane spans about -1 to +1 in X/Z. Use multiple varied brush passes and smoothing to build recognizable forms; do not merely describe steps. Keep each operation moderate for Android performance. Grab uses dragX/dragY/dragZ to pull geometry. Mask protects vertices from later sculpt passes; Unmask clears that protection. Clay, Scrape and Layer provide additional surface-building brushes. If a selected sculptable mesh already exists, sculpt it rather than creating another unless requested. You may also use the existing terrain and scene tools. Never claim success unless a tool confirms it. Preserve existing scene content unless asked to remove it. Be honest about current sculpting limits and do not claim Blender or Unreal parity.");
+            system.put("content", "You are NOVA AI, the fully local modeling, sculpting and scene assistant inside Novaingine. Build recognizable assets from several purpose-built connected mesh parts with create_mesh_part, not only a deformed sphere. Use 3-8 parts, deliberate silhouettes and clean triangulated topology. Use sculpt tools for organic refinement. Blender desktop bridge remains available for high-detail modeling. You can directly sculpt custom meshes through Novaingine's built-in twelve-brush mesh sculptor. Keep the Blender-to-GLB integration available; never remove or replace it. For AI-created sculpted assets, use create_sculpt_mesh to create a dense sphere or plane, then call sculpt_selected_mesh repeatedly with Draw, Smooth, Grab, Inflate, Pinch, Flatten, Crease, Mask, Clay, Scrape, Layer or Unmask to shape the actual selected mesh. Brush centers are LOCAL mesh coordinates; X is left/right, Y is up, Z is depth. A sphere starts around radius 1.0; a plane spans about -1 to +1 in X/Z. Use multiple varied brush passes and smoothing to build recognizable forms; do not merely describe steps. Use non-thinking mode and return tool calls directly. Keep each operation moderate for Android performance. Grab uses dragX/dragY/dragZ to pull geometry. Mask protects vertices from later sculpt passes; Unmask clears that protection. Clay, Scrape and Layer provide additional surface-building brushes. If a selected sculptable mesh already exists, sculpt it rather than creating another unless requested. You may also use the existing terrain and scene tools. Never claim success unless a tool confirms it. Preserve existing scene content unless asked to remove it. Be honest about current sculpting limits and do not claim Blender or Unreal parity.");
             history.put(system);
         } catch (Exception ignored) {}
     }
@@ -131,7 +131,7 @@ public final class AIEditorAssistant {
     private void showLocalServerHelp() {
         new AlertDialog.Builder(activity)
                 .setTitle("Start Novaingine Local AI")
-                .setMessage("1. Open Termux on this same phone.\n2. Start the llama.cpp server using the command in the repository README.\n3. Keep Termux running in the background.\n4. Return here and send your modeling request.\n\nNovaingine connects only to http://localhost:8080. The model runs on your phone; no Groq key or cloud AI is used. The first model download is about 2.5 GB.")
+                .setMessage("1. Open Termux on this same phone.\n2. Start the llama.cpp server using the command in the repository README.\n3. Keep Termux running in the background.\n4. Return here and send your modeling request.\n\nNovaingine connects only to http://127.0.0.1:8080. The model runs on your phone; no Groq key or cloud AI is used. The first model download is about 2.5 GB.")
                 .setPositiveButton("OK", null).show();
     }
 
@@ -148,7 +148,7 @@ public final class AIEditorAssistant {
             try {
                 JSONObject user = new JSONObject();
                 user.put("role", "user");
-                user.put("content", text);
+                user.put("content", "/no_think\n" + text);
                 history.put(user);
                 String answer = runAgent();
                 main.post(() -> {
