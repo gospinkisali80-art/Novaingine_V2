@@ -14,9 +14,11 @@ enum class VisualNodeType : uint8_t {
     BeginPlay,
     Tick,
     MoveObject,
-    SetObjectVisible,
-    Branch,
-    End
+    SetObjectVisible = 4,
+    Branch = 5,
+    End = 6,
+    RotateObject = 7,
+    ScaleObject = 8
 };
 
 struct VisualNode {
@@ -126,13 +128,36 @@ public:
                     current = node.next;
                     break;
 
-                case VisualNodeType::MoveObject:
-                    if (!scene.moveObject(targetId, node.vectorValue)) {
+                case VisualNodeType::MoveObject: {
+                    const float factor = beginPlay ? 1.0f : std::clamp(deltaTime, 0.0f, 0.1f);
+                    if (!scene.moveObject(targetId, node.vectorValue * factor)) {
                         result.message = "Move node could not find its target object";
                         return result;
                     }
                     current = node.next;
                     break;
+                }
+
+                case VisualNodeType::RotateObject: {
+                    SceneObject* object = scene.find(targetId);
+                    if (!object) { result.message = "Rotate node could not find its target object"; return result; }
+                    const float factor = beginPlay ? 1.0f : std::clamp(deltaTime, 0.0f, 0.1f);
+                    object->transform.rotation = object->transform.rotation + node.vectorValue * factor;
+                    current = node.next;
+                    break;
+                }
+
+                case VisualNodeType::ScaleObject: {
+                    SceneObject* object = scene.find(targetId);
+                    if (!object) { result.message = "Scale node could not find its target object"; return result; }
+                    const float factor = beginPlay ? 1.0f : std::clamp(deltaTime, 0.0f, 0.1f);
+                    object->transform.scale = object->transform.scale + node.vectorValue * factor;
+                    object->transform.scale.x = std::max(0.01f, object->transform.scale.x);
+                    object->transform.scale.y = std::max(0.01f, object->transform.scale.y);
+                    object->transform.scale.z = std::max(0.01f, object->transform.scale.z);
+                    current = node.next;
+                    break;
+                }
 
                 case VisualNodeType::SetObjectVisible:
                     if (!scene.setVisibility(targetId, node.condition)) {
@@ -161,7 +186,6 @@ public:
 
         result.success = true;
         result.message = "Visual script completed";
-        (void)deltaTime;
         return result;
     }
 };
