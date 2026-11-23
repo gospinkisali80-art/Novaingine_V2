@@ -51,20 +51,21 @@ nova::VisualScriptRuntime gVisualScriptRuntime;
 bool gVisualScriptStarted = false;
 nova::Camera gCamera;
 
-std::mutex gSculptDataMutex;
-std::mutex gSculptQueueMutex;
-std::condition_variable gSculptQueueCv;
-std::deque<struct SculptDabJob> gSculptQueue;
-std::thread gSculptWorker;
-std::atomic<bool> gSculptWorkerStarted{false};
-std::atomic<bool> gSculptMeshDirty{false};
-
 struct SculptDabJob {
     nova::Vec3 center, normal, delta;
     nova::SculptMesh::Brush brush;
     bool begin=false;
     bool end=false;
 };
+std::mutex gSculptDataMutex;
+std::mutex gSculptQueueMutex;
+std::condition_variable gSculptQueueCv;
+std::deque<SculptDabJob> gSculptQueue;
+std::thread gSculptWorker;
+std::atomic<bool> gSculptWorkerStarted{false};
+std::atomic<bool> gSculptMeshDirty{false};
+
+
 
 void startSculptWorker() {
     bool expected=false;
@@ -1334,7 +1335,10 @@ JNIEXPORT void JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeSetSculptMode(JNIEnv*, jclass, jboolean enabled) {
     std::lock_guard<std::mutex> lock(engineMutex);
     gSculptMode = enabled == JNI_TRUE;
-    if (!gSculptMode) { gSculptStrokeActive = false; gHasPreviousSculptHit = false; }
+    if (!gSculptMode && gSculptStrokeActive) {
+        gSculptStrokeActive=false;gHasPreviousSculptHit=false;
+        enqueueSculptJob(SculptDabJob{nova::Vec3(),nova::Vec3(),nova::Vec3(),nova::SculptMesh::Brush{},false,true});
+    }
 }
 
 JNIEXPORT void JNICALL
