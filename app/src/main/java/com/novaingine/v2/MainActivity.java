@@ -558,7 +558,7 @@ public final class MainActivity extends Activity
         content.setPadding(dp(16), dp(8), dp(16), dp(8));
 
         TextView info = new TextView(this);
-        info.setText("Create a dense sphere or plane, then enable Sculpt Mode. One finger paints directly on the mesh; two fingers still orbit/pan/zoom. Select a brush and adjust its radius, strength, falloff and pressure below.");
+        info.setText("Create a dense sphere or plane, select a mesh, choose a brush, then enable Sculpt Mode. Close this panel and drag one finger directly on the mesh for continuous local sculpting. Two fingers pan/zoom. Brush strokes do not use Groq.");
         info.setTextColor(Color.DKGRAY);
         info.setTextSize(12);
         content.addView(info);
@@ -590,7 +590,7 @@ public final class MainActivity extends Activity
                                 android.widget.Toast.LENGTH_SHORT).show()));
 
         Spinner brush = new Spinner(this);
-        String[] brushes = {"Draw", "Smooth", "Grab", "Inflate", "Pinch", "Flatten", "Crease", "Mask"};
+        String[] brushes = {"Draw", "Smooth", "Grab", "Inflate", "Pinch", "Flatten", "Crease", "Mask", "Clay", "Scrape", "Layer", "Unmask"};
         brush.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item, brushes));
         content.addView(brush);
 
@@ -662,6 +662,7 @@ public final class MainActivity extends Activity
         new AlertDialog.Builder(this)
                 .setTitle("Viewport Mesh Sculpting")
                 .setView(content)
+                .setPositiveButton("DONE — SCULPT VIEWPORT", (dialog, which) -> {})
                 .setNegativeButton("Close", null)
                 .show();
     }
