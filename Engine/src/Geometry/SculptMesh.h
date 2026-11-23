@@ -336,14 +336,14 @@ public:
                     if(protection<=0.0f)continue;
                     const float amount=signedStrength*w*protection;
                     switch(b.type) {
-                        case 0: p=p+averageNormal*(amount*b.radius*0.1f);break;
+                        case 0: p=p+averageNormal*(amount*b.radius*0.45f);break;
                         case 1: {
                             Vec3 sum;uint32_t count=0;
                             for(uint32_t k=adjacencyOffsets[i];k<adjacencyOffsets[i+1];k++){sum=sum+positions[adjacency[k]];++count;}
                             if(count){Vec3 avg=sum/(float)count;p=p+(avg-p)*(std::fabs(amount)*0.5f);}
                             break;
                         }
-                        case 3: p=p+ownNormal*(amount*b.radius*0.1f);break;
+                        case 3: p=p+ownNormal*(amount*b.radius*0.45f);break;
                         case 4: {
                             Vec3 lineStart=c-movement;
                             Vec3 axis=c-lineStart;float den=dot(axis,axis);
@@ -357,7 +357,7 @@ public:
                         }
                         case 8: {
                             p=p-averageNormal*(dot(p-c,averageNormal)*std::fabs(amount));
-                            p=p+averageNormal*(amount*b.radius*0.1f);break;
+                            p=p+averageNormal*(amount*b.radius*0.45f);break;
                         }
                         case 9: p=p-averageNormal*(dot(p-averagePosition,averageNormal)*std::fabs(amount));break;
                         case 10: p=p+averageNormal*(std::max(0.0f,dot(c-p,averageNormal))*std::fabs(amount));break;
