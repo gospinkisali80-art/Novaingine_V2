@@ -11,7 +11,8 @@ namespace nova {
 
 enum class SculptBrush : int {
     Draw = 0, Smooth = 1, Grab = 2, Inflate = 3,
-    Pinch = 4, Flatten = 5, Crease = 6, Mask = 7
+    Pinch = 4, Flatten = 5, Crease = 6, Mask = 7,
+    Clay = 8, Scrape = 9, Layer = 10, MaskClear = 11
 };
 
 class MeshSculptor {
@@ -155,16 +156,36 @@ public:
                 case SculptBrush::Crease:
                     p = original - normal * (crease * w);
                     break;
+                case SculptBrush::Clay:
+                    p = original + normal * (strength * w * 0.75f);
+                    break;
+                case SculptBrush::Scrape: {
+                    const float signedHeight = dot(original - center, normal);
+                    p = original - normal * (signedHeight * std::min(1.0f, strength * w * 4.0f));
+                    break;
+                }
+                case SculptBrush::Layer: {
+                    const float signedHeight = dot(original - center, normal);
+                    if (signedHeight < 0.0f) p = original + normal * std::min(-signedHeight, strength * w * 2.0f);
+                    break;
+                }
                 case SculptBrush::Mask:
                     masks[i] = std::clamp(masks[i] + strength * w, 0.0f, 1.0f);
+                    changed = true;
                     break;
+                case SculptBrush::MaskClear: {
+                    const float before = masks[i];
+                    masks[i] = std::max(0.0f, masks[i] - strength * w);
+                    changed = changed || masks[i] != before;
+                    break;
+                }
             }
             if (length(p - original) > 0.000001f) {
                 vertex.position = p;
                 changed = true;
             }
         }
-        if (brush == SculptBrush::Mask) return true;
+        if (brush == SculptBrush::Mask || brush == SculptBrush::MaskClear) return changed;
         if (!changed) return false;
         mesh.setData(std::move(vertices), indices);
         mesh.recalculateNormals();
