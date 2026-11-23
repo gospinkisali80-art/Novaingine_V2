@@ -7,6 +7,10 @@
 #include <fstream>
 #include <iomanip>
 #include <mutex>
+#include <condition_variable>
+#include <deque>
+#include <thread>
+#include <atomic>
 #include <unordered_map>
 #include <vector>
 
@@ -30,6 +34,53 @@
 namespace {
 
 std::mutex engineMutex;
+
+std::mutex gSculptDataMutex;
+std::mutex gSculptQueueMutex;
+std::condition_variable gSculptQueueCv;
+std::deque<struct SculptDabJob> gSculptQueue;
+std::thread gSculptWorker;
+std::atomic<bool> gSculptWorkerStarted{false};
+std::atomic<bool> gSculptMeshDirty{false};
+
+struct SculptDabJob {
+    nova::Vec3 center, normal, delta;
+    nova::SculptMesh::Brush brush;
+    bool begin=false;
+    bool end=false;
+};
+
+void startSculptWorker() {
+    bool expected=false;
+    if(!gSculptWorkerStarted.compare_exchange_strong(expected,true))return;
+    std::thread([](){
+        for(;;) {
+            SculptDabJob job;
+            {
+                std::unique_lock<std::mutex> lock(gSculptQueueMutex);
+                gSculptQueueCv.wait(lock,[](){return !gSculptQueue.empty();});
+                job=std::move(gSculptQueue.front());
+                gSculptQueue.pop_front();
+            }
+            std::lock_guard<std::mutex> dataLock(gSculptDataMutex);
+            if(!gSculptMesh)continue;
+            if(job.begin){gSculptMesh->beginStroke();continue;}
+            if(job.end){gSculptMesh->endStroke();continue;}
+            if(gSculptMesh->applyDab(job.center,job.normal,job.delta,job.brush))
+                gSculptMeshDirty.store(true,std::memory_order_release);
+        }
+    }).detach();
+}
+void enqueueSculptJob(const SculptDabJob& job) {
+    {
+        std::lock_guard<std::mutex> lock(gSculptQueueMutex);
+        if(gSculptQueue.size()>=256)gSculptQueue.pop_front();
+        gSculptQueue.push_back(job);
+    }
+    gSculptQueueCv.notify_one();
+}
+
+
 
 Renderer gRenderer;
 nova::Scene gScene;
@@ -478,6 +529,7 @@ Java_com_novaingine_v2_NativeBridge_nativeInit(
     applyShowFlags(31);
 
     gInitialized = true;
+    startSculptWorker();
 
     NOVA_LOG(
         "Novaingine initialized. Scene objects: %zu",
