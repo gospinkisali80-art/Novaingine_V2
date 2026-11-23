@@ -913,6 +913,9 @@ Java_com_novaingine_v2_NativeBridge_nativeLoadScene(
     recordUndo(true);
     gScene = loaded;
     gCustomMeshes.clear();
+    gSculptMasks.clear();
+    gSculptStrokeActive = false;
+    gHasPreviousSculptHit = false;
     gRenderer.releaseAllMeshes();
     gVerticalVelocity = 0.0f;
     gPhysicsGrounded = false;
