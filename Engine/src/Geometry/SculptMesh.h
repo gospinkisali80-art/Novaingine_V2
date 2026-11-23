@@ -41,7 +41,7 @@ public:
         AABB bounds;
         GLuint vao=0,vbo=0,ibo=0;
         GLsizei indexCount=0;
-        bool dirty=true;
+        bool dirty=true;\n        bool allocated=false;
         void release(){ if(ibo)glDeleteBuffers(1,&ibo); if(vbo)glDeleteBuffers(1,&vbo); if(vao)glDeleteVertexArrays(1,&vao); vao=vbo=ibo=0; indexCount=0; }
     };
     struct Hit { bool found=false; float distance=0; Vec3 point{},normal{}; uint32_t triangle=0; };
@@ -232,15 +232,17 @@ public:
         for(auto& c:chunks){
             std::vector<Vertex> verts;std::vector<uint32_t> inds;verts.reserve(c.triangles.size()*3);inds.reserve(c.triangles.size()*3);
             for(uint32_t t:c.triangles)for(int k=0;k<3;k++){uint32_t src=indices[t*3+k];uint32_t dst=(uint32_t)verts.size();verts.emplace_back(positions[src],normals[src],0,0);inds.push_back(dst);}
-            if(!c.vao){glGenVertexArrays(1,&c.vao);glGenBuffers(1,&c.vbo);glGenBuffers(1,&c.ibo);}
+            bool fresh=!c.vao;
+            if(fresh){glGenVertexArrays(1,&c.vao);glGenBuffers(1,&c.vbo);glGenBuffers(1,&c.ibo);}
             glBindVertexArray(c.vao);glBindBuffer(GL_ARRAY_BUFFER,c.vbo);
-            if(c.dirty)glBufferData(GL_ARRAY_BUFFER,verts.size()*sizeof(Vertex),verts.data(),GL_DYNAMIC_DRAW);
+            if(fresh){glBufferData(GL_ARRAY_BUFFER,verts.size()*sizeof(Vertex),nullptr,GL_DYNAMIC_DRAW);glBufferSubData(GL_ARRAY_BUFFER,0,verts.size()*sizeof(Vertex),verts.data());}
+            else if(c.dirty)glBufferSubData(GL_ARRAY_BUFFER,0,verts.size()*sizeof(Vertex),verts.data());
             glEnableVertexAttribArray(0);glVertexAttribPointer(0,3,GL_FLOAT,GL_FALSE,sizeof(Vertex),(void*)offsetof(Vertex,position));
             glEnableVertexAttribArray(1);glVertexAttribPointer(1,3,GL_FLOAT,GL_FALSE,sizeof(Vertex),(void*)offsetof(Vertex,normal));
             glEnableVertexAttribArray(2);glVertexAttribPointer(2,2,GL_FLOAT,GL_FALSE,sizeof(Vertex),(void*)offsetof(Vertex,u));
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,c.ibo);
-            if(c.dirty)glBufferData(GL_ELEMENT_ARRAY_BUFFER,inds.size()*sizeof(uint32_t),inds.data(),GL_DYNAMIC_DRAW);
-            c.indexCount=(GLsizei)inds.size();c.dirty=false;
+            if(fresh)glBufferData(GL_ELEMENT_ARRAY_BUFFER,inds.size()*sizeof(uint32_t),inds.data(),GL_STATIC_DRAW);
+            c.allocated=true;c.indexCount=(GLsizei)inds.size();c.dirty=false;
         }
         glBindVertexArray(0);return true;
     }
