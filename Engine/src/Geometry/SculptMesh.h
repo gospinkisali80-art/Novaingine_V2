@@ -281,7 +281,7 @@ public:
     bool applyDab(const Vec3& center,const Vec3& hitNormal,const Vec3& dragDelta,const Brush& input) {
         if(positions.empty()||indices.empty())return false;
         Brush b=input;
-        b.radius=std::clamp(b.radius,0.02f,1.0f);
+        b.radius=std::clamp(b.radius,0.02f,3.0f);
         b.strength=std::clamp(b.strength,0.0f,1.0f);
         b.hardness=std::clamp(b.hardness,0.0f,1.0f);
         b.pressure=std::clamp(b.pressure,0.0f,1.0f);
