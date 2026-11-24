@@ -663,6 +663,36 @@ Java_com_novaingine_v2_NativeBridge_nativeTouch(
 }
 
 JNIEXPORT void JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeOrbitSelected(
+    JNIEnv*, jclass, jfloat deltaX, jfloat deltaY
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized || gPaused) return;
+
+    nova::SceneObject* selected = gScene.selected();
+    if (selected == nullptr) return;
+
+    const nova::Vec3 target = selected->transform.position;
+    nova::Vec3 offset = gCamera.position - target;
+    float distance = nova::length(offset);
+    if (distance < 0.25f) distance = 4.0f;
+
+    float yaw = std::atan2(offset.z, offset.x);
+    float pitch = std::asin(std::clamp(offset.y / distance, -1.0f, 1.0f));
+    yaw += static_cast<float>(deltaX) * 0.008f;
+    pitch -= static_cast<float>(deltaY) * 0.008f;
+    pitch = std::clamp(pitch, -1.48f, 1.48f);
+
+    const float horizontal = distance * std::cos(pitch);
+    gCamera.position = target + nova::Vec3(
+        horizontal * std::cos(yaw),
+        distance * std::sin(pitch),
+        horizontal * std::sin(yaw)
+    );
+    setCameraDirection(target - gCamera.position);
+}
+
+JNIEXPORT void JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeZoom(
     JNIEnv*,
     jclass,
