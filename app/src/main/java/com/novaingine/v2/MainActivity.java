@@ -608,6 +608,10 @@ public final class MainActivity extends Activity
 
     private static final int REQUEST_IMPORT_GLB = 7412;
 
+    public void openSculptAssetPicker() {
+        openGlbPicker();
+    }
+
     private void openGlbPicker() {
         closeToolsDrawer();
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
