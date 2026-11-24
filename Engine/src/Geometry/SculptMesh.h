@@ -331,11 +331,15 @@ public:
                     float protection=1.0f-std::clamp(mask[i],0.0f,1.0f);
                     Vec3 p=positions[i],ownNormal=normalize(normals[i]);
                     if(b.type==7) {
-                        float before=mask[i];mask[i]=std::clamp(before+b.strength*b.pressure*w,0.0f,1.0f);
+                        float before=mask[i];
+                        float direction=b.subtract?-1.0f:1.0f;
+                        mask[i]=std::clamp(before+direction*b.strength*b.pressure*w,0.0f,1.0f);
                         changed=changed||mask[i]!=before;continue;
                     }
                     if(b.type==11) {
-                        float before=mask[i];mask[i]=std::max(0.0f,before-b.strength*b.pressure*w);
+                        float before=mask[i];
+                        float direction=b.subtract?1.0f:-1.0f;
+                        mask[i]=std::clamp(before+direction*b.strength*b.pressure*w,0.0f,1.0f);
                         changed=changed||mask[i]!=before;continue;
                     }
                     if(protection<=0.0f)continue;
@@ -368,7 +372,7 @@ public:
                             p=p+normalize(c-p)*(amount*b.radius*0.08f);break;
                         }
                         case 8: {
-                            p=p-averageNormal*(dot(p-c,averageNormal)*std::fabs(amount));
+                            p=p-averageNormal*(dot(p-c,averageNormal)*amount);
                             p=p+averageNormal*(amount*b.radius*0.45f);break;
                         }
                         case 9: p=p-averageNormal*(dot(p-averagePosition,averageNormal)*amount);break;
@@ -385,7 +389,7 @@ public:
                             break;
                         }
                         case 13: { // Clay Strips: raised flattened strip.
-                            float band=std::max(0.0f,1.0f-std::fabs(dot(p-c,normalize(cross(averageNormal,movement+Vec3(0.001f,0.0f,0.0f)))))/std::max(0.02f,b.radius*0.35f));
+                            float band=std::max(0.0f,1.0f-std::fabs(dot(p-c,normalize(cross(averageNormal,strokeMovement+Vec3(0.001f,0.0f,0.0f)))))/std::max(0.02f,b.radius*0.35f));
                             p=p+averageNormal*(amount*b.radius*0.55f*std::max(w,band*0.45f));
                             break;
                         }
