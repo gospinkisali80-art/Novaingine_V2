@@ -120,9 +120,17 @@ public final class ManualSculptWorkspace extends FrameLayout {
         bottom.setBackground(new GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
                 new int[]{0xF51B222C, 0xFF10151C}));
+        // Keep the complete tool drawer reachable on short phone screens.
+        ScrollView drawerScroll = new ScrollView(activity);
+        drawerScroll.setFillViewport(false);
+        drawerScroll.setVerticalScrollBarEnabled(true);
+        drawerScroll.setBackgroundColor(Color.TRANSPARENT);
+        drawerScroll.addView(bottom, new ScrollView.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        int drawerHeight = (int)(getResources().getDisplayMetrics().heightPixels * 0.62f);
         FrameLayout.LayoutParams bottomParams = new FrameLayout.LayoutParams(
-                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM);
-        addView(bottom, bottomParams);
+                LayoutParams.MATCH_PARENT, drawerHeight, Gravity.BOTTOM);
+        addView(drawerScroll, bottomParams);
 
         final TextView selectedToolIndicator = button("ACTIVE: DRAW  ▴ TOOLS");
         selectedToolIndicator.setTextColor(ACCENT);
@@ -134,7 +142,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
         final Runnable closeToolDrawer = () -> {
             if (!drawerOpen[0]) return;
             drawerOpen[0] = false;
-            bottom.animate().translationY(bottom.getHeight() + dp(8)).setDuration(220).start();
+            drawerScroll.animate().translationY(drawerScroll.getHeight() + dp(8)).setDuration(220).start();
             selectedToolIndicator.setTextColor(ACCENT);
         };
         selectedToolIndicator.setOnClickListener(v -> {
@@ -142,17 +150,17 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 closeToolDrawer.run();
             } else {
                 drawerOpen[0] = true;
-                bottom.animate().translationY(0).setDuration(220).start();
+                drawerScroll.animate().translationY(0).setDuration(220).start();
                 selectedToolIndicator.setText("CLOSE TOOLS  ▾");
                 selectedToolIndicator.setTextColor(Color.WHITE);
             }
         });
-        bottom.post(() -> bottom.setTranslationY(bottom.getHeight() + dp(8)));
+        drawerScroll.post(() -> drawerScroll.setTranslationY(drawerScroll.getHeight() + dp(8)));
 
         status = label("Choose a shape, then drag on the mesh to sculpt.", 10, 0xFFB8C4D1, false);
         bottom.addView(status);
 
-        TextView brushSelector = button("SCULPT BRUSHES  ▾");
+        TextView brushSelector = button("SCULPT BRUSHES  ▴");
         brushSelector.setTextColor(ACCENT);
         bottom.addView(brushSelector, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
         ScrollView brushScroll = new ScrollView(activity);
@@ -161,7 +169,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
         brushList.setPadding(0, dp(4), 0, dp(4));
         brushScroll.addView(brushList);
         bottom.addView(brushScroll, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(190)));
-        brushScroll.setVisibility(View.GONE);
+        brushScroll.setVisibility(View.VISIBLE);
         brushSelector.setOnClickListener(v -> {
             boolean opening = brushScroll.getVisibility() != View.VISIBLE;
             brushScroll.setVisibility(opening ? View.VISIBLE : View.GONE);
@@ -204,7 +212,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
         brushControls = new LinearLayout(activity);
         brushControls.setOrientation(LinearLayout.VERTICAL);
         bottom.addView(brushControls);
-        addSlider(brushControls, "BRUSH SIZE", 1, 300, 13, value -> {
+        addSlider(brushControls, "BRUSH SIZE", 1, 300, 7, value -> {
             radius = 0.02f + ((value - 1) / 299.0f) * 7.98f;
             applyOptions();
         });
