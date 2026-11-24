@@ -1,6 +1,7 @@
 name: Novaingine V2 Android Build
 
 on:
+  pull_request:
   workflow_dispatch:
   push:
     branches:
