@@ -205,13 +205,13 @@ public final class MainActivity extends Activity
                 new FrameLayout.LayoutParams(
                         FrameLayout.LayoutParams.WRAP_CONTENT,
                         FrameLayout.LayoutParams.WRAP_CONTENT,
-                        Gravity.TOP | Gravity.END
+                        Gravity.TOP | Gravity.START
                 );
 
         statsParams.setMargins(
-                0,
-                dp(55),
                 dp(8),
+                dp(55),
+                0,
                 0
         );
 
