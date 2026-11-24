@@ -13,6 +13,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -72,12 +73,24 @@ public final class RemoteCommandDispatcher implements AutoCloseable {
                     details = "Android engine agent is online and ready. Network transport is not enabled in this build.";
                     break;
                 case "scene.inspect":
-                    details = inspectScene();
+                    details = inspectScene(payload.optBoolean("includeTransforms", true));
                     break;
                 case "scene.select_object": {
                     int id = payload.getInt("objectId");
-                    runOnRenderThread(() -> { NativeBridge.nativeSelectObjectById(id); return true; });
-                    details = "Selection command sent for object ID " + id + ".";
+                    boolean selected = runOnRenderThread(() -> {
+                        String[] objects = engine.getSceneObjects();
+                        String prefix = id + "|";
+                        if (objects == null) return false;
+                        for (String object : objects) {
+                            if (object != null && object.startsWith(prefix)) {
+                                NativeBridge.nativeSelectObjectById(id);
+                                return true;
+                            }
+                        }
+                        return false;
+                    });
+                    if (!selected) throw new IllegalArgumentException("Object ID " + id + " does not exist in the current scene.");
+                    details = "Selected object ID " + id + ".";
                     break;
                 }
                 case "object.set_transform": {
@@ -86,7 +99,14 @@ public final class RemoteCommandDispatcher implements AutoCloseable {
                             vec(payload, "rotation", 0), vec(payload, "rotation", 1), vec(payload, "rotation", 2),
                             vec(payload, "scale", 0), vec(payload, "scale", 1), vec(payload, "scale", 2)
                     };
-                    runOnRenderThread(() -> { NativeBridge.nativeSetSelectedTransform(t); return true; });
+                    boolean updated = runOnRenderThread(() -> {
+                        float[] current = engine.getSelectedTransform();
+                        if (current == null || current.length < 9
+                                || current[6] <= 0 || current[7] <= 0 || current[8] <= 0) return false;
+                        NativeBridge.nativeSetSelectedTransform(t);
+                        return true;
+                    });
+                    if (!updated) throw new IllegalStateException("Select an object before changing its transform.");
                     details = "Selected object transform updated.";
                     break;
                 }
@@ -223,7 +243,7 @@ public final class RemoteCommandDispatcher implements AutoCloseable {
         return (float) payload.getJSONArray(key).getDouble(index);
     }
 
-    private String inspectScene() throws Exception {
+    private String inspectScene(boolean includeTransforms) throws Exception {
         return runOnRenderThread(() -> {
             JSONArray rows = new JSONArray();
             String[] objects = engine.getSceneObjects();
@@ -248,12 +268,31 @@ public final class RemoteCommandDispatcher implements AutoCloseable {
         CountDownLatch latch = new CountDownLatch(1);
         AtomicReference<T> value = new AtomicReference<>();
         AtomicReference<Throwable> failure = new AtomicReference<>();
+        AtomicBoolean cancelled = new AtomicBoolean(false);
+        AtomicBoolean started = new AtomicBoolean(false);
+        Object startGate = new Object();
         engine.queueEvent(() -> {
+            synchronized (startGate) {
+                if (cancelled.get()) {
+                    latch.countDown();
+                    return;
+                }
+                started.set(true);
+            }
             try { value.set(call.run()); }
             catch (Throwable t) { failure.set(t); }
             finally { latch.countDown(); }
         });
-        if (!latch.await(12, TimeUnit.SECONDS)) throw new IllegalStateException("Renderer did not respond within 12 seconds.");
+        if (!latch.await(12, TimeUnit.SECONDS)) {
+            synchronized (startGate) {
+                if (!started.get()) {
+                    cancelled.set(true);
+                    throw new IllegalStateException("Renderer did not respond within 12 seconds; command was cancelled before execution.");
+                }
+            }
+            if (!latch.await(30, TimeUnit.SECONDS))
+                throw new IllegalStateException("Renderer operation started but did not finish. Check the editor before retrying.");
+        }
         if (failure.get() != null) throw new IllegalStateException(failure.get().getMessage());
         return value.get();
     }
