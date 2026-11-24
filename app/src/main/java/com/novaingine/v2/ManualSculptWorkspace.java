@@ -306,6 +306,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
             orbitMode = !orbitMode;
             if (orbitMode) {
                 activeTransformMode = -1;
+                brushControls.setVisibility(View.GONE);
                 sculptEnabled = false;
                 applyOptions();
                 orbitButton.setText("ORBIT VIEW: ON  • DRAG TO ROTATE");
@@ -313,7 +314,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 selectedToolIndicator.setText("ORBIT SELECTED OBJECT  ▴ TOOLS");
             } else {
                 sculptEnabled = true;
-                brushControls.setVisibility(View.VISIBLE);
+                brushControls.setVisibility(activeTransformMode < 0 ? View.VISIBLE : View.GONE);
                 applyOptions();
                 orbitButton.setText("ORBIT VIEW: OFF");
                 orbitButton.setTextColor(Color.WHITE);
@@ -399,6 +400,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
         mode.setTextColor(ACCENT);
         mode.setOnClickListener(v -> {
             sculptEnabled = !sculptEnabled;
+            brushControls.setVisibility(sculptEnabled && activeTransformMode < 0 && !orbitMode
+                    ? View.VISIBLE : View.GONE);
             mode.setText(sculptEnabled ? "SCULPT: ON" : "SCULPT: OFF");
             mode.setTextColor(sculptEnabled ? ACCENT : Color.WHITE);
             applyOptions();
