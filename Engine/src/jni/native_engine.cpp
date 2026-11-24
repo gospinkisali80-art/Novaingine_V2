@@ -1133,6 +1133,37 @@ Java_com_novaingine_v2_NativeBridge_nativeGetSelectedTransform(
     return result;
 }
 
+JNIEXPORT jfloatArray JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeProjectSelectedPosition(
+    JNIEnv* env, jclass
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    jfloat values[4] = {0.0f, 0.0f, 2.0f, 0.0f};
+    const nova::SceneObject* object = gScene.selected();
+    if (gInitialized && object && gViewportWidth > 0 && gViewportHeight > 0) {
+        const nova::Vec3& p = object->transform.position;
+        nova::Mat4 vp = multiplyMat4(
+            gCamera.projectionMatrix(static_cast<float>(gViewportWidth) /
+                                     static_cast<float>(gViewportHeight)),
+            gCamera.viewMatrix()
+        );
+        const float x = p.x, y = p.y, z = p.z;
+        const float clipX = vp.m[0] * x + vp.m[4] * y + vp.m[8] * z + vp.m[12];
+        const float clipY = vp.m[1] * x + vp.m[5] * y + vp.m[9] * z + vp.m[13];
+        const float clipZ = vp.m[2] * x + vp.m[6] * y + vp.m[10] * z + vp.m[14];
+        const float clipW = vp.m[3] * x + vp.m[7] * y + vp.m[11] * z + vp.m[15];
+        if (clipW > 0.0001f) {
+            values[0] = clipX / clipW;
+            values[1] = clipY / clipW;
+            values[2] = clipZ / clipW;
+            values[3] = clipW;
+        }
+    }
+    jfloatArray result = env->NewFloatArray(4);
+    if (result) env->SetFloatArrayRegion(result, 0, 4, values);
+    return result;
+}
+
 JNIEXPORT void JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeSetSelectedTransform(
     JNIEnv* env, jclass, jfloatArray values
