@@ -61,6 +61,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private int gizmoAxis = -1;
     private float gizmoCenterX;
     private float gizmoCenterY;
+    private final float[] gizmoEndX = new float[3];
+    private final float[] gizmoEndY = new float[3];
+    private final boolean[] gizmoEndVisible = new boolean[3];
     private boolean gizmoVisible;
     private int selectedBrush;
     private float radius = 0.18f;
@@ -563,8 +566,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
         }
 
         private void updateGizmoCenter() {
-            float[] projected = engine.projectSelectedPosition();
-            if (projected == null || projected.length < 4 || projected[3] <= 0.0001f
+            float[] projected = engine.projectSelectedGizmo();
+            if (projected == null || projected.length < 16 || projected[3] <= 0.0001f
                     || projected[2] < -1.0f || projected[2] > 1.0f
                     || Math.abs(projected[0]) > 1.15f || Math.abs(projected[1]) > 1.15f) {
                 gizmoVisible = false;
@@ -573,15 +576,22 @@ public final class ManualSculptWorkspace extends FrameLayout {
             gizmoCenterX = (projected[0] + 1.0f) * 0.5f * getWidth();
             gizmoCenterY = (1.0f - projected[1]) * 0.5f * getHeight();
             gizmoVisible = true;
+            for (int axis=0;axis<3;axis++) {
+                int offset=(axis+1)*4;
+                gizmoEndVisible[axis]=projected[offset+3]>0.0001f
+                        && projected[offset+2]>=-1.0f && projected[offset+2]<=1.0f;
+                gizmoEndX[axis]=(projected[offset]+1.0f)*0.5f*getWidth();
+                gizmoEndY[axis]=(1.0f-projected[offset+1])*0.5f*getHeight();
+            }
         }
 
         private int hitGizmoAxis(float x, float y) {
             updateGizmoCenter();
             if (!gizmoVisible) return -1;
-            float cx = gizmoCenterX, cy = gizmoCenterY, length = dp(76);
-            float[][] ends = {{cx + length, cy}, {cx, cy - length}, {cx - length * 0.72f, cy + length * 0.72f}};
+            float cx = gizmoCenterX, cy = gizmoCenterY;
             for (int axis = 0; axis < 3; axis++) {
-                if (distanceToSegment(x, y, cx, cy, ends[axis][0], ends[axis][1]) < dp(18)) return axis;
+                if (gizmoEndVisible[axis] && distanceToSegment(x, y, cx, cy,
+                        gizmoEndX[axis], gizmoEndY[axis]) < dp(18)) return axis;
             }
             return -1;
         }
@@ -594,27 +604,28 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 postInvalidateDelayed(33);
                 return;
             }
-            float cx = gizmoCenterX, cy = gizmoCenterY, length = dp(76);
+            float cx = gizmoCenterX, cy = gizmoCenterY;
             Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
             paint.setStrokeWidth(dp(4));
             paint.setStrokeCap(Paint.Cap.ROUND);
             paint.setStyle(Paint.Style.STROKE);
             int[] colors = {0xFFFF5555, 0xFF55DD77, 0xFF5599FF};
-            float[][] ends = {{cx + length, cy}, {cx, cy - length}, {cx - length * 0.72f, cy + length * 0.72f}};
             for (int axis = 0; axis < 3; axis++) {
+                if (!gizmoEndVisible[axis]) continue;
+                float ex=gizmoEndX[axis], ey=gizmoEndY[axis];
                 paint.setColor(colors[axis]);
                 paint.setStrokeWidth(gizmoAxis == axis ? dp(7) : dp(4));
-                canvas.drawLine(cx, cy, ends[axis][0], ends[axis][1], paint);
-                float angle = (float)Math.atan2(ends[axis][1] - cy, ends[axis][0] - cx);
+                canvas.drawLine(cx, cy, ex, ey, paint);
+                float angle = (float)Math.atan2(ey-cy, ex-cx);
                 float head = dp(13);
                 Path arrow = new Path();
-                arrow.moveTo(ends[axis][0], ends[axis][1]);
-                arrow.lineTo(ends[axis][0] - head * (float)Math.cos(angle - 0.55f), ends[axis][1] - head * (float)Math.sin(angle - 0.55f));
-                arrow.moveTo(ends[axis][0], ends[axis][1]);
-                arrow.lineTo(ends[axis][0] - head * (float)Math.cos(angle + 0.55f), ends[axis][1] - head * (float)Math.sin(angle + 0.55f));
+                arrow.moveTo(ex, ey);
+                arrow.lineTo(ex-head*(float)Math.cos(angle-0.55f), ey-head*(float)Math.sin(angle-0.55f));
+                arrow.moveTo(ex, ey);
+                arrow.lineTo(ex-head*(float)Math.cos(angle+0.55f), ey-head*(float)Math.sin(angle+0.55f));
                 canvas.drawPath(arrow, paint);
                 paint.setStyle(Paint.Style.FILL);
-                canvas.drawText(axis == 0 ? "X" : axis == 1 ? "Y" : "Z", ends[axis][0] + dp(5), ends[axis][1] - dp(5), paint);
+                canvas.drawText(axis == 0 ? "X" : axis == 1 ? "Y" : "Z", ex+dp(5), ey-dp(5), paint);
                 paint.setStyle(Paint.Style.STROKE);
             }
             postInvalidateDelayed(33);
@@ -640,8 +651,16 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 } else if (gizmoAxis >= 0 && action == MotionEvent.ACTION_MOVE) {
                     float dx = event.getX() - lastX, dy = event.getY() - lastY;
                     if (transformDragState != null && transformDragState.length >= 9) {
-                        float delta = gizmoAxis == 0 ? dx * 0.008f : gizmoAxis == 1 ? -dy * 0.008f : (dx - dy) * 0.00565f;
-                        transformDragState[gizmoAxis] += delta;
+                        float axisX=gizmoEndX[gizmoAxis]-gizmoCenterX;
+                        float axisY=gizmoEndY[gizmoAxis]-gizmoCenterY;
+                        float axisLengthSquared=axisX*axisX+axisY*axisY;
+                        if(axisLengthSquared>dp(8)*dp(8)) {
+                            // The projected world-axis endpoint is exactly one world unit away.
+                            // Project the finger delta onto that visible axis; screen Y inversion
+                            // is already accounted for by the projected endpoint.
+                            float delta=(dx*axisX+dy*axisY)/axisLengthSquared;
+                            transformDragState[gizmoAxis] += delta;
+                        }
                         engine.setSelectedTransform(transformDragState);
                         positionInputs[gizmoAxis].setText(String.valueOf(transformDragState[gizmoAxis]));
                     }
