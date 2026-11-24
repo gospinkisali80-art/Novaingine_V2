@@ -4,7 +4,7 @@ This directory defines the first, isolated foundation for connecting an external
 
 ## Status
 
-**Local Android dispatcher foundation added; remote transport is not connected yet.** This branch contains the protocol contract, an isolated Android command dispatcher, and a GitHub Actions Android debug-build workflow. No network listener, secure pairing UI/storage, gateway, Windows agent, or ChatGPT connector is active. The Android build has not yet been confirmed successful.
+**Android outbound-agent prototype and local authenticated controller API added.** The Android editor now has an AI Link pairing dialog, Android Keystore-encrypted token storage, a background HTTP poller, and lifecycle cleanup. The local FastAPI controller exposes heartbeat, command polling, command submission, and result endpoints. This is a same-device development bridge only; it is not a hosted gateway or a ChatGPT MCP connector. The Android build and on-device loopback connection still require testing.
 
 ## Architecture
 
@@ -74,8 +74,24 @@ A custom MCP connector with write-capable tools is not available in every ChatGP
 4. OAuth-protected MCP server exposing the allowlisted tools.
 5. End-to-end tests against a test scene, then opt-in release behind a setting.
 
-The current Android dispatcher is `RemoteCommandDispatcher.java`. It is intentionally not wired into app startup and cannot receive network commands yet. It accepts typed protocol-v1 JSON from a future authenticated transport, validates the paired device ID, expiry, replay IDs and operation payload bounds, then queues engine work on the GL render thread. Supported local operations: status, scene inspection, object selection (with existence check), selected-object transform (with selection check), SculptMesh creation, sculpt strokes, undo and redo. Project save and generic primitive creation are intentionally withheld until safe path handling and the engine's primitive enum contract are verified. The renderer queue now cancels commands that have not started when its initial wait times out; an already-started operation receives an additional bounded wait. A GitHub Actions workflow is configured for pull requests, manual dispatch, and pushes to this integration branch. A successful build is still pending.
+The Android transport is `ControllerAgent.java`; the local FastAPI implementation is `controller_server.py`. Tap the viewport status label in the editor to open AI Link pairing. For local testing, the default URL is `http://127.0.0.1:8001`. The token is encrypted with Android Keystore and is not embedded in the APK. The agent sends heartbeats every 20 seconds, polls every 2 seconds, and dispatches received commands through `RemoteCommandDispatcher.java`. It stops when the editor activity pauses or is destroyed. It is not an always-on background service. It accepts typed protocol-v1 JSON from a future authenticated transport, validates the paired device ID, expiry, replay IDs and operation payload bounds, then queues engine work on the GL render thread. Supported local operations: status, scene inspection, object selection (with existence check), selected-object transform (with selection check), SculptMesh creation, sculpt strokes, undo and redo. Project save and generic primitive creation are intentionally withheld until safe path handling and the engine's primitive enum contract are verified. The renderer queue now cancels commands that have not started when its initial wait times out; an already-started operation receives an additional bounded wait. A GitHub Actions workflow is configured for pull requests, manual dispatch, and pushes to this integration branch. A successful build is still pending.
 
 ## Existing engine integration points
 
 The Android app already has useful engine APIs in `EngineSurface` and `NativeBridge`, including object selection/transforms, primitive creation, sculpt mesh creation, sculpt operations, scene inspection, undo/redo, and project save/load. The remote agent should call those existing methods rather than duplicating native engine logic.
+
+
+## Local controller API (development only)
+
+The API contract used by `ControllerAgent` is:
+
+- `POST /api/v1/device/heartbeat` — authenticated device heartbeat.
+- `GET /api/v1/device/commands/next?deviceId=...` — authenticated long-poll substitute; returns `{"command": null}` when empty.
+- `POST /api/v1/device/commands/{commandId}/result` — authenticated command result.
+- `POST /api/v1/commands` — enqueue a protocol-v1 command for a paired device.
+- `GET /api/v1/commands/{commandId}` — inspect command delivery/result state.
+- `GET /api/v1/device/status?deviceId=...` — inspect device heartbeat state.
+
+The local server implementation is `integration/controller_server.py`. Run it bound to loopback only (`127.0.0.1`), with the same private `DEVICE_TOKEN` configured in the Android pairing dialog. It is an in-memory development queue: pending commands/results are lost on server restart. Do not expose it using port forwarding or a public tunnel. A production deployment requires TLS, separate device and AI-client credentials, OAuth 2.1 for MCP, persistent storage, rate limiting, audit retention, pairing/revocation, and hardened authorization.
+
+The initial API uses one development bearer token for local testing. Never paste that token into ChatGPT, GitHub, screenshots, issue comments, or source code. Use a separate token for each device before any multi-device or hosted deployment.
