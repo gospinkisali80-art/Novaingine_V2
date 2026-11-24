@@ -229,7 +229,7 @@
               },
               "density": {
                 "type": "integer",
-                "minimum": 8,
+                "minimum": 16,
                 "maximum": 80
               }
             }
@@ -260,7 +260,7 @@
               "points": {
                 "type": "array",
                 "minItems": 3,
-                "maxItems": 384,
+                "maxItems": 192,
                 "items": {
                   "type": "number",
                   "minimum": -20,
