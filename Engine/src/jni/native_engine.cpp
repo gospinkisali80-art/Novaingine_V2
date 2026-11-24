@@ -2318,6 +2318,32 @@ Java_com_novaingine_v2_NativeBridge_nativeRedo(
 }
 
 JNIEXPORT void JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeCreateEmptyScene(
+    JNIEnv*, jclass
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized) return;
+    recordUndo(true);
+    gSculptMode = false;
+    gSculptStrokeActive = false;
+    gHasPreviousSculptHit = false;
+    { std::lock_guard<std::mutex> dataLock(gSculptDataMutex); gSculptMesh.reset(); }
+    { std::lock_guard<std::mutex> qlock(gSculptQueueMutex); gSculptQueue.clear(); }
+    gSculptMeshDirty.store(false, std::memory_order_release);
+    gSculptMaskDirty.store(false, std::memory_order_release);
+    gSculptMeshId = 0;
+    gRenderer.setSculptCursor(false, nova::Vec3(), nova::Vec3(0,1,0), 0.18f);
+    gScene.clear();
+    gCustomMeshes.clear();
+    gSculptMasks.clear();
+    gRenderer.releaseAllMeshes();
+    gCamera.reset();
+    gVerticalVelocity = 0.0f;
+    gPhysicsGrounded = false;
+    gJumpWasPressed = false;
+}
+
+JNIEXPORT void JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeResetScene(
     JNIEnv*,
     jclass
