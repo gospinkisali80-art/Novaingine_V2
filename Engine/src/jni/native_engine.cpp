@@ -2659,11 +2659,12 @@ Java_com_novaingine_v2_NativeBridge_nativeRefineSculptMesh(
     if (gSculptJobsPending.load(std::memory_order_acquire) != 0) return -2;
 
     std::lock_guard<std::mutex> dataLock(gSculptDataMutex);
-    if (!gSculptMesh || !gSculptMesh->subdivideOnce()) return -3;
+    if (!gSculptMesh) return -3;
+    recordUndo(true);
+    if (!gSculptMesh->subdivideOnce()) return -3;
 
     nova::Mesh refined;
     if (!gSculptMesh->toMesh(refined) || !refined.isValid()) return -4;
-    recordUndo(true);
     if (!gRenderer.uploadMesh(gSculptMeshId, refined)) return -5;
     gCustomMeshes[gSculptMeshId] = std::move(refined);
     gSculptMasks[gSculptMeshId] = gSculptMesh->mask;
