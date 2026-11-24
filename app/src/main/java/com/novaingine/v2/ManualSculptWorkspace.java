@@ -79,12 +79,16 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private int transformComponent = 0;
     private int activeTransformMode = -1;
     private float[] transformDragState;
+    private float uiScale = 1.0f;
 
     public ManualSculptWorkspace(Activity activity, EngineSurface engine, Runnable onExit) {
         super(activity);
         this.activity = activity;
         this.engine = engine;
         this.onExit = onExit;
+        float density = getResources().getDisplayMetrics().density;
+        float availableHeightDp = getResources().getDisplayMetrics().heightPixels / density;
+        uiScale = Math.max(0.55f, Math.min(1.0f, availableHeightDp / 260.0f));
         setBackgroundColor(Color.TRANSPARENT);
 
         SculptTouchSurface touch = new SculptTouchSurface();
@@ -594,7 +598,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
     }
 
     private int dp(float value) {
-        return (int)(value * getResources().getDisplayMetrics().density + 0.5f);
+        return (int)(value * getResources().getDisplayMetrics().density * uiScale + 0.5f);
     }
 
     private final class SculptTouchSurface extends View {
