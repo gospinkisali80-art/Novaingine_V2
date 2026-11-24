@@ -2,6 +2,12 @@ plugins {
     id 'com.android.application'
 }
 
+// Apply Firebase's config processor when app/google-services.json is present.
+// This keeps local builds working until the Firebase config is added.
+if (file('google-services.json').exists()) {
+    apply plugin: 'com.google.gms.google-services'
+}
+
 android {
     namespace 'com.novaingine.v2'
     compileSdk 35
@@ -46,4 +52,10 @@ android {
             minifyEnabled false
         }
     }
+}
+
+dependencies {
+    implementation platform('com.google.firebase:firebase-bom:35.2.0')
+    implementation 'com.google.firebase:firebase-auth'
+    implementation 'com.google.firebase:firebase-firestore'
 }
