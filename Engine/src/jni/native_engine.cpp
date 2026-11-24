@@ -1259,6 +1259,27 @@ Java_com_novaingine_v2_NativeBridge_nativeSetSelectedTransform(
 }
 
 
+JNIEXPORT void JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeBeginTransformEdit(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (gInitialized && gScene.selected()) recordUndo();
+}
+
+JNIEXPORT void JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeUpdateSelectedTransform(JNIEnv* env, jclass, jfloatArray values) {
+    if (!values || env->GetArrayLength(values) < 9) return;
+    jfloat v[9];
+    env->GetFloatArrayRegion(values,0,9,v);
+    if (env->ExceptionCheck()) { env->ExceptionClear(); return; }
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized) return;
+    nova::SceneObject* object=gScene.selected();
+    if (!object) return;
+    object->transform.position=nova::Vec3(v[0],v[1],v[2]);
+    object->transform.rotation=nova::Vec3(v[3],v[4],v[5]);
+    object->transform.scale=nova::Vec3(std::max(0.01f,v[6]),std::max(0.01f,v[7]),std::max(0.01f,v[8]));
+}
+
 JNIEXPORT jint JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeImportGlb(JNIEnv* env, jclass, jstring pathValue) {
     if (!pathValue) return -1;
