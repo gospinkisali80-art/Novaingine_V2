@@ -1328,6 +1328,8 @@ Java_com_novaingine_v2_NativeBridge_nativeLoadScene(
     gRenderer.releaseAllMeshes();
     gScene = std::move(loadedScene);
     if (current && selectedId != 0) gScene.select(selectedId);
+    gUndoStack.clear();
+    gRedoStack.clear();
     gCustomMeshes = std::move(loadedMeshes);
     gSculptMasks = std::move(loadedMasks);
     gSculptMesh = std::move(loadedSculpt);
@@ -1349,6 +1351,7 @@ Java_com_novaingine_v2_NativeBridge_nativeLoadScene(
         if (!gSculptMesh->uploadChunks()) return JNI_FALSE;
     }
     gVerticalVelocity = 0.0f;
+    gPhysicsEnabled = false;
     gPhysicsGrounded = false;
     gJumpWasPressed = false;
     return JNI_TRUE;
@@ -2565,8 +2568,13 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateEmptyScene(
     gScene.clear();
     gCustomMeshes.clear();
     gSculptMasks.clear();
+    gVisualScript = nova::VisualScript();
+    gVisualScriptStarted = false;
+    gUndoStack.clear();
+    gRedoStack.clear();
     gRenderer.releaseAllMeshes();
     gCamera.reset();
+    gPhysicsEnabled = false;
     gVerticalVelocity = 0.0f;
     gPhysicsGrounded = false;
     gJumpWasPressed = false;
