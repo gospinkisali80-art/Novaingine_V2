@@ -59,6 +59,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private final TextView[] brushButtons = new TextView[BRUSHES.length];
     private LinearLayout brushControls;
     private int gizmoAxis = -1;
+    private float gizmoCenterX;
+    private float gizmoCenterY;
+    private boolean gizmoVisible;
     private int selectedBrush;
     private float radius = 0.18f;
     private float strength = 0.40f;
@@ -539,8 +542,23 @@ public final class ManualSculptWorkspace extends FrameLayout {
             return (float)Math.sqrt(dx * dx + dy * dy);
         }
 
+        private void updateGizmoCenter() {
+            float[] projected = engine.projectSelectedPosition();
+            if (projected == null || projected.length < 4 || projected[3] <= 0.0001f
+                    || projected[2] < -1.0f || projected[2] > 1.0f
+                    || Math.abs(projected[0]) > 1.15f || Math.abs(projected[1]) > 1.15f) {
+                gizmoVisible = false;
+                return;
+            }
+            gizmoCenterX = (projected[0] + 1.0f) * 0.5f * getWidth();
+            gizmoCenterY = (1.0f - projected[1]) * 0.5f * getHeight();
+            gizmoVisible = true;
+        }
+
         private int hitGizmoAxis(float x, float y) {
-            float cx = getWidth() * 0.5f, cy = getHeight() * 0.48f, length = dp(76);
+            updateGizmoCenter();
+            if (!gizmoVisible) return -1;
+            float cx = gizmoCenterX, cy = gizmoCenterY, length = dp(76);
             float[][] ends = {{cx + length, cy}, {cx, cy - length}, {cx - length * 0.72f, cy + length * 0.72f}};
             for (int axis = 0; axis < 3; axis++) {
                 if (distanceToSegment(x, y, cx, cy, ends[axis][0], ends[axis][1]) < dp(18)) return axis;
@@ -551,7 +569,12 @@ public final class ManualSculptWorkspace extends FrameLayout {
         @Override protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
             if (activeTransformMode != 0) return;
-            float cx = getWidth() * 0.5f, cy = getHeight() * 0.48f, length = dp(76);
+            updateGizmoCenter();
+            if (!gizmoVisible) {
+                postInvalidateDelayed(33);
+                return;
+            }
+            float cx = gizmoCenterX, cy = gizmoCenterY, length = dp(76);
             Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
             paint.setStrokeWidth(dp(4));
             paint.setStrokeCap(Paint.Cap.ROUND);
@@ -574,6 +597,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 canvas.drawText(axis == 0 ? "X" : axis == 1 ? "Y" : "Z", ends[axis][0] + dp(5), ends[axis][1] - dp(5), paint);
                 paint.setStyle(Paint.Style.STROKE);
             }
+            postInvalidateDelayed(33);
         }
 
         private float distance(MotionEvent e) {
