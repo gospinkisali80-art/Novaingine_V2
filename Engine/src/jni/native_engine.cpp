@@ -1561,7 +1561,7 @@ Java_com_novaingine_v2_NativeBridge_nativeSculptAtScreen(
     brush.strength=std::clamp((float)strengthValue,0.0f,1.0f);
     brush.hardness=std::clamp((float)falloffValue,0.0f,1.0f);
     brush.pressure=std::clamp((float)pressureValue,0.0f,1.0f);
-    brush.type=std::clamp((int)brushValue,0,11);
+    brush.type=std::clamp((int)brushValue,0,24);
     brush.symmetryAxis=std::clamp((int)symmetryAxisValue,-1,2);
     brush.subtract=subtractValue==JNI_TRUE;
 
@@ -1735,7 +1735,7 @@ Java_com_novaingine_v2_NativeBridge_nativeAISculptStroke(
     brush.strength=std::clamp(static_cast<float>(strengthValue),0.0f,1.0f);
     brush.hardness=std::clamp(static_cast<float>(hardnessValue),0.0f,1.0f);
     brush.pressure=std::clamp(static_cast<float>(pressureValue),0.0f,1.0f);
-    brush.type=std::clamp(static_cast<int>(brushValue),0,11);
+    brush.type=std::clamp(static_cast<int>(brushValue),0,24);
     brush.symmetryAxis=std::clamp(static_cast<int>(symmetryAxisValue),-1,2);
     brush.subtract=subtractValue==JNI_TRUE;
     const size_t pointCount=static_cast<size_t>(length/3);
