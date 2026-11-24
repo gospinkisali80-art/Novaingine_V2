@@ -296,6 +296,10 @@ public final class EngineSurface extends GLSurfaceView
         return NativeBridge.nativeGetSelectedTransform();
     }
 
+    public float[] projectSelectedPosition() {
+        return NativeBridge.nativeProjectSelectedPosition();
+    }
+
     public void selectObjectById(int objectId) {
         queueEvent(() -> NativeBridge.nativeSelectObjectById(objectId));
     }
