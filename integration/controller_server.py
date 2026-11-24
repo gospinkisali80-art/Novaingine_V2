@@ -13,11 +13,10 @@ from __future__ import annotations
 import hmac
 import os
 import threading
-import time
 from collections import deque
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -174,7 +173,7 @@ def enqueue_command(data: CommandEnvelope) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail="issuedAt is too far in the future.")
     if (now - issued).total_seconds() > MAX_COMMAND_AGE_SECONDS:
         raise HTTPException(status_code=422, detail="Command issue time is too old.")
-    if expires <= now or expires > now.timestamp() + MAX_COMMAND_AGE_SECONDS:
+    if expires <= now or expires > now + timedelta(seconds=MAX_COMMAND_AGE_SECONDS):
         raise HTTPException(status_code=422, detail="Command expiry must be within the next five minutes.")
     if expires <= issued:
         raise HTTPException(status_code=422, detail="expiresAt must be after issuedAt.")
