@@ -252,7 +252,10 @@ public final class RemoteCommandDispatcher implements AutoCloseable {
             JSONObject snapshot = new JSONObject();
             try {
                 snapshot.put("objects", rows);
-                if (transform != null && transform.length >= 9) {
+                boolean hasSelection = transform != null && transform.length >= 9
+                        && transform[6] > 0 && transform[7] > 0 && transform[8] > 0;
+                snapshot.put("hasSelection", hasSelection);
+                if (includeTransforms && hasSelection) {
                     snapshot.put("selectedTransform", new JSONArray(new float[]{
                             transform[0], transform[1], transform[2], transform[3], transform[4],
                             transform[5], transform[6], transform[7], transform[8]}));
