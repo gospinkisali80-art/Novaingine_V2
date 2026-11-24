@@ -1207,6 +1207,36 @@ Java_com_novaingine_v2_NativeBridge_nativeProjectSelectedPosition(
     return result;
 }
 
+JNIEXPORT jfloatArray JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeProjectSelectedGizmo(JNIEnv* env, jclass) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    jfloat values[16] = {};
+    const nova::SceneObject* object = gScene.selected();
+    if (gInitialized && object && gViewportWidth > 0 && gViewportHeight > 0) {
+        const nova::Mat4 vp = multiplyMat4(
+            gCamera.projectionMatrix((float)gViewportWidth/(float)gViewportHeight),
+            gCamera.viewMatrix());
+        const nova::Vec3 origin = object->transform.position;
+        const nova::Vec3 points[4] = {
+            origin, origin + nova::Vec3(1.0f,0.0f,0.0f),
+            origin + nova::Vec3(0.0f,1.0f,0.0f),
+            origin + nova::Vec3(0.0f,0.0f,1.0f)
+        };
+        for (int i=0;i<4;i++) {
+            const nova::Vec3& p=points[i];
+            const float x=vp.m[0]*p.x+vp.m[4]*p.y+vp.m[8]*p.z+vp.m[12];
+            const float y=vp.m[1]*p.x+vp.m[5]*p.y+vp.m[9]*p.z+vp.m[13];
+            const float z=vp.m[2]*p.x+vp.m[6]*p.y+vp.m[10]*p.z+vp.m[14];
+            const float w=vp.m[3]*p.x+vp.m[7]*p.y+vp.m[11]*p.z+vp.m[15];
+            const int o=i*4;
+            if (w>0.0001f) { values[o]=x/w; values[o+1]=y/w; values[o+2]=z/w; values[o+3]=w; }
+        }
+    }
+    jfloatArray result=env->NewFloatArray(16);
+    if(result)env->SetFloatArrayRegion(result,0,16,values);
+    return result;
+}
+
 JNIEXPORT void JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeSetSelectedTransform(
     JNIEnv* env, jclass, jfloatArray values
