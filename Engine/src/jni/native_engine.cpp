@@ -93,8 +93,8 @@ void startSculptWorker() {
             }
             std::lock_guard<std::mutex> dataLock(gSculptDataMutex);
             if(!gSculptMesh) { gSculptJobsPending.fetch_sub(1, std::memory_order_release); continue; }
-            if(job.begin){gSculptMesh->beginStroke();continue;}
-            if(job.end){gSculptMesh->endStroke();continue;}
+            if(job.begin){gSculptMesh->beginStroke();gSculptJobsPending.fetch_sub(1,std::memory_order_release);continue;}
+            if(job.end){gSculptMesh->endStroke();gSculptJobsPending.fetch_sub(1,std::memory_order_release);continue;}
             if(gSculptMesh->applyDab(job.center,job.normal,job.delta,job.brush)) {
                 if(job.brush.type==7||job.brush.type==11)gSculptMaskDirty.store(true,std::memory_order_release);
                 else gSculptMeshDirty.store(true,std::memory_order_release);
