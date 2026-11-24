@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "969454878483",
+    "project_id": "novaingine",
+    "storage_bucket": "novaingine.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:969454878483:android:4079f931e41d277cbb24e6",
+        "android_client_info": {
+          "package_name": "com.novaingine.v2"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBzakT0FVRTgIqvZC2u-uiwsR4gnmpvwRo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
