@@ -10,6 +10,9 @@ import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
 import android.widget.FrameLayout;
 import android.widget.EditText;
 import android.widget.HorizontalScrollView;
@@ -20,6 +23,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.File;
+import java.util.ArrayList;
 
 /**
  * Full-screen portrait sculpt workspace. All sculpt strokes execute in the
@@ -85,6 +89,11 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private View leftResizeHandle;
     private View rightResizeHandle;
     private LinearLayout bottomDock;
+    private final ArrayList<float[]> transformKeyframes = new ArrayList<>();
+    private final Handler timelineHandler = new Handler(Looper.getMainLooper());
+    private boolean timelinePlaying;
+    private long timelineStartMs;
+    private final Runnable timelineTick = this::advanceTimeline;
 
     public ManualSculptWorkspace(Activity activity, EngineSurface engine, Runnable onExit) {
         super(activity);
@@ -546,9 +555,36 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 edit.setOnClickListener(v -> showTransformEditor(touch));
             }
         } else if ("Timeline".equals(name)) {
-            panel.addView(label("TIMELINE", 11, ACCENT, true));
-            panel.addView(label("Animation keyframe tracks are not yet implemented in the native engine.", 10, Color.WHITE, false));
-            panel.addView(label("Playback controls are disabled until animation tracks exist.", 10, 0xFFFFC56B, false));
+            panel.addView(label("TRANSFORM TIMELINE", 11, ACCENT, true));
+            TextView info = label("Keyframes: " + transformKeyframes.size() + "  •  1.2 seconds between keys", 10, Color.WHITE, false);
+            panel.addView(info);
+            TextView addKey = button("ADD KEYFRAME FROM SELECTED OBJECT");
+            panel.addView(addKey);
+            addKey.setOnClickListener(v -> {
+                float[] transform = engine.getSelectedTransform();
+                if (transform == null || transform.length < 9) {
+                    Toast.makeText(activity, "Select an object before recording a keyframe.", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                transformKeyframes.add(transform.clone());
+                info.setText("Keyframes: " + transformKeyframes.size() + "  •  1.2 seconds between keys");
+                status.setText("Timeline keyframe " + transformKeyframes.size() + " recorded.");
+            });
+            TextView play = button("PLAY TIMELINE");
+            panel.addView(play);
+            play.setOnClickListener(v -> startTimelinePlayback());
+            TextView stop = button("STOP");
+            panel.addView(stop);
+            stop.setOnClickListener(v -> stopTimelinePlayback());
+            TextView clear = button("CLEAR KEYFRAMES");
+            panel.addView(clear);
+            clear.setOnClickListener(v -> {
+                stopTimelinePlayback();
+                transformKeyframes.clear();
+                info.setText("Keyframes: 0  •  1.2 seconds between keys");
+                status.setText("Timeline cleared.");
+            });
+            panel.addView(label("Keyframes are held in memory for this sculpt session; they are not yet saved into project files.", 9, 0xFFFFC56B, false));
         } else if ("Assets".equals(name)) {
             panel.addView(label("PROJECT ASSETS", 11, ACCENT, true));
             panel.addView(label("Import a glTF binary model (.glb) or export the selected sculpt mesh as OBJ.", 10, Color.WHITE, false));
@@ -561,6 +597,49 @@ public final class ManualSculptWorkspace extends FrameLayout {
             panel.addView(exportAsset);
             exportAsset.setOnClickListener(v -> exportMesh());
         }
+    }
+
+    private void startTimelinePlayback() {
+        if (transformKeyframes.size() < 2) {
+            Toast.makeText(activity, "Record at least two keyframes first.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        timelineHandler.removeCallbacks(timelineTick);
+        timelinePlaying = true;
+        timelineStartMs = SystemClock.uptimeMillis();
+        timelineHandler.post(timelineTick);
+        status.setText("Timeline playback started.");
+    }
+
+    private void stopTimelinePlayback() {
+        timelinePlaying = false;
+        timelineHandler.removeCallbacks(timelineTick);
+        status.setText("Timeline playback stopped.");
+    }
+
+    private void advanceTimeline() {
+        if (!timelinePlaying || transformKeyframes.size() < 2) return;
+        long elapsed = SystemClock.uptimeMillis() - timelineStartMs;
+        final long segmentDuration = 1200L;
+        int segment = (int) (elapsed / segmentDuration);
+        if (segment >= transformKeyframes.size() - 1) {
+            engine.setSelectedTransform(transformKeyframes.get(transformKeyframes.size() - 1));
+            stopTimelinePlayback();
+            return;
+        }
+        float t = (elapsed % segmentDuration) / (float) segmentDuration;
+        float[] from = transformKeyframes.get(segment);
+        float[] to = transformKeyframes.get(segment + 1);
+        float[] current = new float[9];
+        for (int i = 0; i < current.length; i++) current[i] = from[i] + (to[i] - from[i]) * t;
+        engine.setSelectedTransform(current);
+        timelineHandler.postDelayed(timelineTick, 16L);
+    }
+
+    @Override protected void onDetachedFromWindow() {
+        stopTimelinePlayback();
+        timelineHandler.removeCallbacksAndMessages(null);
+        super.onDetachedFromWindow();
     }
 
     private void toggleBottomDock() {
