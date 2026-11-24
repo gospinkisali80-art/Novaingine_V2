@@ -123,6 +123,7 @@ public final class NativeBridge {
 
     public static native int nativeImportGlb(String path);
     public static native int nativeCreateSculptMesh(int shape, int density);
+    public static native int nativeRefineSculptMesh();
     public static native int nativeCreateMeshPart(float[] positions, int[] triangles, String name, float x, float y, float z, float r, float g, float b);
     public static native boolean nativeExportSelectedObj(String path);
     public static native void nativeSetManualSculptWorkspace(boolean enabled);
