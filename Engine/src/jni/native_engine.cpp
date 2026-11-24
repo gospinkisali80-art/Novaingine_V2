@@ -2648,4 +2648,28 @@ Java_com_novaingine_v2_NativeBridge_nativeModelSelectedMesh(
     return 1;
 }
 
+
+JNIEXPORT jint JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeRefineSculptMesh(
+    JNIEnv*, jclass
+) {
+    std::lock_guard<std::mutex> engineLock(engineMutex);
+    if (!gInitialized || !gSculptMode || gSculptMeshId == 0 ||
+        gScene.selectedId() != gSculptMeshId || !gSculptMesh) return -1;
+    if (gSculptJobsPending.load(std::memory_order_acquire) != 0) return -2;
+
+    std::lock_guard<std::mutex> dataLock(gSculptDataMutex);
+    if (!gSculptMesh || !gSculptMesh->subdivideOnce()) return -3;
+
+    nova::Mesh refined;
+    if (!gSculptMesh->toMesh(refined) || !refined.isValid()) return -4;
+    recordUndo(true);
+    if (!gRenderer.uploadMesh(gSculptMeshId, refined)) return -5;
+    gCustomMeshes[gSculptMeshId] = std::move(refined);
+    gSculptMasks[gSculptMeshId] = gSculptMesh->mask;
+    gSculptMeshDirty.store(false, std::memory_order_release);
+    gSculptMaskDirty.store(false, std::memory_order_release);
+    return 1;
+}
+
 } // extern "C"
