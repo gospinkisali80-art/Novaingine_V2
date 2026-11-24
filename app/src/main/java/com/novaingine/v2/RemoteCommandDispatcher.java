@@ -109,6 +109,31 @@ public final class RemoteCommandDispatcher implements AutoCloseable {
                     details = "Selected object transform updated.";
                     break;
                 }
+                case "object.create_cube": {
+                    int id = runOnRenderThread(() -> {
+                        int createdId = NativeBridge.nativeAddPrimitive(
+                                0, "Cube",
+                                0.0f, 0.5f, 0.0f,
+                                1.0f, 1.0f, 1.0f,
+                                0.72f, 0.74f, 0.78f
+                        );
+                        if (createdId <= 0) return 0;
+                        String[] objects = engine.getSceneObjects();
+                        String prefix = createdId + "|";
+                        if (objects != null) {
+                            for (String object : objects) {
+                                if (object != null && object.startsWith(prefix)) {
+                                    NativeBridge.nativeSelectObjectById(createdId);
+                                    return createdId;
+                                }
+                            }
+                        }
+                        return 0;
+                    });
+                    if (id <= 0) throw new IllegalStateException("Engine could not create the cube in the active scene.");
+                    details = "Created and selected Cube, object ID " + id + ".";
+                    break;
+                }
                 case "sculpt.create_mesh": {
                     String shape = payload.getString("shape");
                     int shapeId = "plane".equals(shape) ? 1 : 0;
@@ -191,6 +216,9 @@ public final class RemoteCommandDispatcher implements AutoCloseable {
                 validateVector(payload.getJSONArray("rotation"), -36000, 36000);
                 validateVector(payload.getJSONArray("scale"), 0.01, 100);
                 if (payload.length() != 3) throw new IllegalArgumentException("Unexpected transform fields.");
+                break;
+            case "object.create_cube":
+                if (payload.length() != 0) throw new IllegalArgumentException("Cube creation does not accept payload fields.");
                 break;
             case "sculpt.create_mesh":
                 String shape = payload.getString("shape");
