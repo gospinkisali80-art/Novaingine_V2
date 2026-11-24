@@ -4,7 +4,7 @@ This directory defines the first, isolated foundation for connecting an external
 
 ## Status
 
-**Foundation only — no device is remotely controllable yet.** This branch adds the protocol contract and security boundary before adding a network listener or changing editor behavior.
+**Local Android dispatcher added; remote transport is not connected yet.** This branch contains the protocol contract and an isolated Android command dispatcher. No network listener, gateway, Windows agent, or ChatGPT connector is active.
 
 ## Architecture
 
@@ -68,11 +68,13 @@ A custom MCP connector with write-capable tools is not available in every ChatGP
 
 ## Next implementation milestones
 
-1. Android agent + typed command dispatcher, initially local/test transport only.
+1. Complete Android agent lifecycle, secure pairing storage, and local transport tests.
 2. Windows agent using the same protocol.
 3. Hosted gateway with device pairing, outbound sessions, command queue, and audit log.
 4. OAuth-protected MCP server exposing the allowlisted tools.
 5. End-to-end tests against a test scene, then opt-in release behind a setting.
+
+The current Android dispatcher is `RemoteCommandDispatcher.java`. It is intentionally not wired into app startup and cannot receive network commands yet. It accepts typed protocol-v1 JSON from a future authenticated transport, validates the paired device ID, expiry, replay IDs and operation payload bounds, then queues engine work on the GL render thread. Supported local operations: status, scene inspection, object selection, selected-object transform, SculptMesh creation, sculpt strokes, undo and redo. Project save and generic primitive creation are intentionally withheld until safe path handling and the engine's primitive enum contract are verified.
 
 ## Existing engine integration points
 
