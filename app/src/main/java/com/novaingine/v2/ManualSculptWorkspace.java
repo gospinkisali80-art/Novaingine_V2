@@ -111,9 +111,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
         TextView save = button("▣");
         top.addView(save, new LinearLayout.LayoutParams(dp(42), LayoutParams.MATCH_PARENT));
         save.setOnClickListener(v -> Toast.makeText(activity, "Use the project Save command to save the scene.", Toast.LENGTH_SHORT).show());
-        TextView import = button("⇧");
-        top.addView(import, new LinearLayout.LayoutParams(dp(42), LayoutParams.MATCH_PARENT));
-        import.setOnClickListener(v -> Toast.makeText(activity, "Import is available from the main editor tools.", Toast.LENGTH_SHORT).show());
+        TextView importButton = button("⇧");
+        top.addView(importButton, new LinearLayout.LayoutParams(dp(42), LayoutParams.MATCH_PARENT));
+        importButton.setOnClickListener(v -> Toast.makeText(activity, "Import is available from the main editor tools.", Toast.LENGTH_SHORT).show());
         TextView project = label("NOVAINGINE  •  SCULPT WORKSPACE", 11, Color.WHITE, true);
         project.setGravity(Gravity.CENTER);
         top.addView(project, new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1));
