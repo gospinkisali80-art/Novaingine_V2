@@ -645,6 +645,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     gizmoAxis = hitGizmoAxis(event.getX(), event.getY());
                     if (gizmoAxis >= 0) {
                         transformDragState = engine.getSelectedTransform();
+                        engine.beginTransformEdit();
                         lastX = event.getX(); lastY = event.getY();
                         return true;
                     }
@@ -661,7 +662,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                             float delta=(dx*axisX+dy*axisY)/axisLengthSquared;
                             transformDragState[gizmoAxis] += delta;
                         }
-                        engine.setSelectedTransform(transformDragState);
+                        engine.updateSelectedTransform(transformDragState);
                         positionInputs[gizmoAxis].setText(String.valueOf(transformDragState[gizmoAxis]));
                     }
                     lastX = event.getX(); lastY = event.getY();
@@ -695,6 +696,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     lastY = cy;
                 }
             } else if (action == MotionEvent.ACTION_DOWN) {
+                if (activeTransformMode >= 0) engine.beginTransformEdit();
                 lastX = event.getX();
                 lastY = event.getY();
             } else if (action == MotionEvent.ACTION_MOVE && !sculptEnabled) {
@@ -717,7 +719,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                             transform[8] = Math.max(0.01f, Math.min(100.0f, transform[8] * factor));
                         }
                         transformDragState = transform;
-                        engine.setSelectedTransform(transform);
+                        engine.updateSelectedTransform(transform);
                         for (int axis = 0; axis < 3; axis++) {
                             positionInputs[axis].setText(String.valueOf(
                                     transform[axis + transformComponent * 3]));
