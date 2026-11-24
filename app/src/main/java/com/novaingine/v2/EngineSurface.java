@@ -136,7 +136,7 @@ public final class EngineSurface extends GLSurfaceView
 
     public void setSculptOptions(boolean enabled, int brush, float radius, float strength, float falloff, int symmetryAxis, boolean subtract, float pressure) {
         sculptMode = enabled;
-        sculptBrush = Math.max(0, Math.min(11, brush));
+        sculptBrush = Math.max(0, Math.min(24, brush));
         sculptRadius = Math.max(0.02f, Math.min(3.0f, radius));
         sculptStrength = Math.max(0.0f, Math.min(1.0f, strength));
         sculptFalloff = Math.max(0.0f, Math.min(1.0f, falloff));
