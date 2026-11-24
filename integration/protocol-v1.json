@@ -1,0 +1,467 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://novaingine.dev/schemas/remote-command-v1.json",
+  "title": "Novaingine Remote Command v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocolVersion",
+    "commandId",
+    "deviceId",
+    "issuedAt",
+    "expiresAt",
+    "operation",
+    "payload"
+  ],
+  "properties": {
+    "protocolVersion": {
+      "const": 1
+    },
+    "commandId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "deviceId": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128
+    },
+    "issuedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "operation": {
+      "enum": [
+        "device.get_status",
+        "scene.inspect",
+        "scene.select_object",
+        "object.create_primitive",
+        "object.set_transform",
+        "sculpt.create_mesh",
+        "sculpt.stroke",
+        "scene.undo",
+        "scene.redo",
+        "project.save"
+      ]
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "device.get_status"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "maxProperties": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "scene.inspect"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "includeTransforms": {
+                "type": "boolean",
+                "default": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "scene.select_object"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "objectId"
+            ],
+            "properties": {
+              "objectId": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "object.create_primitive"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "primitive",
+              "name",
+              "position",
+              "scale",
+              "color"
+            ],
+            "properties": {
+              "primitive": {
+                "enum": [
+                  "cube",
+                  "sphere",
+                  "plane",
+                  "cylinder",
+                  "cone",
+                  "torus"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "position": {
+                "$ref": "#/$defs/vec3Position"
+              },
+              "scale": {
+                "$ref": "#/$defs/vec3Scale"
+              },
+              "color": {
+                "$ref": "#/$defs/color"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "object.set_transform"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "position",
+              "rotation",
+              "scale"
+            ],
+            "properties": {
+              "position": {
+                "$ref": "#/$defs/vec3Position"
+              },
+              "rotation": {
+                "$ref": "#/$defs/vec3Rotation"
+              },
+              "scale": {
+                "$ref": "#/$defs/vec3Scale"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "sculpt.create_mesh"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "shape",
+              "density"
+            ],
+            "properties": {
+              "shape": {
+                "enum": [
+                  "sphere",
+                  "plane"
+                ]
+              },
+              "density": {
+                "type": "integer",
+                "minimum": 8,
+                "maximum": 80
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "sculpt.stroke"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "points",
+              "radius",
+              "strength",
+              "brush"
+            ],
+            "properties": {
+              "points": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 384,
+                "items": {
+                  "$ref": "#/$defs/vec3"
+                }
+              },
+              "radius": {
+                "type": "number",
+                "minimum": 0.02,
+                "maximum": 1
+              },
+              "strength": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "brush": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 24
+              },
+              "falloff": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "symmetryAxis": {
+                "type": "integer",
+                "enum": [
+                  -1,
+                  0,
+                  1,
+                  2
+                ]
+              },
+              "subtract": {
+                "type": "boolean"
+              },
+              "pressure": {
+                "type": "number",
+                "minimum": 0.05,
+                "maximum": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "scene.undo"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "maxProperties": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "scene.redo"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "maxProperties": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "project.save"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "projectId"
+            ],
+            "properties": {
+              "projectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "vec3": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "number",
+          "minimum": -1000,
+          "maximum": 1000
+        },
+        {
+          "type": "number",
+          "minimum": -1000,
+          "maximum": 1000
+        },
+        {
+          "type": "number",
+          "minimum": -1000,
+          "maximum": 1000
+        }
+      ],
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "vec3Position": {
+      "$ref": "#/$defs/vec3"
+    },
+    "vec3Rotation": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "number",
+          "minimum": -36000,
+          "maximum": 36000
+        },
+        {
+          "type": "number",
+          "minimum": -36000,
+          "maximum": 36000
+        },
+        {
+          "type": "number",
+          "minimum": -36000,
+          "maximum": 36000
+        }
+      ],
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "vec3Scale": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 100
+        },
+        {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 100
+        },
+        {
+          "type": "number",
+          "minimum": 0.01,
+          "maximum": 100
+        }
+      ],
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "color": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      ],
+      "minItems": 3,
+      "maxItems": 3
+    }
+  }
+}
