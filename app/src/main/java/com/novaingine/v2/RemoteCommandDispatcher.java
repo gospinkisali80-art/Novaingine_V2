@@ -177,12 +177,23 @@ public final class RemoteCommandDispatcher implements AutoCloseable {
                 String shape = payload.getString("shape");
                 int density = payload.getInt("density");
                 if (!shape.equals("sphere") && !shape.equals("plane")) throw new IllegalArgumentException("Unsupported sculpt mesh shape.");
-                if (density < 8 || density > 80 || payload.length() != 2) throw new IllegalArgumentException("Sculpt density must be 8–80.");
+                if (density < 16 || density > 80 || payload.length() != 2) throw new IllegalArgumentException("Sculpt density must be 8–80.");
                 break;
             case "sculpt.stroke":
                 JSONArray points = payload.getJSONArray("points");
-                if (points.length() < 3 || points.length() > 384 || points.length() % 3 != 0)
-                    throw new IllegalArgumentException("Sculpt points must contain 1–128 XYZ points.");
+                if (points.length() < 3 || points.length() > 192 || points.length() % 3 != 0)
+                    throw new IllegalArgumentException("Sculpt points must contain 1–64 XYZ points.");
+                Set<String> allowedStrokeFields = new LinkedHashSet<>();
+                java.util.Collections.addAll(allowedStrokeFields,
+                        "points", "radius", "strength", "brush",
+                        "falloff", "symmetryAxis", "subtract", "pressure");
+                if (payload.length() < 4 || payload.length() > allowedStrokeFields.size())
+                    throw new IllegalArgumentException("Invalid sculpt stroke fields.");
+                java.util.Iterator<String> fieldNames = payload.keys();
+                while (fieldNames.hasNext()) {
+                    if (!allowedStrokeFields.contains(fieldNames.next()))
+                        throw new IllegalArgumentException("Unexpected sculpt stroke field.");
+                }
                 for (int i = 0; i < points.length(); i++) {
                     double v = points.getDouble(i);
                     if (!Double.isFinite(v) || v < -20 || v > 20) throw new IllegalArgumentException("Sculpt coordinates must be finite and within -20..20.");
