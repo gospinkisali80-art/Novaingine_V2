@@ -1383,14 +1383,14 @@ public final class MainActivity extends Activity
         EditText address = new EditText(this);
         address.setSingleLine(true);
         address.setHint("Controller URL");
-        address.setText("http://127.0.0.1:8000");
+        address.setText("http://127.0.0.1:8001");
         EditText secret = new EditText(this);
         secret.setSingleLine(true);
         secret.setHint("Private DEVICE_TOKEN from Termux .env");
         secret.setInputType(android.text.InputType.TYPE_CLASS_TEXT |
                 android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
         TextView help = new TextView(this);
-        help.setText("For same-phone Termux testing use 127.0.0.1:8000. The token is encrypted with Android Keystore and is never written into the APK.");
+        help.setText("For same-phone Termux testing use 127.0.0.1:8001. The token is encrypted with Android Keystore and is never written into the APK.");
         help.setTextColor(0xFFAAAAAA);
         help.setTextSize(12);
         form.addView(address);
