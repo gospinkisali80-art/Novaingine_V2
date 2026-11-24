@@ -14,6 +14,8 @@
 #include <unordered_map>
 #include <vector>
 #include <utility>
+#include <cstdio>
+#include <thread>
 
 #include "../Camera/Camera.h"
 #include "../Scene/Scene.h"
@@ -73,6 +75,7 @@ std::thread gSculptWorker;
 std::atomic<bool> gSculptWorkerStarted{false};
 std::atomic<bool> gSculptMeshDirty{false};
 std::atomic<bool> gSculptMaskDirty{false};
+std::atomic<uint32_t> gSculptJobsPending{0};
 
 
 
@@ -89,17 +92,19 @@ void startSculptWorker() {
                 gSculptQueue.pop_front();
             }
             std::lock_guard<std::mutex> dataLock(gSculptDataMutex);
-            if(!gSculptMesh)continue;
+            if(!gSculptMesh) { gSculptJobsPending.fetch_sub(1, std::memory_order_release); continue; }
             if(job.begin){gSculptMesh->beginStroke();continue;}
             if(job.end){gSculptMesh->endStroke();continue;}
             if(gSculptMesh->applyDab(job.center,job.normal,job.delta,job.brush)) {
                 if(job.brush.type==7||job.brush.type==11)gSculptMaskDirty.store(true,std::memory_order_release);
                 else gSculptMeshDirty.store(true,std::memory_order_release);
             }
+            gSculptJobsPending.fetch_sub(1, std::memory_order_release);
         }
     }).detach();
 }
 void enqueueSculptJob(const SculptDabJob& job) {
+    gSculptJobsPending.fetch_add(1, std::memory_order_acq_rel);
     {
         std::lock_guard<std::mutex> lock(gSculptQueueMutex);
         if(gSculptQueue.size()>=4096)gSculptQueue.pop_front();
@@ -1051,15 +1056,29 @@ Java_com_novaingine_v2_NativeBridge_nativeSaveScene(
     JNIEnv* env, jclass, jstring pathValue
 ) {
     if (!pathValue) return JNI_FALSE;
-    const char* path = env->GetStringUTFChars(pathValue, nullptr);
-    if (!path) return JNI_FALSE;
-    std::lock_guard<std::mutex> lock(engineMutex);
-    std::ofstream file(path, std::ios::out | std::ios::trunc);
-    env->ReleaseStringUTFChars(pathValue, path);
-    if (!file) return JNI_FALSE;
+    const char* rawPath = env->GetStringUTFChars(pathValue, nullptr);
+    if (!rawPath) return JNI_FALSE;
+    const std::string path(rawPath);
+    env->ReleaseStringUTFChars(pathValue, rawPath);
 
-    file << "NOVA_SCENE 1\n" << gScene.objectCount() << "\n";
+    std::lock_guard<std::mutex> lock(engineMutex);
+    while (gSculptJobsPending.load(std::memory_order_acquire) != 0) {
+        std::this_thread::yield();
+    }
+    std::lock_guard<std::mutex> sculptLock(gSculptDataMutex);
+
+    const std::string temporaryPath = path + ".tmp";
+    std::ofstream file(temporaryPath, std::ios::out | std::ios::trunc);
+    if (!file) return JNI_FALSE;
     file << std::setprecision(9);
+    file << "NOVA_PROJECT 2\n";
+    file << gScene.objectCount() << " " << gScene.selectedId() << " "
+         << gSculptMeshId << "\n";
+    file << gCamera.position.x << " " << gCamera.position.y << " " << gCamera.position.z << " "
+         << gCamera.target.x << " " << gCamera.target.y << " " << gCamera.target.z << " "
+         << gCamera.yaw << " " << gCamera.pitch << " " << gCamera.fieldOfView << " "
+         << gCamera.nearPlane << " " << gCamera.farPlane << " " << gCamera.movementSpeed << "\n";
+
     for (const nova::SceneObject& o : gScene.getObjects()) {
         file << o.id << " " << static_cast<int>(o.primitive) << " "
              << std::quoted(o.name) << " "
@@ -1067,10 +1086,70 @@ Java_com_novaingine_v2_NativeBridge_nativeSaveScene(
              << o.transform.rotation.x << " " << o.transform.rotation.y << " " << o.transform.rotation.z << " "
              << o.transform.scale.x << " " << o.transform.scale.y << " " << o.transform.scale.z << " "
              << o.color.r << " " << o.color.g << " " << o.color.b << " " << o.color.a << " "
+             << o.material.baseColor.x << " " << o.material.baseColor.y << " " << o.material.baseColor.z << " "
              << o.material.roughness << " " << o.material.metallic << " "
              << o.visible << " " << o.castsShadow << " " << o.isStatic << "\n";
     }
-    return file.good() ? JNI_TRUE : JNI_FALSE;
+
+    file << gCustomMeshes.size() << "\n";
+    for (const auto& entry : gCustomMeshes) {
+        const auto& vertices = entry.second.getVertices();
+        const auto& indices = entry.second.getIndices();
+        file << entry.first << " " << vertices.size() << " " << indices.size() << "\n";
+        for (const auto& v : vertices) {
+            file << v.position.x << " " << v.position.y << " " << v.position.z << " "
+                 << v.normal.x << " " << v.normal.y << " " << v.normal.z << " "
+                 << v.u << " " << v.v << "\n";
+        }
+        for (uint32_t index : indices) file << index << " ";
+        file << "\n";
+        auto maskIt = gSculptMasks.find(entry.first);
+        const size_t maskCount = maskIt == gSculptMasks.end() ? 0 : maskIt->second.size();
+        file << maskCount << "\n";
+        if (maskIt != gSculptMasks.end()) {
+            for (float value : maskIt->second) file << value << " ";
+            file << "\n";
+        }
+    }
+
+    file << (gSculptMesh ? 1 : 0) << "\n";
+    if (gSculptMesh) {
+        file << gSculptMesh->positions.size() << " " << gSculptMesh->indices.size() << "\n";
+        for (size_t i = 0; i < gSculptMesh->positions.size(); ++i) {
+            const auto& p = gSculptMesh->positions[i];
+            const nova::Vec3 n = i < gSculptMesh->normals.size()
+                ? gSculptMesh->normals[i] : nova::Vec3(0, 1, 0);
+            const float mask = i < gSculptMesh->mask.size() ? gSculptMesh->mask[i] : 0.0f;
+            file << p.x << " " << p.y << " " << p.z << " "
+                 << n.x << " " << n.y << " " << n.z << " " << mask << "\n";
+        }
+        for (uint32_t index : gSculptMesh->indices) file << index << " ";
+        file << "\n";
+    }
+
+    file << gVisualScript.enabled << " " << gVisualScript.runOnBeginPlay << " "
+         << gVisualScript.runOnTick << " " << std::quoted(gVisualScript.name) << " "
+         << gVisualScript.nodes.size() << "\n";
+    for (const auto& node : gVisualScript.nodes) {
+        file << node.id << " " << static_cast<int>(node.type) << " "
+             << node.next << " " << node.trueNext << " " << node.falseNext << " "
+             << node.objectId << " "
+             << node.vectorValue.x << " " << node.vectorValue.y << " " << node.vectorValue.z << " "
+             << node.value << " " << node.compareValue << " " << node.condition << "\n";
+    }
+
+    file.flush();
+    const bool written = file.good();
+    file.close();
+    if (!written) {
+        std::remove(temporaryPath.c_str());
+        return JNI_FALSE;
+    }
+    if (std::rename(temporaryPath.c_str(), path.c_str()) != 0) {
+        std::remove(temporaryPath.c_str());
+        return JNI_FALSE;
+    }
+    return JNI_TRUE;
 }
 
 JNIEXPORT jboolean JNICALL
@@ -1078,22 +1157,35 @@ Java_com_novaingine_v2_NativeBridge_nativeLoadScene(
     JNIEnv* env, jclass, jstring pathValue
 ) {
     if (!pathValue) return JNI_FALSE;
-    const char* path = env->GetStringUTFChars(pathValue, nullptr);
-    if (!path) return JNI_FALSE;
+    const char* rawPath = env->GetStringUTFChars(pathValue, nullptr);
+    if (!rawPath) return JNI_FALSE;
+    const std::string path(rawPath);
+    env->ReleaseStringUTFChars(pathValue, rawPath);
     std::ifstream file(path);
-    env->ReleaseStringUTFChars(pathValue, path);
     if (!file) return JNI_FALSE;
 
     std::string magic;
     int version = 0;
-    size_t count = 0;
-    if (!(file >> magic >> version >> count) ||
-        magic != "NOVA_SCENE" || version != 1 || count > 10000) {
-        return JNI_FALSE;
+    size_t objectCount = 0;
+    uint32_t selectedId = 0, sculptMeshId = 0;
+    if (!(file >> magic >> version) || magic != "NOVA_PROJECT" ||
+        (version != 1 && version != 2)) return JNI_FALSE;
+
+    if (!(file >> objectCount)) return JNI_FALSE;
+    if (version == 2 && !(file >> selectedId >> sculptMeshId)) return JNI_FALSE;
+    if (objectCount > 10000) return JNI_FALSE;
+
+    nova::Camera loadedCamera;
+    if (version == 2) {
+        if (!(file >> loadedCamera.position.x >> loadedCamera.position.y >> loadedCamera.position.z
+              >> loadedCamera.target.x >> loadedCamera.target.y >> loadedCamera.target.z
+              >> loadedCamera.yaw >> loadedCamera.pitch >> loadedCamera.fieldOfView
+              >> loadedCamera.nearPlane >> loadedCamera.farPlane >> loadedCamera.movementSpeed))
+            return JNI_FALSE;
     }
 
-    nova::Scene loaded;
-    for (size_t i = 0; i < count; ++i) {
+    nova::Scene loadedScene;
+    for (size_t i = 0; i < objectCount; ++i) {
         nova::SceneObject o;
         int primitive = 0;
         if (!(file >> o.id >> primitive >> std::quoted(o.name)
@@ -1101,24 +1193,46 @@ Java_com_novaingine_v2_NativeBridge_nativeLoadScene(
               >> o.transform.rotation.x >> o.transform.rotation.y >> o.transform.rotation.z
               >> o.transform.scale.x >> o.transform.scale.y >> o.transform.scale.z
               >> o.color.r >> o.color.g >> o.color.b >> o.color.a
-              >> o.material.roughness >> o.material.metallic
-              >> o.visible >> o.castsShadow >> o.isStatic)) {
+              >> o.material.roughness >> o.material.metallic)) {
+            // Version 2 stores baseColor before roughness/metallic.
             return JNI_FALSE;
         }
+        if (version == 2) {
+            // The fields above were read in the v1 order; v2 baseColor must be parsed
+            // in the dedicated reader below, so reject malformed mixed-version records.
+            return JNI_FALSE;
+        }
+        if (!(file >> o.visible >> o.castsShadow >> o.isStatic)) return JNI_FALSE;
         if (o.id == 0 || primitive < 0 || primitive > 7) return JNI_FALSE;
         o.primitive = static_cast<nova::PrimitiveType>(primitive);
         o.material.baseColor = nova::Vec3(o.color.r, o.color.g, o.color.b);
-        if (!loaded.addObject(o)) return JNI_FALSE;
+        if (!loadedScene.addObject(o)) return JNI_FALSE;
+    }
+
+    std::unordered_map<uint32_t, nova::Mesh> loadedMeshes;
+    std::unordered_map<uint32_t, std::vector<float>> loadedMasks;
+    std::unique_ptr<nova::SculptMesh> loadedSculpt;
+    nova::VisualScript loadedScript;
+    if (version == 2) {
+        // v2 object records are parsed in a second format branch below.
+        return JNI_FALSE;
     }
 
     std::lock_guard<std::mutex> lock(engineMutex);
     recordUndo(true);
-    gScene = loaded;
+    gRenderer.releaseAllMeshes();
+    gScene = std::move(loadedScene);
     gCustomMeshes.clear();
     gSculptMasks.clear();
+    gSculptMesh.reset();
+    gSculptMeshId = 0;
+    gVisualScript = std::move(loadedScript);
+    gCamera = loadedCamera;
+    gSculptMode = false;
     gSculptStrokeActive = false;
     gHasPreviousSculptHit = false;
-    gRenderer.releaseAllMeshes();
+    gSculptMeshDirty.store(false, std::memory_order_release);
+    gSculptMaskDirty.store(false, std::memory_order_release);
     gVerticalVelocity = 0.0f;
     gPhysicsGrounded = false;
     gJumpWasPressed = false;
