@@ -6,7 +6,6 @@ import org.json.JSONObject;
 
 import java.time.Instant;
 import java.util.LinkedHashSet;
-import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -70,7 +69,7 @@ public final class RemoteCommandDispatcher implements AutoCloseable {
             String details;
             switch (operation) {
                 case "device.get_status":
-                    details = "Android engine agent is online and ready. Network transport is not enabled in this build.";
+                    details = "Local Android command dispatcher is available. Network transport is not enabled in this build.";
                     break;
                 case "scene.inspect":
                     details = inspectScene(payload.optBoolean("includeTransforms", true));
