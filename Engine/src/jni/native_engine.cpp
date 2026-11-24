@@ -305,6 +305,49 @@ bool makeScreenRay(float screenX, float screenY, nova::Vec3& ray) {
     ray=nova::normalize(farPoint-nearPoint);
     return nova::length(ray)>0.0001f;
 }
+// Transform helpers use the same Rz * Ry * Rx order as Renderer::makeModelMatrix.
+nova::Vec3 rotateByObject(const nova::Vec3& v, const nova::Vec3& degrees) {
+    const float k=3.14159265358979323846f/180.0f;
+    const float x=degrees.x*k,y=degrees.y*k,z=degrees.z*k;
+    const float cx=std::cos(x),sx=std::sin(x),cy=std::cos(y),sy=std::sin(y),cz=std::cos(z),sz=std::sin(z);
+    const nova::Vec3 rx(v.x, v.y*cx-v.z*sx, v.y*sx+v.z*cx);
+    const nova::Vec3 ry(rx.x*cy+rx.z*sy, rx.y, -rx.x*sy+rx.z*cy);
+    return nova::Vec3(ry.x*cz-ry.y*sz, ry.x*sz+ry.y*cz, ry.z);
+}
+nova::Vec3 inverseRotateByObject(const nova::Vec3& v, const nova::Vec3& degrees) {
+    const float k=3.14159265358979323846f/180.0f;
+    const float x=-degrees.x*k,y=-degrees.y*k,z=-degrees.z*k;
+    const float cx=std::cos(x),sx=std::sin(x),cy=std::cos(y),sy=std::sin(y),cz=std::cos(z),sz=std::sin(z);
+    const nova::Vec3 rz(v.x*cz-v.y*sz, v.x*sz+v.y*cz, v.z);
+    const nova::Vec3 ry(rz.x*cy+rz.z*sy, rz.y, -rz.x*sy+rz.z*cy);
+    return nova::Vec3(ry.x, ry.y*cx-ry.z*sx, ry.y*sx+ry.z*cx);
+}
+nova::Vec3 worldToSculptLocalPoint(const nova::Vec3& world, const nova::Transform& t) {
+    nova::Vec3 p=inverseRotateByObject(world-t.position,t.rotation);
+    return nova::Vec3(p.x/std::max(0.01f,std::fabs(t.scale.x)),
+                      p.y/std::max(0.01f,std::fabs(t.scale.y)),
+                      p.z/std::max(0.01f,std::fabs(t.scale.z)));
+}
+nova::Vec3 worldToSculptLocalVector(const nova::Vec3& world, const nova::Transform& t) {
+    nova::Vec3 p=inverseRotateByObject(world,t.rotation);
+    return nova::Vec3(p.x/std::max(0.01f,std::fabs(t.scale.x)),
+                      p.y/std::max(0.01f,std::fabs(t.scale.y)),
+                      p.z/std::max(0.01f,std::fabs(t.scale.z)));
+}
+nova::Vec3 sculptLocalToWorldPoint(const nova::Vec3& local, const nova::Transform& t) {
+    return t.position+rotateByObject(nova::Vec3(local.x*t.scale.x,local.y*t.scale.y,local.z*t.scale.z),t.rotation);
+}
+nova::Vec3 sculptLocalToWorldNormal(const nova::Vec3& local, const nova::Transform& t) {
+    return nova::normalize(rotateByObject(nova::Vec3(local.x/std::max(0.01f,std::fabs(t.scale.x)),
+        local.y/std::max(0.01f,std::fabs(t.scale.y)),local.z/std::max(0.01f,std::fabs(t.scale.z))),t.rotation));
+}
+float sculptLocalRadius(float worldRadius, const nova::Transform& t) {
+    const float sx=std::max(0.01f,std::fabs(t.scale.x));
+    const float sy=std::max(0.01f,std::fabs(t.scale.y));
+    const float sz=std::max(0.01f,std::fabs(t.scale.z));
+    return worldRadius/std::cbrt(sx*sy*sz);
+}
+
 bool selectObjectAt(float screenX, float screenY) {
     nova::Vec3 ray;
 
@@ -1457,13 +1500,15 @@ Java_com_novaingine_v2_NativeBridge_nativeUpdateSculptCursor(
     if(!object)return;
     std::unique_lock<std::mutex> dataLock(gSculptDataMutex,std::try_to_lock);
     if(!dataLock.owns_lock()||!gSculptMesh)return;
-    nova::Vec3 localOrigin=gCamera.position-object->transform.position;
-    nova::SculptMesh::Hit hit=gSculptMesh->raycast(localOrigin,ray);
+    nova::Vec3 localOrigin=worldToSculptLocalPoint(gCamera.position,object->transform);
+    nova::Vec3 localRay=nova::normalize(worldToSculptLocalVector(ray,object->transform));
+    nova::SculptMesh::Hit hit=gSculptMesh->raycast(localOrigin,localRay);
     if(!hit.found) {
         gRenderer.setSculptCursor(false,nova::Vec3(),nova::Vec3(0,1,0),0.18f);return;
     }
-    gRenderer.setSculptCursor(true,hit.point+object->transform.position,hit.normal,
-        std::clamp((float)radiusValue,0.02f,3.0f));
+    gRenderer.setSculptCursor(true,sculptLocalToWorldPoint(hit.point,object->transform),
+        sculptLocalToWorldNormal(hit.normal,object->transform),
+        std::clamp((float)radiusValue,0.02f,8.0f));
 }
 
 JNIEXPORT jboolean JNICALL
@@ -1579,16 +1624,18 @@ Java_com_novaingine_v2_NativeBridge_nativeSculptAtScreen(
     if(!object||id!=gSculptMeshId||!gSculptMesh)return -1;
     nova::Vec3 ray;
     if(!makeScreenRay(screenX,screenY,ray)){gHasPreviousSculptHit=false;gRenderer.setSculptCursor(false,nova::Vec3(),nova::Vec3(0,1,0),0.18f);return 0;}
-    const nova::Vec3 localOrigin=gCamera.position-object->transform.position;
+    const nova::Vec3 localOrigin=worldToSculptLocalPoint(gCamera.position,object->transform);
+    const nova::Vec3 localRay=nova::normalize(worldToSculptLocalVector(ray,object->transform));
+    if(nova::length(localRay)<0.0001f)return 0;
     nova::SculptMesh::Hit hit;
     {
         std::unique_lock<std::mutex> dataLock(gSculptDataMutex,std::try_to_lock);
         if(!dataLock.owns_lock())return 0;
-        hit=gSculptMesh->raycast(localOrigin,ray);
+        hit=gSculptMesh->raycast(localOrigin,localRay);
     }
     if(!hit.found){gHasPreviousSculptHit=false;gRenderer.setSculptCursor(false,nova::Vec3(),nova::Vec3(0,1,0),0.18f);return 0;}
     nova::SculptMesh::Brush brush;
-    brush.radius=std::clamp((float)radiusValue,0.02f,8.0f);
+    brush.radius=std::clamp(sculptLocalRadius((float)radiusValue,object->transform),0.02f,8.0f);
     brush.strength=std::clamp((float)strengthValue,0.0f,1.0f);
     brush.hardness=std::clamp((float)falloffValue,0.0f,1.0f);
     brush.pressure=std::clamp((float)pressureValue,0.0f,1.0f);
@@ -1617,7 +1664,7 @@ Java_com_novaingine_v2_NativeBridge_nativeSculptAtScreen(
     gPreviousSculptHit=hit.point;
     gPreviousSculptNormal=hit.normal;
     gHasPreviousSculptHit=true;
-    gRenderer.setSculptCursor(true,hit.point+object->transform.position,hit.normal,brush.radius);
+    gRenderer.setSculptCursor(true,sculptLocalToWorldPoint(hit.point,object->transform),sculptLocalToWorldNormal(hit.normal,object->transform),(float)radiusValue);
     return 1;
 }
 
