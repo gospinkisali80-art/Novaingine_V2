@@ -2,6 +2,9 @@ package com.novaingine.v2;
 
 import android.app.Activity;
 import android.graphics.Color;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
@@ -25,7 +28,25 @@ import java.io.File;
 public final class ManualSculptWorkspace extends FrameLayout {
     private static final String[] BRUSHES = {
             "Draw", "Smooth", "Grab", "Inflate", "Pinch", "Flatten",
-            "Crease", "Mask", "Clay", "Scrape", "Layer", "Unmask"
+            "Crease", "Mask", "Clay", "Scrape", "Layer", "Unmask",
+            "Blob", "Clay Strips", "Elastic Deform", "Snake Hook", "Thumb",
+            "Pose", "Boundary", "Slide Relax", "Multiplane Scrape", "Fill",
+            "Deepen", "Nudge", "Simplify"
+    };
+    private static final String[] BRUSH_DESCRIPTIONS = {
+            "Adds or removes volume along the surface.", "Softens bumps and evens the mesh.",
+            "Drags a region without adding volume.", "Pushes the surface outward along its normals.",
+            "Pulls nearby vertices toward the stroke center.", "Flattens raised areas toward a plane.",
+            "Carves a narrow groove into the surface.", "Protects a region from sculpting.",
+            "Builds up volume in clay-like strokes.", "Scrapes high points toward a flatter surface.",
+            "Builds a controlled layer of surface volume.", "Removes mask protection from the surface.",
+            "Adds rounded volume beneath the brush.", "Builds raised, elongated strips like layered clay.",
+            "Stretches the surface with an elastic response.", "Pulls geometry outward to form long extensions.",
+            "Pushes and smears surface geometry along the stroke.", "Bends and shifts a broad region of the mesh.",
+            "Shapes open mesh borders and edge regions.", "Relaxes uneven topology while sliding vertices.",
+            "Scrapes using a multi-directional flattening plane.", "Raises low areas and fills shallow depressions.",
+            "Carves a stronger groove into the surface.", "Moves vertices along the stroke direction.",
+            "Smooths and simplifies local surface detail."
     };
     private static final int BG = 0xFF15191F;
     private static final int PANEL = 0xF0202731;
@@ -36,6 +57,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private final Runnable onExit;
     private final TextView status;
     private final TextView[] brushButtons = new TextView[BRUSHES.length];
+    private LinearLayout brushControls;
+    private int gizmoAxis = -1;
     private int selectedBrush;
     private float radius = 0.18f;
     private float strength = 0.40f;
@@ -126,125 +149,75 @@ public final class ManualSculptWorkspace extends FrameLayout {
         status = label("Choose a shape, then drag on the mesh to sculpt.", 10, 0xFFB8C4D1, false);
         bottom.addView(status);
 
-        HorizontalScrollView brushScroll = new HorizontalScrollView(activity);
-        brushScroll.setHorizontalScrollBarEnabled(false);
-        LinearLayout brushRow = new LinearLayout(activity);
-        brushRow.setOrientation(LinearLayout.HORIZONTAL);
-        brushRow.setPadding(0, dp(7), 0, dp(7));
-        brushScroll.addView(brushRow);
-        bottom.addView(brushScroll, new LinearLayout.LayoutParams(
-                LayoutParams.MATCH_PARENT, dp(49)));
-
+        TextView brushSelector = button("SCULPT BRUSHES  ▾");
+        brushSelector.setTextColor(ACCENT);
+        bottom.addView(brushSelector, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
+        ScrollView brushScroll = new ScrollView(activity);
+        LinearLayout brushList = new LinearLayout(activity);
+        brushList.setOrientation(LinearLayout.VERTICAL);
+        brushList.setPadding(0, dp(4), 0, dp(4));
+        brushScroll.addView(brushList);
+        bottom.addView(brushScroll, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(190)));
+        brushScroll.setVisibility(View.GONE);
+        brushSelector.setOnClickListener(v -> {
+            boolean opening = brushScroll.getVisibility() != View.VISIBLE;
+            brushScroll.setVisibility(opening ? View.VISIBLE : View.GONE);
+            brushSelector.setText(opening ? "SCULPT BRUSHES  ▴" : "SCULPT BRUSHES  ▾");
+        });
         for (int i = 0; i < BRUSHES.length; i++) {
             final int index = i;
-            TextView b = button(BRUSHES[i]);
-            brushButtons[i] = b;
-            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
-                    LayoutParams.WRAP_CONTENT, dp(36));
-            p.setMargins(0, 0, dp(5), 0);
-            brushRow.addView(b, p);
-            b.setOnClickListener(v -> {
-                selectedBrush = index;
-                activeTransformMode = -1;
-                orbitMode = false;
-                if (orbitButton != null) { orbitButton.setText("ORBIT VIEW: OFF"); orbitButton.setTextColor(Color.WHITE); }
-                sculptEnabled = true;
-                updateBrushButtons();
-                applyOptions();
-                selectedToolIndicator.setText("ACTIVE: " + BRUSHES[index] + "  ▴ TOOLS");
-                closeToolDrawer.run();
-            });
-        }
-        updateBrushButtons();
-
-        // Additional sculpt brushes live in their own expandable category.
-        final String[] specialBrushes = {
-                "Blob", "Clay Strips", "Elastic Deform", "Snake Hook", "Thumb",
-                "Pose", "Boundary", "Slide Relax", "Multiplane Scrape", "Fill",
-                "Deepen", "Nudge", "Simplify"
-        };
-        final String[] specialDescriptions = {
-                "Adds rounded volume beneath the brush.",
-                "Builds raised, elongated strips like layered clay.",
-                "Stretches the surface with an elastic, spring-like response.",
-                "Pulls geometry outward to form long extensions.",
-                "Pushes and smears surface geometry in the stroke direction.",
-                "Bends and shifts a broad region of the mesh.",
-                "Shapes open mesh borders and edge regions.",
-                "Relaxes uneven topology while sliding vertices along the surface.",
-                "Scrapes a surface against a multi-directional flattening plane.",
-                "Raises low areas and fills shallow depressions.",
-                "Carves a stronger groove into the surface.",
-                "Moves vertices along the stroke direction without adding volume.",
-                "Smooths and simplifies local surface detail."
-        };
-        TextView specialToggle = button("SPECIAL BRUSHES  ▾");
-        specialToggle.setTextColor(ACCENT);
-        bottom.addView(specialToggle, new LinearLayout.LayoutParams(
-                LayoutParams.MATCH_PARENT, dp(38)));
-        ScrollView specialScroll = new ScrollView(activity);
-        LinearLayout specialList = new LinearLayout(activity);
-        specialList.setOrientation(LinearLayout.VERTICAL);
-        specialList.setPadding(0, dp(4), 0, dp(4));
-        specialScroll.addView(specialList);
-        bottom.addView(specialScroll, new LinearLayout.LayoutParams(
-                LayoutParams.MATCH_PARENT, dp(190)));
-        specialScroll.setVisibility(View.GONE);
-        specialToggle.setOnClickListener(v -> {
-            boolean opening = specialScroll.getVisibility() != View.VISIBLE;
-            specialScroll.setVisibility(opening ? View.VISIBLE : View.GONE);
-            specialToggle.setText(opening ? "SPECIAL BRUSHES  ▴" : "SPECIAL BRUSHES  ▾");
-        });
-        for (int i = 0; i < specialBrushes.length; i++) {
-            final int brushIndex = 12 + i;
             LinearLayout entry = new LinearLayout(activity);
             entry.setOrientation(LinearLayout.VERTICAL);
             entry.setPadding(dp(9), dp(6), dp(9), dp(6));
             entry.setBackground(background(0xFF26313D));
-            TextView name = label(specialBrushes[i], 11, Color.WHITE, true);
-            TextView description = label(specialDescriptions[i], 9, 0xFFB8C4D1, false);
+            TextView name = label(BRUSHES[i], 11, Color.WHITE, true);
+            TextView description = label(BRUSH_DESCRIPTIONS[i], 9, 0xFFB8C4D1, false);
             entry.addView(name);
             entry.addView(description);
-            LinearLayout.LayoutParams entryParams = new LinearLayout.LayoutParams(
-                    LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
+            LinearLayout.LayoutParams entryParams = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
             entryParams.setMargins(0, 0, 0, dp(4));
-            specialList.addView(entry, entryParams);
+            brushList.addView(entry, entryParams);
+            brushButtons[i] = name;
             entry.setClickable(true);
             entry.setOnClickListener(v -> {
-                selectedBrush = brushIndex;
+                selectedBrush = index;
                 activeTransformMode = -1;
+                gizmoAxis = -1;
                 orbitMode = false;
-                if (orbitButton != null) {
-                    orbitButton.setText("ORBIT VIEW: OFF");
-                    orbitButton.setTextColor(Color.WHITE);
-                }
+                if (orbitButton != null) { orbitButton.setText("ORBIT VIEW: OFF"); orbitButton.setTextColor(Color.WHITE); }
                 sculptEnabled = true;
+                brushControls.setVisibility(View.VISIBLE);
                 updateBrushButtons();
                 applyOptions();
-                selectedToolIndicator.setText("ACTIVE: " + specialBrushes[brushIndex - 12] + "  ▴ TOOLS");
-                specialScroll.setVisibility(View.GONE);
-                specialToggle.setText("SPECIAL BRUSHES  ▾");
+                selectedToolIndicator.setText("ACTIVE: " + BRUSHES[index] + "  ▴ TOOLS");
+                brushScroll.setVisibility(View.GONE);
+                brushSelector.setText("SCULPT BRUSHES  ▾");
                 closeToolDrawer.run();
-                status.setText(specialDescriptions[brushIndex - 12]);
+                status.setText(BRUSH_DESCRIPTIONS[index]);
             });
         }
+        updateBrushButtons();
 
-        addSlider(bottom, "BRUSH SIZE", 1, 300, 33, value -> {
+        brushControls = new LinearLayout(activity);
+        brushControls.setOrientation(LinearLayout.VERTICAL);
+        bottom.addView(brushControls);
+        addSlider(brushControls, "BRUSH SIZE", 1, 300, 33, value -> {
             radius = 0.02f + ((value - 1) / 299.0f) * 2.98f;
             applyOptions();
         });
-        addSlider(bottom, "STRENGTH", 0, 100, 40, value -> {
+        addSlider(brushControls, "STRENGTH", 0, 100, 40, value -> {
             strength = value / 100.0f;
             applyOptions();
         });
-        addSlider(bottom, "HARDNESS", 0, 100, 50, value -> {
+        addSlider(brushControls, "HARDNESS", 0, 100, 50, value -> {
             falloff = value / 100.0f;
             applyOptions();
         });
-        addSlider(bottom, "PRESSURE", 5, 100, 100, value -> {
+        addSlider(brushControls, "PRESSURE", 5, 100, 100, value -> {
             pressure = value / 100.0f;
             applyOptions();
         });
+        brushControls.setVisibility(View.GONE);
 
         LinearLayout actions = new LinearLayout(activity);
         actions.setGravity(Gravity.CENTER_VERTICAL);
@@ -340,6 +313,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 selectedToolIndicator.setText("ORBIT SELECTED OBJECT  ▴ TOOLS");
             } else {
                 sculptEnabled = true;
+                brushControls.setVisibility(View.VISIBLE);
                 applyOptions();
                 orbitButton.setText("ORBIT VIEW: OFF");
                 orbitButton.setTextColor(Color.WHITE);
@@ -355,6 +329,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
             modeButton.setOnClickListener(v -> {
                 engine.setTransformMode(nativeMode);
                 activeTransformMode = nativeMode;
+                gizmoAxis = -1;
+                brushControls.setVisibility(View.GONE);
                 orbitMode = false;
                 orbitButton.setText("ORBIT VIEW: OFF");
                 orbitButton.setTextColor(Color.WHITE);
@@ -497,8 +473,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
 
     private void updateBrushButtons() {
         for (int i = 0; i < brushButtons.length; i++) {
-            brushButtons[i].setBackground(background(
-                    i == selectedBrush ? 0xFF65451F : 0xFF303B48));
+            if (brushButtons[i] == null) continue;
+            brushButtons[i].setText(BRUSHES[i] + (i == selectedBrush ? "  • SELECTED" : ""));
             brushButtons[i].setTextColor(i == selectedBrush ? ACCENT : Color.WHITE);
         }
     }
@@ -551,6 +527,52 @@ public final class ManualSculptWorkspace extends FrameLayout {
             setFocusable(true);
         }
 
+        private float distanceToSegment(float px, float py, float ax, float ay, float bx, float by) {
+            float vx = bx - ax, vy = by - ay;
+            float length2 = vx * vx + vy * vy;
+            float t = length2 == 0 ? 0 : ((px - ax) * vx + (py - ay) * vy) / length2;
+            t = Math.max(0, Math.min(1, t));
+            float dx = px - (ax + t * vx), dy = py - (ay + t * vy);
+            return (float)Math.sqrt(dx * dx + dy * dy);
+        }
+
+        private int hitGizmoAxis(float x, float y) {
+            float cx = getWidth() * 0.5f, cy = getHeight() * 0.48f, length = dp(76);
+            float[][] ends = {{cx + length, cy}, {cx, cy - length}, {cx - length * 0.72f, cy + length * 0.72f}};
+            for (int axis = 0; axis < 3; axis++) {
+                if (distanceToSegment(x, y, cx, cy, ends[axis][0], ends[axis][1]) < dp(18)) return axis;
+            }
+            return -1;
+        }
+
+        @Override protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            if (activeTransformMode != 0) return;
+            float cx = getWidth() * 0.5f, cy = getHeight() * 0.48f, length = dp(76);
+            Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            paint.setStrokeWidth(dp(4));
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setStyle(Paint.Style.STROKE);
+            int[] colors = {0xFFFF5555, 0xFF55DD77, 0xFF5599FF};
+            float[][] ends = {{cx + length, cy}, {cx, cy - length}, {cx - length * 0.72f, cy + length * 0.72f}};
+            for (int axis = 0; axis < 3; axis++) {
+                paint.setColor(colors[axis]);
+                paint.setStrokeWidth(gizmoAxis == axis ? dp(7) : dp(4));
+                canvas.drawLine(cx, cy, ends[axis][0], ends[axis][1], paint);
+                float angle = (float)Math.atan2(ends[axis][1] - cy, ends[axis][0] - cx);
+                float head = dp(13);
+                Path arrow = new Path();
+                arrow.moveTo(ends[axis][0], ends[axis][1]);
+                arrow.lineTo(ends[axis][0] - head * (float)Math.cos(angle - 0.55f), ends[axis][1] - head * (float)Math.sin(angle - 0.55f));
+                arrow.moveTo(ends[axis][0], ends[axis][1]);
+                arrow.lineTo(ends[axis][0] - head * (float)Math.cos(angle + 0.55f), ends[axis][1] - head * (float)Math.sin(angle + 0.55f));
+                canvas.drawPath(arrow, paint);
+                paint.setStyle(Paint.Style.FILL);
+                canvas.drawText(axis == 0 ? "X" : axis == 1 ? "Y" : "Z", ends[axis][0] + dp(5), ends[axis][1] - dp(5), paint);
+                paint.setStyle(Paint.Style.STROKE);
+            }
+        }
+
         private float distance(MotionEvent e) {
             if (e.getPointerCount() < 2) return 0;
             float dx = e.getX(0) - e.getX(1);
@@ -560,6 +582,29 @@ public final class ManualSculptWorkspace extends FrameLayout {
 
         @Override public boolean onTouchEvent(MotionEvent event) {
             int action = event.getActionMasked();
+            if (event.getPointerCount() == 1 && activeTransformMode == 0) {
+                if (action == MotionEvent.ACTION_DOWN) {
+                    gizmoAxis = hitGizmoAxis(event.getX(), event.getY());
+                    if (gizmoAxis >= 0) {
+                        transformDragState = engine.getSelectedTransform();
+                        lastX = event.getX(); lastY = event.getY();
+                        return true;
+                    }
+                } else if (gizmoAxis >= 0 && action == MotionEvent.ACTION_MOVE) {
+                    float dx = event.getX() - lastX, dy = event.getY() - lastY;
+                    if (transformDragState != null && transformDragState.length >= 9) {
+                        float delta = gizmoAxis == 0 ? dx * 0.008f : gizmoAxis == 1 ? -dy * 0.008f : (dx - dy) * 0.00565f;
+                        transformDragState[gizmoAxis] += delta;
+                        engine.setSelectedTransform(transformDragState);
+                        positionInputs[gizmoAxis].setText(String.valueOf(transformDragState[gizmoAxis]));
+                    }
+                    lastX = event.getX(); lastY = event.getY();
+                    invalidate();
+                    return true;
+                } else if ((action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) && gizmoAxis >= 0) {
+                    gizmoAxis = -1; invalidate(); return true;
+                }
+            }
             engine.handleSculptTouchFromView(event, this);
             if (event.getPointerCount() >= 2) {
                 float cx = (event.getX(0) + event.getX(1)) * 0.5f;
