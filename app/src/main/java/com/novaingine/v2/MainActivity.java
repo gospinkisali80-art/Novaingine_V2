@@ -339,7 +339,7 @@ public final class MainActivity extends Activity
 
         addDrawerSection("WORLD BUILDING");
         addDrawerItem("Terrain Sculpting", "Sculpt the generated terrain surface", this::showTerrainSculptor);
-        addDrawerItem("Manual Sculpting", "Open the full-screen portrait sculpt workspace with all 12 brushes", this::showMeshSculptor);
+        addDrawerItem("Manual Sculpting", "Open the landscape sculpt editor with brush browser, scene tools and viewport controls", this::showMeshSculptor);
         addDrawerItem("Foliage Painting", "Paint trees and bushes into the scene", this::showFoliagePainter);
         addDrawerItem("Import Blender Model (.glb)", "Import a Blender-exported glTF binary model", this::openGlbPicker);
 
@@ -748,7 +748,7 @@ public final class MainActivity extends Activity
 
     private void openManualSculpting() {
         if (manualSculptWorkspace != null) return;
-        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
         if (editorToolbar != null) editorToolbar.setVisibility(View.GONE);
         if (viewportInput != null) viewportInput.setVisibility(View.GONE);
         if (statisticsText != null) statisticsText.setVisibility(View.GONE);
