@@ -262,7 +262,9 @@
                 "minItems": 3,
                 "maxItems": 384,
                 "items": {
-                  "$ref": "#/$defs/vec3"
+                  "type": "number",
+                  "minimum": -20,
+                  "maximum": 20
                 }
               },
               "radius": {
