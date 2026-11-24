@@ -107,7 +107,7 @@ void enqueueSculptJob(const SculptDabJob& job) {
     gSculptJobsPending.fetch_add(1, std::memory_order_acq_rel);
     {
         std::lock_guard<std::mutex> lock(gSculptQueueMutex);
-        if(gSculptQueue.size()>=4096)gSculptQueue.pop_front();
+        if(gSculptQueue.size()>=4096){gSculptQueue.pop_front();gSculptJobsPending.fetch_sub(1,std::memory_order_release);}
         gSculptQueue.push_back(job);
     }
     gSculptQueueCv.notify_one();
@@ -1168,15 +1168,15 @@ Java_com_novaingine_v2_NativeBridge_nativeLoadScene(
     int version = 0;
     size_t objectCount = 0;
     uint32_t selectedId = 0, sculptMeshId = 0;
-    if (!(file >> magic >> version) || magic != "NOVA_PROJECT" ||
-        (version != 1 && version != 2)) return JNI_FALSE;
-
-    if (!(file >> objectCount)) return JNI_FALSE;
-    if (version == 2 && !(file >> selectedId >> sculptMeshId)) return JNI_FALSE;
-    if (objectCount > 10000) return JNI_FALSE;
+    if (!(file >> magic >> version)) return JNI_FALSE;
+    const bool legacy = magic == "NOVA_SCENE" && version == 1;
+    const bool current = magic == "NOVA_PROJECT" && version == 2;
+    if (!legacy && !current) return JNI_FALSE;
+    if (!(file >> objectCount) || objectCount > 10000) return JNI_FALSE;
+    if (current && !(file >> selectedId >> sculptMeshId)) return JNI_FALSE;
 
     nova::Camera loadedCamera;
-    if (version == 2) {
+    if (current) {
         if (!(file >> loadedCamera.position.x >> loadedCamera.position.y >> loadedCamera.position.z
               >> loadedCamera.target.x >> loadedCamera.target.y >> loadedCamera.target.z
               >> loadedCamera.yaw >> loadedCamera.pitch >> loadedCamera.fieldOfView
@@ -1192,20 +1192,23 @@ Java_com_novaingine_v2_NativeBridge_nativeLoadScene(
               >> o.transform.position.x >> o.transform.position.y >> o.transform.position.z
               >> o.transform.rotation.x >> o.transform.rotation.y >> o.transform.rotation.z
               >> o.transform.scale.x >> o.transform.scale.y >> o.transform.scale.z
-              >> o.color.r >> o.color.g >> o.color.b >> o.color.a
-              >> o.material.roughness >> o.material.metallic)) {
-            // Version 2 stores baseColor before roughness/metallic.
+              >> o.color.r >> o.color.g >> o.color.b >> o.color.a))
             return JNI_FALSE;
+        if (current) {
+            if (!(file >> o.material.baseColor.x >> o.material.baseColor.y >> o.material.baseColor.z
+                  >> o.material.roughness >> o.material.metallic
+                  >> o.visible >> o.castsShadow >> o.isStatic)) return JNI_FALSE;
+        } else {
+            if (!(file >> o.material.roughness >> o.material.metallic
+                  >> o.visible >> o.castsShadow >> o.isStatic)) return JNI_FALSE;
+            o.material.baseColor = nova::Vec3(o.color.r, o.color.g, o.color.b);
         }
-        if (version == 2) {
-            // The fields above were read in the v1 order; v2 baseColor must be parsed
-            // in the dedicated reader below, so reject malformed mixed-version records.
+        if (o.id == 0 || primitive < 0 || primitive > 7 ||
+            !std::isfinite(o.transform.position.x) || !std::isfinite(o.transform.position.y) ||
+            !std::isfinite(o.transform.position.z) || !std::isfinite(o.transform.scale.x) ||
+            !std::isfinite(o.transform.scale.y) || !std::isfinite(o.transform.scale.z))
             return JNI_FALSE;
-        }
-        if (!(file >> o.visible >> o.castsShadow >> o.isStatic)) return JNI_FALSE;
-        if (o.id == 0 || primitive < 0 || primitive > 7) return JNI_FALSE;
         o.primitive = static_cast<nova::PrimitiveType>(primitive);
-        o.material.baseColor = nova::Vec3(o.color.r, o.color.g, o.color.b);
         if (!loadedScene.addObject(o)) return JNI_FALSE;
     }
 
@@ -1213,26 +1216,138 @@ Java_com_novaingine_v2_NativeBridge_nativeLoadScene(
     std::unordered_map<uint32_t, std::vector<float>> loadedMasks;
     std::unique_ptr<nova::SculptMesh> loadedSculpt;
     nova::VisualScript loadedScript;
-    if (version == 2) {
-        // v2 object records are parsed in a second format branch below.
-        return JNI_FALSE;
+
+    if (current) {
+        size_t meshCount = 0;
+        if (!(file >> meshCount) || meshCount > 10000) return JNI_FALSE;
+        for (size_t m = 0; m < meshCount; ++m) {
+            uint32_t id = 0;
+            size_t vertexCount = 0, indexCount = 0;
+            if (!(file >> id >> vertexCount >> indexCount) ||
+                id == 0 || vertexCount == 0 || vertexCount > 5000000 ||
+                indexCount == 0 || indexCount > 30000000 || indexCount % 3 != 0)
+                return JNI_FALSE;
+            std::vector<nova::Vertex> vertices;
+            vertices.reserve(vertexCount);
+            for (size_t v = 0; v < vertexCount; ++v) {
+                nova::Vertex vertex;
+                if (!(file >> vertex.position.x >> vertex.position.y >> vertex.position.z
+                      >> vertex.normal.x >> vertex.normal.y >> vertex.normal.z
+                      >> vertex.u >> vertex.v)) return JNI_FALSE;
+                if (!std::isfinite(vertex.position.x) || !std::isfinite(vertex.position.y) ||
+                    !std::isfinite(vertex.position.z) || !std::isfinite(vertex.normal.x) ||
+                    !std::isfinite(vertex.normal.y) || !std::isfinite(vertex.normal.z) ||
+                    !std::isfinite(vertex.u) || !std::isfinite(vertex.v)) return JNI_FALSE;
+                vertices.push_back(vertex);
+            }
+            std::vector<uint32_t> indices(indexCount);
+            for (uint32_t& index : indices) {
+                if (!(file >> index) || index >= vertexCount) return JNI_FALSE;
+            }
+            nova::Mesh mesh;
+            mesh.setData(std::move(vertices), std::move(indices));
+            if (!mesh.isValid() || !loadedMeshes.emplace(id, std::move(mesh)).second)
+                return JNI_FALSE;
+            size_t maskCount = 0;
+            if (!(file >> maskCount) || (maskCount != 0 && maskCount != vertexCount))
+                return JNI_FALSE;
+            std::vector<float> mask(maskCount);
+            for (float& value : mask) {
+                if (!(file >> value) || !std::isfinite(value)) return JNI_FALSE;
+                value = std::clamp(value, 0.0f, 1.0f);
+            }
+            loadedMasks.emplace(id, std::move(mask));
+        }
+
+        int hasSculpt = 0;
+        if (!(file >> hasSculpt) || (hasSculpt != 0 && hasSculpt != 1)) return JNI_FALSE;
+        if (hasSculpt) {
+            size_t vertexCount = 0, indexCount = 0;
+            if (!(file >> vertexCount >> indexCount) ||
+                vertexCount == 0 || vertexCount > 5000000 ||
+                indexCount == 0 || indexCount > 30000000 || indexCount % 3 != 0)
+                return JNI_FALSE;
+            loadedSculpt.reset(new nova::SculptMesh());
+            loadedSculpt->positions.resize(vertexCount);
+            loadedSculpt->normals.resize(vertexCount);
+            loadedSculpt->mask.resize(vertexCount);
+            for (size_t i = 0; i < vertexCount; ++i) {
+                auto& p = loadedSculpt->positions[i];
+                auto& n = loadedSculpt->normals[i];
+                float& mask = loadedSculpt->mask[i];
+                if (!(file >> p.x >> p.y >> p.z >> n.x >> n.y >> n.z >> mask))
+                    return JNI_FALSE;
+                if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z) ||
+                    !std::isfinite(n.x) || !std::isfinite(n.y) || !std::isfinite(n.z) ||
+                    !std::isfinite(mask)) return JNI_FALSE;
+                mask = std::clamp(mask, 0.0f, 1.0f);
+            }
+            loadedSculpt->indices.resize(indexCount);
+            for (uint32_t& index : loadedSculpt->indices) {
+                if (!(file >> index) || index >= vertexCount) return JNI_FALSE;
+            }
+            loadedSculpt->buildAdjacency();
+            loadedSculpt->buildChunks();
+            loadedSculpt->buildBVH();
+            if (sculptMeshId == 0 || loadedScene.find(sculptMeshId) == nullptr)
+                return JNI_FALSE;
+            nova::Mesh sculptRenderMesh;
+            if (!loadedSculpt->toMesh(sculptRenderMesh)) return JNI_FALSE;
+            loadedMeshes[sculptMeshId] = std::move(sculptRenderMesh);
+            loadedMasks[sculptMeshId] = loadedSculpt->mask;
+        } else if (sculptMeshId != 0) {
+            return JNI_FALSE;
+        }
+
+        size_t nodeCount = 0;
+        if (!(file >> loadedScript.enabled >> loadedScript.runOnBeginPlay
+              >> loadedScript.runOnTick >> std::quoted(loadedScript.name)
+              >> nodeCount) || nodeCount > 128) return JNI_FALSE;
+        loadedScript.nodes.reserve(nodeCount);
+        for (size_t i = 0; i < nodeCount; ++i) {
+            nova::VisualNode node;
+            int type = 0;
+            if (!(file >> node.id >> type >> node.next >> node.trueNext >> node.falseNext
+                  >> node.objectId >> node.vectorValue.x >> node.vectorValue.y >> node.vectorValue.z
+                  >> node.value >> node.compareValue >> node.condition)) return JNI_FALSE;
+            if (node.id == 0 || type < 0 || type > 8 ||
+                !std::isfinite(node.vectorValue.x) || !std::isfinite(node.vectorValue.y) ||
+                !std::isfinite(node.vectorValue.z) || !std::isfinite(node.value) ||
+                !std::isfinite(node.compareValue)) return JNI_FALSE;
+            node.type = static_cast<nova::VisualNodeType>(type);
+            loadedScript.nodes.push_back(node);
+        }
     }
 
     std::lock_guard<std::mutex> lock(engineMutex);
+    while (gSculptJobsPending.load(std::memory_order_acquire) != 0) {
+        std::this_thread::yield();
+    }
+    std::lock_guard<std::mutex> sculptLock(gSculptDataMutex);
     recordUndo(true);
     gRenderer.releaseAllMeshes();
     gScene = std::move(loadedScene);
-    gCustomMeshes.clear();
-    gSculptMasks.clear();
-    gSculptMesh.reset();
-    gSculptMeshId = 0;
+    if (current && selectedId != 0) gScene.select(selectedId);
+    gCustomMeshes = std::move(loadedMeshes);
+    gSculptMasks = std::move(loadedMasks);
+    gSculptMesh = std::move(loadedSculpt);
+    gSculptMeshId = current ? sculptMeshId : 0;
     gVisualScript = std::move(loadedScript);
-    gCamera = loadedCamera;
+    gVisualScriptStarted = false;
+    if (current) gCamera = loadedCamera;
+    else gCamera.reset();
     gSculptMode = false;
     gSculptStrokeActive = false;
     gHasPreviousSculptHit = false;
+    gRenderer.setSculptCursor(false, nova::Vec3(), nova::Vec3(0, 1, 0), 0.18f);
     gSculptMeshDirty.store(false, std::memory_order_release);
     gSculptMaskDirty.store(false, std::memory_order_release);
+    for (const auto& entry : gCustomMeshes) {
+        if (!gRenderer.uploadMesh(entry.first, entry.second)) return JNI_FALSE;
+    }
+    if (gSculptMesh) {
+        if (!gSculptMesh->uploadChunks()) return JNI_FALSE;
+    }
     gVerticalVelocity = 0.0f;
     gPhysicsGrounded = false;
     gJumpWasPressed = false;
