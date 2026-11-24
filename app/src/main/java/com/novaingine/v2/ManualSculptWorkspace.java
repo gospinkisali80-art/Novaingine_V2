@@ -155,7 +155,6 @@ public final class ManualSculptWorkspace extends FrameLayout {
                                 : result == -1 ? "Enter Sculpt Mode and select its sculpt mesh first."
                                 : "Refinement failed (" + result + ").";
                         Toast.makeText(activity, message, Toast.LENGTH_LONG).show();
-                        status.setText(message);
                     })).show();
         });
         TextView project = label("NOVAINGINE  •  SCULPT WORKSPACE", 11, Color.WHITE, true);
