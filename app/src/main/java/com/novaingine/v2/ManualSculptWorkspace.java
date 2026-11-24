@@ -116,10 +116,20 @@ public final class ManualSculptWorkspace extends FrameLayout {
         home.setOnClickListener(v -> this.onExit.run());
         TextView save = button("▣");
         top.addView(save, new LinearLayout.LayoutParams(dp(42), LayoutParams.MATCH_PARENT));
-        save.setOnClickListener(v -> Toast.makeText(activity, "Use the project Save command to save the scene.", Toast.LENGTH_SHORT).show());
+        save.setOnClickListener(v -> {
+            File folder = activity.getExternalFilesDir(null);
+            if (folder == null) { Toast.makeText(activity, "Save folder unavailable.", Toast.LENGTH_LONG).show(); return; }
+            File file = new File(folder, "Novaingine_Sculpt_Scene.nova");
+            engine.saveSceneAsync(file.getAbsolutePath(), ok -> Toast.makeText(activity,
+                    ok ? "Scene saved: " + file.getAbsolutePath() : "Scene save failed.",
+                    Toast.LENGTH_LONG).show());
+        });
         TextView importButton = button("⇧");
         top.addView(importButton, new LinearLayout.LayoutParams(dp(42), LayoutParams.MATCH_PARENT));
-        importButton.setOnClickListener(v -> Toast.makeText(activity, "Import is available from the main editor tools.", Toast.LENGTH_SHORT).show());
+        importButton.setOnClickListener(v -> {
+            if (activity instanceof MainActivity) ((MainActivity) activity).openSculptAssetPicker();
+            else Toast.makeText(activity, "Import picker unavailable.", Toast.LENGTH_SHORT).show();
+        });
         TextView project = label("NOVAINGINE  •  SCULPT WORKSPACE", 11, Color.WHITE, true);
         project.setGravity(Gravity.CENTER);
         top.addView(project, new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1));
@@ -378,11 +388,15 @@ public final class ManualSculptWorkspace extends FrameLayout {
         LinearLayout dockTabs = new LinearLayout(activity);
         dockTabs.setGravity(Gravity.CENTER_VERTICAL);
         bottomDock.addView(dockTabs, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(34)));
-        TextView dockContent = label("Console  •  Ready", 11, Color.WHITE, false);
-        dockContent.setPadding(dp(12), dp(5), dp(12), dp(5));
-        bottomDock.addView(dockContent, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1));
+        FrameLayout dockBody = new FrameLayout(activity);
+        bottomDock.addView(dockBody, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1));
         String[] dockNames = {"Console", "Objects", "Properties", "Timeline", "Assets"};
-        for (String dockName : dockNames) { TextView tab = button(dockName); dockTabs.addView(tab, new LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT)); tab.setOnClickListener(v -> dockContent.setText(dockName + "  •  panel selected")); }
+        for (String dockName : dockNames) {
+            TextView tab = button(dockName);
+            dockTabs.addView(tab, new LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
+            tab.setOnClickListener(v -> showDockPanel(dockName, dockBody, touch));
+        }
+        showDockPanel("Console", dockBody, touch);
 
         // Bottom brush shelf: persistent shortcuts, not a close/drawer control.
         HorizontalScrollView shelfScroll = new HorizontalScrollView(activity);
@@ -429,6 +443,82 @@ public final class ManualSculptWorkspace extends FrameLayout {
 
         updateBrushButtons();
         applyOptions();
+    }
+
+    private void showDockPanel(String name, FrameLayout host, View touch) {
+        host.removeAllViews();
+        LinearLayout panel = new LinearLayout(activity);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(10), dp(5), dp(10), dp(5));
+        ScrollView scroll = new ScrollView(activity);
+        scroll.addView(panel);
+        host.addView(scroll, new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+        if ("Console".equals(name)) {
+            panel.addView(label("NOVAINGINE CONSOLE", 11, ACCENT, true));
+            String[] objects = engine.getSceneObjects();
+            float[] transform = engine.getSelectedTransform();
+            panel.addView(label("Renderer FPS: " + engine.getFps(), 10, Color.WHITE, false));
+            panel.addView(label("Scene objects: " + (objects == null ? 0 : objects.length), 10, Color.WHITE, false));
+            panel.addView(label("Selected object: " + (transform == null ? "None" : "Available"), 10, Color.WHITE, false));
+            TextView refresh = button("REFRESH");
+            panel.addView(refresh);
+            refresh.setOnClickListener(v -> showDockPanel("Console", host, touch));
+        } else if ("Objects".equals(name)) {
+            panel.addView(label("SCENE HIERARCHY", 11, ACCENT, true));
+            String[] objects = engine.getSceneObjects();
+            if (objects == null || objects.length == 0) {
+                panel.addView(label("No objects in the scene. Use SHAPES to create one.", 10, Color.WHITE, false));
+            } else {
+                for (String row : objects) {
+                    String value = row == null ? "" : row;
+                    int split = value.indexOf('|');
+                    int id = 0;
+                    try { id = Integer.parseInt(split < 0 ? value : value.substring(0, split)); } catch (NumberFormatException ignored) {}
+                    String objectName = split < 0 ? value : value.substring(split + 1);
+                    final int objectId = id;
+                    TextView item = button(objectName);
+                    panel.addView(item, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(36)));
+                    item.setOnClickListener(v -> {
+                        if (objectId != 0) {
+                            engine.selectObjectById(objectId);
+                            status.setText("Selected: " + objectName);
+                        }
+                    });
+                }
+            }
+            TextView refresh = button("REFRESH HIERARCHY");
+            panel.addView(refresh);
+            refresh.setOnClickListener(v -> showDockPanel("Objects", host, touch));
+        } else if ("Properties".equals(name)) {
+            panel.addView(label("TRANSFORM PROPERTIES", 11, ACCENT, true));
+            float[] values = engine.getSelectedTransform();
+            if (values == null || values.length < 9) {
+                panel.addView(label("Select an object in the viewport or Objects tab.", 10, Color.WHITE, false));
+            } else {
+                String[] names = {"Position", "Rotation", "Scale"};
+                for (int c = 0; c < 3; c++) {
+                    panel.addView(label(names[c] + "   X " + values[c*3] + "   Y " + values[c*3+1] + "   Z " + values[c*3+2], 10, Color.WHITE, false));
+                }
+                TextView edit = button("EDIT XYZ");
+                panel.addView(edit);
+                edit.setOnClickListener(v -> showTransformEditor(touch));
+            }
+        } else if ("Timeline".equals(name)) {
+            panel.addView(label("TIMELINE", 11, ACCENT, true));
+            panel.addView(label("Animation keyframe tracks are not yet implemented in the native engine.", 10, Color.WHITE, false));
+            panel.addView(label("Playback controls are disabled until animation tracks exist.", 10, 0xFFFFC56B, false));
+        } else if ("Assets".equals(name)) {
+            panel.addView(label("PROJECT ASSETS", 11, ACCENT, true));
+            panel.addView(label("Import a glTF binary model (.glb) or export the selected sculpt mesh as OBJ.", 10, Color.WHITE, false));
+            TextView importAsset = button("IMPORT .GLB");
+            panel.addView(importAsset);
+            importAsset.setOnClickListener(v -> {
+                if (activity instanceof MainActivity) ((MainActivity) activity).openSculptAssetPicker();
+            });
+            TextView exportAsset = button("EXPORT SELECTED OBJ");
+            panel.addView(exportAsset);
+            exportAsset.setOnClickListener(v -> exportMesh());
+        }
     }
 
     private void toggleBottomDock() {
@@ -768,7 +858,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                             transformDragState[gizmoAxis] += delta;
                         }
                         engine.updateSelectedTransform(transformDragState);
-                        positionInputs[gizmoAxis].setText(String.valueOf(transformDragState[gizmoAxis]));
+                        if (positionInputs[gizmoAxis] != null) positionInputs[gizmoAxis].setText(String.valueOf(transformDragState[gizmoAxis]));
                     }
                     lastX = event.getX(); lastY = event.getY();
                     invalidate();
@@ -826,7 +916,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         transformDragState = transform;
                         engine.updateSelectedTransform(transform);
                         for (int axis = 0; axis < 3; axis++) {
-                            positionInputs[axis].setText(String.valueOf(
+                            if (positionInputs[axis] != null) positionInputs[axis].setText(String.valueOf(
                                     transform[axis + transformComponent * 3]));
                         }
                     }
