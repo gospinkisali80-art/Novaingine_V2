@@ -92,6 +92,17 @@ The API contract used by `ControllerAgent` is:
 - `GET /api/v1/commands/{commandId}` — inspect command delivery/result state.
 - `GET /api/v1/device/status?deviceId=...` — inspect device heartbeat state.
 
-The local server implementation is `integration/controller_server.py`. Run it bound to loopback only (`127.0.0.1`), with the same private `DEVICE_TOKEN` configured in the Android pairing dialog. It is an in-memory development queue: pending commands/results are lost on server restart. Do not expose it using port forwarding or a public tunnel. A production deployment requires TLS, separate device and AI-client credentials, OAuth 2.1 for MCP, persistent storage, rate limiting, audit retention, pairing/revocation, and hardened authorization.
+The local server implementation is `integration/controller_server.py`. For the existing Termux setup, download this file into `~/NovaingineController` and run it on port 8001 so it does not replace the original server on port 8000:
+
+```sh
+cd ~/NovaingineController
+curl -L "https://raw.githubusercontent.com/gospinkisali80-art/Novaingine_V2/integration/chatgpt-bridge-foundation/integration/controller_server.py" -o controller_server.py
+set -a
+. ./.env
+set +a
+uvicorn controller_server:app --host 127.0.0.1 --port 8001
+```
+
+This reads the existing private `DEVICE_TOKEN` from the Termux `.env` file without displaying it. Keep the server bound to loopback only (`127.0.0.1`), and enter the same private token in the Android pairing dialog. It is an in-memory development queue: pending commands/results are lost on server restart. Do not expose it using port forwarding or a public tunnel. A production deployment requires TLS, separate device and AI-client credentials, OAuth 2.1 for MCP, persistent storage, rate limiting, audit retention, pairing/revocation, and hardened authorization.
 
 The initial API uses one development bearer token for local testing. Never paste that token into ChatGPT, GitHub, screenshots, issue comments, or source code. Use a separate token for each device before any multi-device or hosted deployment.
