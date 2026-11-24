@@ -147,6 +147,7 @@ public final class NativeBridge {
 
     public static native int nativeGetTriangles();
 
+    public static native void nativeCreateEmptyScene();
     public static native void nativeResetScene();
     public static native boolean nativeUndo();
     public static native boolean nativeRedo();
