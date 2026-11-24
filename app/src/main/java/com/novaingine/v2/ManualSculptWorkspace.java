@@ -82,6 +82,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private float uiScale = 1.0f;
     private View brushDock;
     private View rightDock;
+    private View leftResizeHandle;
+    private View rightResizeHandle;
     private LinearLayout bottomDock;
 
     public ManualSculptWorkspace(Activity activity, EngineSurface engine, Runnable onExit) {
@@ -147,13 +149,25 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 .setPositiveButton("OK", null).show());
         TextView leftDockToggle = button("◧");
         top.addView(leftDockToggle, new LinearLayout.LayoutParams(dp(38), LayoutParams.MATCH_PARENT));
-        leftDockToggle.setOnClickListener(v -> { if (brushDock != null) brushDock.setVisibility(brushDock.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE); });
+        leftDockToggle.setOnClickListener(v -> {
+            if (brushDock != null) {
+                boolean show = brushDock.getVisibility() != View.VISIBLE;
+                brushDock.setVisibility(show ? View.VISIBLE : View.GONE);
+                if (leftResizeHandle != null) leftResizeHandle.setVisibility(show ? View.VISIBLE : View.GONE);
+            }
+        });
         TextView bottomDockToggle = button("▤");
         top.addView(bottomDockToggle, new LinearLayout.LayoutParams(dp(38), LayoutParams.MATCH_PARENT));
         bottomDockToggle.setOnClickListener(v -> toggleBottomDock());
         TextView rightDockToggle = button("◨");
         top.addView(rightDockToggle, new LinearLayout.LayoutParams(dp(38), LayoutParams.MATCH_PARENT));
-        rightDockToggle.setOnClickListener(v -> { if (rightDock != null) rightDock.setVisibility(rightDock.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE); });
+        rightDockToggle.setOnClickListener(v -> {
+            if (rightDock != null) {
+                boolean show = rightDock.getVisibility() != View.VISIBLE;
+                rightDock.setVisibility(show ? View.VISIBLE : View.GONE);
+                if (rightResizeHandle != null) rightResizeHandle.setVisibility(show ? View.VISIBLE : View.GONE);
+            }
+        });
 
         LinearLayout workArea = new LinearLayout(activity);
         workArea.setOrientation(LinearLayout.HORIZONTAL);
@@ -208,6 +222,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
         browserParams.setMargins(dp(4), dp(4), dp(4), dp(4));
         workArea.addView(browser, browserParams);
         brushDock = browser;
+        leftResizeHandle = createResizeHandle(true, browser);
+        workArea.addView(leftResizeHandle, new LinearLayout.LayoutParams(dp(6), LayoutParams.MATCH_PARENT));
 
         LinearLayout browserHeader = new LinearLayout(activity);
         browserHeader.setGravity(Gravity.CENTER_VERTICAL);
@@ -336,6 +352,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
         rightRail.setGravity(Gravity.CENTER_HORIZONTAL);
         rightRail.setPadding(dp(3), dp(5), dp(3), dp(5));
         rightRail.setBackgroundColor(0xE9161719);
+        rightResizeHandle = createResizeHandle(false, rightRail);
+        workArea.addView(rightResizeHandle, new LinearLayout.LayoutParams(dp(6), LayoutParams.MATCH_PARENT));
         workArea.addView(rightRail, new LinearLayout.LayoutParams(dp(43), LayoutParams.MATCH_PARENT));
         rightDock = rightRail;
         TextView scene = button("▤");
@@ -443,6 +461,30 @@ public final class ManualSculptWorkspace extends FrameLayout {
 
         updateBrushButtons();
         applyOptions();
+    }
+
+    private View createResizeHandle(boolean leftPanel, View panel) {
+        View handle = new View(activity);
+        handle.setBackgroundColor(0xFF596675);
+        handle.setOnTouchListener((view, event) -> {
+            LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) panel.getLayoutParams();
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                view.setTag(new float[]{event.getRawX(), params.width});
+                return true;
+            }
+            if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
+                float[] start = (float[]) view.getTag();
+                if (start == null) return true;
+                float delta = event.getRawX() - start[0];
+                float next = start[1] + (leftPanel ? delta : -delta);
+                params.width = (int) Math.max(dp(leftPanel ? 190 : 43), Math.min(dp(leftPanel ? 430 : 220), next));
+                panel.setLayoutParams(params);
+                return true;
+            }
+            return event.getActionMasked() == MotionEvent.ACTION_UP
+                    || event.getActionMasked() == MotionEvent.ACTION_CANCEL;
+        });
+        return handle;
     }
 
     private void showDockPanel(String name, FrameLayout host, View touch) {
@@ -607,6 +649,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         for (int c = 0; c < 3; c++) for (int a = 0; a < 3; a++)
                             next[c * 3 + a] = Float.parseFloat(fields[c][a].getText().toString());
                         engine.setSelectedTransform(next);
+                        positionInputs = fields[transformComponent];
                         touch.invalidate();
                         status.setText("Position, rotation and scale updated.");
                     } catch (NumberFormatException error) {
