@@ -1,5 +1,7 @@
 package com.novaingine.v2;
 
+import com.google.firebase.auth.FirebaseAuth;
+
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.pm.ActivityInfo;
@@ -353,6 +355,16 @@ public final class MainActivity extends Activity
 
         addDrawerSection("PROJECT");
         addDrawerItem("Project Home", "Save and return to the project browser", this::returnToProjectBrowser);
+
+        addDrawerSection("ACCOUNT");
+        addDrawerItem("Sign Out", "Sign out of your Novaingine account", () -> {
+            closeToolsDrawer();
+            FirebaseAuth.getInstance().signOut();
+            Intent login = new Intent(this, AuthActivity.class);
+            login.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+            startActivity(login);
+            finish();
+        });
 
         addDrawerSection("EDITOR");
         addDrawerItem("Physics: " + (drawerPhysicsEnabled ? "ON" : "OFF"), "Toggle collision and gravity", () -> {
