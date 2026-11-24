@@ -4,7 +4,7 @@ This directory defines the first, isolated foundation for connecting an external
 
 ## Status
 
-**Local Android dispatcher added; remote transport is not connected yet.** This branch contains the protocol contract and an isolated Android command dispatcher. No network listener, gateway, Windows agent, or ChatGPT connector is active.
+**Local Android dispatcher foundation added; remote transport is not connected yet.** This branch contains the protocol contract, an isolated Android command dispatcher, and a GitHub Actions Android debug-build workflow. No network listener, secure pairing UI/storage, gateway, Windows agent, or ChatGPT connector is active. The Android build has not yet been confirmed successful.
 
 ## Architecture
 
@@ -36,7 +36,7 @@ The devices initiate outbound connections. Do not expose an Android or Windows e
 - Every command has a unique `commandId`, a paired `deviceId`, an allowlisted `operation`, and an explicit `payload`.
 - Agents validate schema, bounds, target device, expiry, and replay/idempotency before dispatch.
 - Scene mutations run on the engine's owning thread. On Android, renderer/native operations must be queued through `EngineSurface.queueEvent` or existing methods that already do so.
-- The agent reports `accepted`, `running`, `succeeded`, or `failed` with a structured result. It must never report success before the engine confirms the operation.
+- The current Android dispatcher returns structured `succeeded` or `failed` results. It does not yet implement asynchronous `accepted`/`running` states. It must never report success before the engine confirms the operation.
 - Destructive actions (clear/reset/delete/overwrite) require a separate confirmation step in the UI and are not included in the initial remote command allowlist.
 - Credentials and API keys are never placed in command payloads or committed to this repository.
 
@@ -74,7 +74,7 @@ A custom MCP connector with write-capable tools is not available in every ChatGP
 4. OAuth-protected MCP server exposing the allowlisted tools.
 5. End-to-end tests against a test scene, then opt-in release behind a setting.
 
-The current Android dispatcher is `RemoteCommandDispatcher.java`. It is intentionally not wired into app startup and cannot receive network commands yet. It accepts typed protocol-v1 JSON from a future authenticated transport, validates the paired device ID, expiry, replay IDs and operation payload bounds, then queues engine work on the GL render thread. Supported local operations: status, scene inspection, object selection, selected-object transform, SculptMesh creation, sculpt strokes, undo and redo. Project save and generic primitive creation are intentionally withheld until safe path handling and the engine's primitive enum contract are verified.
+The current Android dispatcher is `RemoteCommandDispatcher.java`. It is intentionally not wired into app startup and cannot receive network commands yet. It accepts typed protocol-v1 JSON from a future authenticated transport, validates the paired device ID, expiry, replay IDs and operation payload bounds, then queues engine work on the GL render thread. Supported local operations: status, scene inspection, object selection (with existence check), selected-object transform (with selection check), SculptMesh creation, sculpt strokes, undo and redo. Project save and generic primitive creation are intentionally withheld until safe path handling and the engine's primitive enum contract are verified. The renderer queue now cancels commands that have not started when its initial wait times out; an already-started operation receives an additional bounded wait. A GitHub Actions workflow is configured for pull requests, manual dispatch, and pushes to this integration branch. A successful build is still pending.
 
 ## Existing engine integration points
 
