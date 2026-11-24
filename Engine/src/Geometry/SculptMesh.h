@@ -301,6 +301,7 @@ public:
             if(length(averageNormal)<0.0001f)averageNormal=normalize(hn);
             if(totalWeight>0.0001f)averagePosition=averagePosition/totalWeight;else averagePosition=c;
             const float signedStrength=b.strength*b.pressure*(b.subtract?-1.0f:1.0f);
+            const Vec3 strokeMovement=b.subtract?movement*(-1.0f):movement;
             bool changed=false;
             if(b.type==2) {
                 if(!grabCaptured) {
@@ -309,7 +310,7 @@ public:
                 if(length(movement)>1e-7f) {
                     for(const auto& item:grabVertices) {
                         float protection=1.0f-std::clamp(mask[item.index],0.0f,1.0f);
-                        Vec3 move=movement;
+                        Vec3 move=strokeMovement;
                         if(item.mirrored) {
                             if(b.symmetryAxis==0)move.x=-move.x;
                             if(b.symmetryAxis==1)move.y=-move.y;
@@ -349,7 +350,7 @@ public:
                             }
                             if(count){
                                 Vec3 avg=sum/(float)count;
-                                float relax=std::clamp(std::fabs(amount)*0.85f,0.0f,0.85f);
+                                float relax=std::clamp(amount*0.85f,-0.85f,0.85f);
                                 p=p+(avg-smoothSource[i])*relax;
                             }
                             break;
@@ -359,18 +360,18 @@ public:
                             Vec3 lineStart=c-movement;
                             Vec3 axis=c-lineStart;float den=dot(axis,axis);
                             Vec3 closest=den>1e-8f?lineStart+axis*std::clamp(dot(p-lineStart,axis)/den,0.0f,1.0f):c;
-                            p=p+normalize(closest-p)*(std::fabs(amount)*b.radius*0.45f);break;
+                            p=p+normalize(closest-p)*(amount*b.radius*0.45f);break;
                         }
-                        case 5: p=p-averageNormal*(dot(p-averagePosition,averageNormal)*std::fabs(amount));break;
+                        case 5: p=p-averageNormal*(dot(p-averagePosition,averageNormal)*amount);break;
                         case 6: {
-                            p=p-averageNormal*(std::fabs(amount)*b.radius*0.1f);
-                            p=p+normalize(c-p)*(std::fabs(amount)*b.radius*0.08f);break;
+                            p=p-averageNormal*(amount*b.radius*0.1f);
+                            p=p+normalize(c-p)*(amount*b.radius*0.08f);break;
                         }
                         case 8: {
                             p=p-averageNormal*(dot(p-c,averageNormal)*std::fabs(amount));
                             p=p+averageNormal*(amount*b.radius*0.45f);break;
                         }
-                        case 9: p=p-averageNormal*(dot(p-averagePosition,averageNormal)*std::fabs(amount));break;
+                        case 9: p=p-averageNormal*(dot(p-averagePosition,averageNormal)*amount);break;
                         case 10: {
                             // Layer builds toward a consistent stroke depth instead of
                             // repeatedly inflating every dab without a height reference.
@@ -389,21 +390,21 @@ public:
                             break;
                         }
                         case 14: { // Elastic Deform: combines drag and soft spring response.
-                            p=p+movement*(w*0.72f)+ownNormal*(amount*b.radius*0.18f);
+                            p=p+strokeMovement*(w*0.72f)+ownNormal*(amount*b.radius*0.18f);
                             break;
                         }
                         case 15: { // Snake Hook: pull a tapered trail behind the cursor.
-                            p=p+movement*(w*w*1.35f)+averageNormal*(amount*b.radius*0.12f);
+                            p=p+strokeMovement*(w*w*1.35f)+averageNormal*(amount*b.radius*0.12f);
                             break;
                         }
                         case 16: { // Thumb: smear along the stroke with gentle pressure.
-                            p=p+movement*(w*0.8f)-ownNormal*(amount*b.radius*0.08f);
+                            p=p+strokeMovement*(w*0.8f)-ownNormal*(amount*b.radius*0.08f);
                             break;
                         }
                         case 17: { // Pose: broad weighted bend driven by stroke motion.
-                            Vec3 pivot=c-movement;
+                            Vec3 pivot=c-strokeMovement;
                             Vec3 arm=p-pivot;
-                            p=p+movement*(w*0.9f)+cross(averageNormal,arm)*(amount*0.12f);
+                            p=p+strokeMovement*(w*0.9f)+cross(averageNormal,arm)*(amount*0.12f);
                             break;
                         }
                         case 18: { // Boundary: emphasize edge vertices, retain a safe fallback.
@@ -415,33 +416,33 @@ public:
                         case 19: { // Slide Relax: blend toward neighbor average.
                             Vec3 sum;uint32_t count=0;
                             for(uint32_t k=adjacencyOffsets[i];k<adjacencyOffsets[i+1];k++){uint32_t n=adjacency[k];if(n<positions.size()){sum=sum+positions[n];++count;}}
-                            if(count){Vec3 avg=sum/(float)count;Vec3 tangent=(avg-p)-ownNormal*dot(avg-p,ownNormal);p=p+tangent*std::clamp(std::fabs(amount)*1.8f,0.0f,0.8f);}
+                            if(count){Vec3 avg=sum/(float)count;Vec3 tangent=(avg-p)-ownNormal*dot(avg-p,ownNormal);p=p+tangent*std::clamp(amount*1.8f,-0.8f,0.8f);}
                             break;
                         }
                         case 20: { // Multiplane Scrape: project against a slightly varied plane.
-                            Vec3 side=normalize(cross(averageNormal,normalize(movement+Vec3(0.0001f,0.0f,0.0f))));
+                            Vec3 side=normalize(cross(averageNormal,normalize(strokeMovement+Vec3(0.0001f,0.0f,0.0f))));
                             Vec3 planeNormal=normalize(averageNormal+side*0.28f);
-                            p=p-planeNormal*(dot(p-averagePosition,planeNormal)*std::fabs(amount));
+                            p=p-planeNormal*(dot(p-averagePosition,planeNormal)*amount);
                             break;
                         }
                         case 21: { // Fill: raise only points below the local surface.
                             float depth=dot(averagePosition-p,averageNormal);
-                            if(depth>0.0f)p=p+averageNormal*(std::min(depth,b.radius*0.22f)*std::fabs(amount)*2.0f);
+                            if(depth>0.0f)p=p+averageNormal*(std::min(depth,b.radius*0.22f)*amount*2.0f);
                             break;
                         }
                         case 22: { // Deepen: carve a narrow center-weighted groove.
                             float centerWeight=w*w;
-                            p=p-averageNormal*(std::fabs(amount)*b.radius*0.5f*centerWeight);
+                            p=p-averageNormal*(amount*b.radius*0.5f*centerWeight);
                             break;
                         }
                         case 23: { // Nudge: translate local vertices along the stroke.
-                            p=p+movement*(w*0.95f);
+                            p=p+strokeMovement*(w*0.95f);
                             break;
                         }
                         case 24: { // Simplify: stronger local relaxation.
                             Vec3 sum;uint32_t count=0;
                             for(uint32_t k=adjacencyOffsets[i];k<adjacencyOffsets[i+1];k++){uint32_t n=adjacency[k];if(n<positions.size()){sum=sum+positions[n];++count;}}
-                            if(count){Vec3 avg=sum/(float)count;p=p+(avg-p)*std::clamp(std::fabs(amount)*2.5f,0.0f,0.75f);}
+                            if(count){Vec3 avg=sum/(float)count;p=p+(avg-p)*std::clamp(amount*2.5f,-0.75f,0.75f);}
                             break;
                         }
                     }
