@@ -1329,7 +1329,7 @@ public final class MainActivity extends Activity
             engineSurface.setPhysicsEnabled(true);
             editorToolbar.setVisibility(View.GONE);
             if (editorPanels != null) editorPanels.setVisibility(View.GONE);
-            statisticsText.setText("PLAY MODE  •  LIVE");
+            updateViewportStatus("PLAY MODE  •  LIVE");
             statisticsText.setVisibility(View.VISIBLE);
             if (playStopButton == null) {
                 playStopButton = new TextView(this);
@@ -1356,7 +1356,7 @@ public final class MainActivity extends Activity
             engineSurface.setPhysicsEnabled(false);
             editorToolbar.setVisibility(View.VISIBLE);
             if (editorPanels != null) editorPanels.setVisibility(View.VISIBLE);
-            statisticsText.setText("NOVAINGINE V2  |  VIEWPORT");
+            updateViewportStatus("NOVAINGINE V2  |  VIEWPORT");
             if (playStopButton != null) playStopButton.setVisibility(View.GONE);
         }
     }
@@ -1404,7 +1404,7 @@ public final class MainActivity extends Activity
         if (!ControllerAgent.isConfigured(this) || engineSurface == null) return;
         if (controllerAgent != null) controllerAgent.close();
         controllerAgent = new ControllerAgent(this, engineSurface, status -> {
-            if (statisticsText != null) statisticsText.setText(status);
+            updateViewportStatus(status);
         });
         controllerAgent.start();
     }
@@ -1440,7 +1440,7 @@ public final class MainActivity extends Activity
                         controllerAgent.close();
                         controllerAgent = null;
                     }
-                    if (statisticsText != null) statisticsText.setText("NOVAINGINE V2  |  AI LINK OFF");
+                    updateViewportStatus("NOVAINGINE V2  |  AI LINK OFF");
                 })
                 .setNegativeButton("CANCEL", null)
                 .create();
