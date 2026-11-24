@@ -11,6 +11,8 @@ import java.io.InputStream;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
@@ -51,6 +53,20 @@ public final class MainActivity extends Activity
     private float drawerScaleSnap = 0.25f;
     private float drawerCameraSpeed = 3.07f;
     private ManualSculptWorkspace manualSculptWorkspace;
+    private View projectStartPage;
+    private final Handler projectHandler = new Handler(Looper.getMainLooper());
+    private File activeProjectDirectory;
+    private File activeProjectScene;
+    private final Runnable autoSaveTask = new Runnable() {
+        @Override public void run() {
+            if (activeProjectScene == null || engineSurface == null) return;
+            engineSurface.saveSceneAsync(activeProjectScene.getAbsolutePath(), saved -> {
+                if (statisticsText != null) statisticsText.setText(saved
+                        ? "NOVAINGINE V2  |  AUTO-SAVED" : "NOVAINGINE V2  |  SAVE RETRY");
+            });
+            projectHandler.postDelayed(this, 5000L);
+        }
+    };
 
     private int normalToolbarHeight;
     private int normalInputHeight;
@@ -94,6 +110,7 @@ public final class MainActivity extends Activity
         setContentView(rootLayout);
 
         cameraControls = new CameraControls(engineSurface);
+        showProjectBrowser();
     }
 
     private void createViewport() {
@@ -333,6 +350,9 @@ public final class MainActivity extends Activity
         addDrawerItem("Audio", "Sound sources and audio controls", () -> showToolStatus("Audio"));
         addDrawerItem("AI Assistant", "Groq-hosted Qwen cloud scene-building assistant", this::openAIAssistant);
         addDrawerItem("Visual Scripting", "Create, connect, edit and run gameplay nodes", this::showVisualScriptingEditor);
+
+        addDrawerSection("PROJECT");
+        addDrawerItem("Project Home", "Save and return to the project browser", this::returnToProjectBrowser);
 
         addDrawerSection("EDITOR");
         addDrawerItem("Physics: " + (drawerPhysicsEnabled ? "ON" : "OFF"), "Toggle collision and gravity", () -> {
@@ -912,8 +932,236 @@ public final class MainActivity extends Activity
                 .show();
     }
 
+
+    private File projectsDirectory() {
+        File dir = new File(getFilesDir(), "NovaProjects");
+        if (!dir.exists()) dir.mkdirs();
+        return dir;
+    }
+
+    private void showProjectBrowser() {
+        if (projectStartPage != null) rootLayout.removeView(projectStartPage);
+        FrameLayout page = new FrameLayout(this);
+        page.setBackgroundColor(0xFF0B111B);
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(22), dp(18), dp(22), dp(12));
+        panel.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                new int[]{0xFF1B3045, 0xFF0B111B, 0xFF111B27}));
+        page.addView(panel, new FrameLayout.LayoutParams(-1, -1));
+
+        TextView logo = new TextView(this);
+        logo.setText("N O V A I N G I N E   V 2");
+        logo.setTextColor(0xFF72BEFF);
+        logo.setTextSize(13);
+        logo.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        panel.addView(logo);
+
+        TextView heading = new TextView(this);
+        heading.setText("What are we creating today?");
+        heading.setTextColor(Color.WHITE);
+        heading.setTextSize(24);
+        heading.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        heading.setPadding(0, dp(7), 0, dp(2));
+        panel.addView(heading);
+
+        TextView sub = new TextView(this);
+        sub.setText("Start fresh, open a project, or continue building.");
+        sub.setTextColor(0xFF9EADBF);
+        sub.setTextSize(12);
+        panel.addView(sub);
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.setPadding(0, dp(16), 0, dp(12));
+        panel.addView(actions);
+        addProjectCard(actions, "＋  NEW PROJECT", "Clean empty level", 0xFF24527A, this::createNewProject);
+        addProjectCard(actions, "▣  OPEN PROJECT", "Browse saved projects", 0xFF303E50, this::chooseProject);
+
+        TextView recent = new TextView(this);
+        recent.setText("RECENT PROJECTS");
+        recent.setTextColor(0xFF75BFFF);
+        recent.setTextSize(11);
+        recent.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        recent.setPadding(0, dp(5), 0, dp(7));
+        panel.addView(recent);
+
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        scroll.addView(list);
+        panel.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
+        File[] dirs = projectsDirectory().listFiles();
+        if (dirs != null) {
+            java.util.Arrays.sort(dirs, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
+            for (File dir : dirs) {
+                File scene = new File(dir, "Scene.nova");
+                if (!dir.isDirectory() || !scene.isFile()) continue;
+                LinearLayout row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.VERTICAL);
+                row.setPadding(dp(10), dp(8), dp(10), dp(8));
+                row.setBackgroundColor(0xFF1D2936);
+                TextView name = new TextView(this);
+                name.setText("▰  " + dir.getName());
+                name.setTextColor(Color.WHITE);
+                name.setTextSize(13);
+                name.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+                row.addView(name);
+                TextView date = new TextView(this);
+                date.setText("Saved project  ·  " + android.text.format.DateFormat.format("MMM d, HH:mm", dir.lastModified()));
+                date.setTextColor(0xFF9EADBF);
+                date.setTextSize(10);
+                row.addView(date);
+                LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(-1, -2);
+                rp.setMargins(0, 0, 0, dp(5));
+                list.addView(row, rp);
+                row.setOnClickListener(v -> openProject(dir, scene));
+            }
+        }
+        if (list.getChildCount() == 0) {
+            TextView empty = new TextView(this);
+            empty.setText("No projects yet. Create your first project.");
+            empty.setTextColor(0xFF8797AA);
+            empty.setTextSize(12);
+            empty.setPadding(dp(8), dp(12), dp(8), dp(12));
+            list.addView(empty);
+        }
+
+        TextView example = new TextView(this);
+        example.setText("OPEN ARENA EXAMPLE   →");
+        example.setTextColor(0xFFFFC16B);
+        example.setTextSize(12);
+        example.setPadding(dp(12), dp(11), dp(12), dp(9));
+        example.setBackgroundColor(0xFF202A36);
+        panel.addView(example);
+        example.setOnClickListener(v -> openArenaExample());
+
+        TextView footer = new TextView(this);
+        footer.setText("AUTO-SAVE ENABLED  ·  PROJECTS STORED ON THIS DEVICE");
+        footer.setTextColor(0xFF8E9EAF);
+        footer.setTextSize(9);
+        footer.setPadding(0, dp(9), 0, 0);
+        panel.addView(footer);
+        projectStartPage = page;
+        rootLayout.addView(page, new FrameLayout.LayoutParams(-1, -1));
+    }
+
+    private void addProjectCard(LinearLayout parent, String title, String detail,
+                                int color, Runnable action) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(11), dp(10), dp(11), dp(10));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(color);
+        bg.setCornerRadius(dp(8));
+        card.setBackground(bg);
+        TextView name = new TextView(this);
+        name.setText(title);
+        name.setTextColor(Color.WHITE);
+        name.setTextSize(12);
+        name.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        card.addView(name);
+        TextView detailView = new TextView(this);
+        detailView.setText(detail);
+        detailView.setTextColor(0xFFD0D9E3);
+        detailView.setTextSize(10);
+        detailView.setPadding(0, dp(4), 0, 0);
+        card.addView(detailView);
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, -2, 1f);
+        p.setMargins(0, 0, dp(8), 0);
+        parent.addView(card, p);
+        card.setOnClickListener(v -> action.run());
+    }
+
+    private void createNewProject() {
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setHint("My New World");
+        new AlertDialog.Builder(this).setTitle("New Project").setMessage("Choose a project name")
+                .setView(input).setPositiveButton("CREATE", (d, w) -> {
+                    String name = input.getText().toString().trim().replaceAll("[^A-Za-z0-9 _-]", "");
+                    if (name.length() > 40) name = name.substring(0, 40).trim();
+                    if (name.isEmpty()) name = "Untitled Project";
+                    File dir = new File(projectsDirectory(), name);
+                    if (dir.exists()) {
+                        android.widget.Toast.makeText(this, "That project already exists.", android.widget.Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    if (!dir.mkdirs()) {
+                        android.widget.Toast.makeText(this, "Could not create project folder.", android.widget.Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    activeProjectDirectory = dir;
+                    activeProjectScene = new File(dir, "Scene.nova");
+                    final String projectName = name;
+                    engineSurface.createEmptyScene(activeProjectScene.getAbsolutePath(), ok -> {
+                        if (ok) enterProject("Created " + projectName);
+                        else android.widget.Toast.makeText(this, "Could not initialize project.", android.widget.Toast.LENGTH_LONG).show();
+                    });
+                }).setNegativeButton("CANCEL", null).show();
+    }
+
+    private void chooseProject() {
+        File[] dirs = projectsDirectory().listFiles();
+        java.util.ArrayList<File> valid = new java.util.ArrayList<>();
+        if (dirs != null) for (File dir : dirs)
+            if (dir.isDirectory() && new File(dir, "Scene.nova").isFile()) valid.add(dir);
+        if (valid.isEmpty()) {
+            new AlertDialog.Builder(this).setMessage("No saved projects found.").setPositiveButton("OK", null).show();
+            return;
+        }
+        String[] names = new String[valid.size()];
+        for (int i = 0; i < valid.size(); i++) names[i] = valid.get(i).getName();
+        new AlertDialog.Builder(this).setTitle("Open Project").setItems(names, (d, which) -> {
+            File dir = valid.get(which);
+            openProject(dir, new File(dir, "Scene.nova"));
+        }).setNegativeButton("CANCEL", null).show();
+    }
+
+    private void openProject(File dir, File scene) {
+        activeProjectDirectory = dir;
+        activeProjectScene = scene;
+        engineSurface.loadSceneAsync(scene.getAbsolutePath(), ok -> {
+            if (ok) enterProject("Opened " + dir.getName());
+            else android.widget.Toast.makeText(this, "Project load failed.", android.widget.Toast.LENGTH_LONG).show();
+        });
+    }
+
+    private void openArenaExample() {
+        File dir = new File(projectsDirectory(), "Arena Example");
+        if (!dir.exists()) dir.mkdirs();
+        activeProjectDirectory = dir;
+        activeProjectScene = new File(dir, "Scene.nova");
+        engineSurface.resetScene();
+        projectHandler.postDelayed(() -> engineSurface.saveSceneAsync(
+                activeProjectScene.getAbsolutePath(), ok -> {
+                    if (ok) enterProject("Arena example opened");
+                    else android.widget.Toast.makeText(this, "Could not save arena example.", android.widget.Toast.LENGTH_LONG).show();
+                }), 700L);
+    }
+
+    private void enterProject(String message) {
+        if (projectStartPage != null) rootLayout.removeView(projectStartPage);
+        projectStartPage = null;
+        projectHandler.removeCallbacks(autoSaveTask);
+        projectHandler.postDelayed(autoSaveTask, 5000L);
+        android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+    private void returnToProjectBrowser() {
+        closeToolsDrawer();
+        if (activeProjectScene == null) {
+            showProjectBrowser();
+            return;
+        }
+        engineSurface.saveSceneAsync(activeProjectScene.getAbsolutePath(), saved -> {
+            projectHandler.removeCallbacks(autoSaveTask);
+            showProjectBrowser();
+        });
+    }
+
     private java.io.File sceneFile() {
-        return new java.io.File(getFilesDir(), "NovaingineScene.nova");
+        return activeProjectScene != null ? activeProjectScene : new java.io.File(getFilesDir(), "NovaingineScene.nova");
     }
 
     private void saveCurrentScene() {
@@ -1101,6 +1349,8 @@ public final class MainActivity extends Activity
     @Override
     protected void onPause() {
 
+        projectHandler.removeCallbacks(autoSaveTask);
+        if (activeProjectScene != null && engineSurface != null) engineSurface.saveScene(activeProjectScene.getAbsolutePath());
         if (engineSurface != null) {
             engineSurface.onPause();
         }
@@ -1111,6 +1361,7 @@ public final class MainActivity extends Activity
     @Override
     protected void onDestroy() {
 
+        projectHandler.removeCallbacks(autoSaveTask);
         cameraControls = null;
         manualSculptWorkspace = null;
         viewportInput = null;
