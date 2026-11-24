@@ -1588,7 +1588,7 @@ Java_com_novaingine_v2_NativeBridge_nativeSculptAtScreen(
     }
     if(!hit.found){gHasPreviousSculptHit=false;gRenderer.setSculptCursor(false,nova::Vec3(),nova::Vec3(0,1,0),0.18f);return 0;}
     nova::SculptMesh::Brush brush;
-    brush.radius=std::clamp((float)radiusValue,0.02f,3.0f);
+    brush.radius=std::clamp((float)radiusValue,0.02f,8.0f);
     brush.strength=std::clamp((float)strengthValue,0.0f,1.0f);
     brush.hardness=std::clamp((float)falloffValue,0.0f,1.0f);
     brush.pressure=std::clamp((float)pressureValue,0.0f,1.0f);
