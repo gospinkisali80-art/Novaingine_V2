@@ -44,6 +44,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private boolean subtract;
     private boolean sculptEnabled = true;
     private boolean orbitMode = false;
+    private TextView orbitButton;
     private EditText[] positionInputs = new EditText[3];
     private int transformComponent = 0;
     private int activeTransformMode = -1;
@@ -144,6 +145,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
             b.setOnClickListener(v -> {
                 selectedBrush = index;
                 activeTransformMode = -1;
+                orbitMode = false;
+                if (orbitButton != null) { orbitButton.setText("ORBIT VIEW: OFF"); orbitButton.setTextColor(Color.WHITE); }
                 sculptEnabled = true;
                 updateBrushButtons();
                 applyOptions();
@@ -196,7 +199,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
 
         LinearLayout transformRow = new LinearLayout(activity);
         transformRow.setGravity(Gravity.CENTER_VERTICAL);
-        bottom.addView(transformRow, 1, new LinearLayout.LayoutParams(
+        bottom.addView(transformRow, 2, new LinearLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT, dp(42)));
         String[] axes = {"X", "Y", "Z"};
         float[] selectedTransform = engine.getSelectedTransform();
@@ -244,13 +247,13 @@ public final class ManualSculptWorkspace extends FrameLayout {
 
         LinearLayout transformModes = new LinearLayout(activity);
         transformModes.setGravity(Gravity.CENTER_VERTICAL);
-        bottom.addView(transformModes, 2, new LinearLayout.LayoutParams(
+        bottom.addView(transformModes, 3, new LinearLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT, dp(38)));
         LinearLayout viewRow = new LinearLayout(activity);
         viewRow.setGravity(Gravity.CENTER_VERTICAL);
-        bottom.addView(viewRow, 3, new LinearLayout.LayoutParams(
+        bottom.addView(viewRow, 4, new LinearLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT, dp(40)));
-        TextView orbitButton = button("ORBIT VIEW: OFF");
+        orbitButton = button("ORBIT VIEW: OFF");
         orbitButton.setTextColor(ACCENT);
         viewRow.addView(orbitButton, weighted(0, 1));
         orbitButton.setOnClickListener(v -> {
@@ -307,6 +310,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
             shapeRow.addView(shapeButton, shapeParams);
             shapeButton.setOnClickListener(v -> {
                 activeTransformMode = -1;
+                orbitMode = false;
+                orbitButton.setText("ORBIT VIEW: OFF");
+                orbitButton.setTextColor(Color.WHITE);
                 sculptEnabled = true;
                 applyOptions();
                 selectedToolIndicator.setText("ACTIVE: " + shapeNames[shapeId] + "  ▴ TOOLS");
