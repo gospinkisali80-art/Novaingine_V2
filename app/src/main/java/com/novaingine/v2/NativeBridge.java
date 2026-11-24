@@ -109,6 +109,7 @@ public final class NativeBridge {
     public static native String[] nativeGetSceneObjects();
     public static native void nativeSelectObjectById(int objectId);
     public static native float[] nativeGetSelectedTransform();
+    public static native float[] nativeProjectSelectedPosition();
     public static native void nativeSetSelectedTransform(float[] values);
     public static native int nativePaintFoliage(float centerX, float centerZ, float radius, int count, int kind);
     public static native int nativeClearFoliage();
