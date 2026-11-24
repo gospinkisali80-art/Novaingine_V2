@@ -25,6 +25,11 @@ public final class NativeBridge {
             float deltaY
     );
 
+    public static native void nativeOrbitSelected(
+            float deltaX,
+            float deltaY
+    );
+
     public static native void nativeZoom(
             float scale
     );
