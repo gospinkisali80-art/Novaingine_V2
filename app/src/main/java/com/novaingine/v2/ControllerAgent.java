@@ -81,8 +81,7 @@ public final class ControllerAgent implements AutoCloseable {
     public static void saveConfiguration(Context context, String url, String token) throws Exception {
         String normalized = url == null ? "" : url.trim().replaceAll("/+$", "");
         String secret = token == null ? "" : token.trim();
-        if (!(normalized.startsWith("https://") || normalized.equals("http://127.0.0.1:8000")
-                || normalized.equals("http://localhost:8000")))
+        if (!(normalized.startsWith("https://") || normalized.equals("http://127.0.0.1:8001")))
             throw new IllegalArgumentException("Use HTTPS, or localhost/127.0.0.1 for local Termux testing.");
         if (secret.length() < 24) throw new IllegalArgumentException("Controller token is too short.");
         String device = getOrCreateDeviceId(context);
