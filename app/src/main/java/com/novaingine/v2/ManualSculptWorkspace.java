@@ -12,6 +12,7 @@ import android.widget.EditText;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.SeekBar;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -155,6 +156,78 @@ public final class ManualSculptWorkspace extends FrameLayout {
             });
         }
         updateBrushButtons();
+
+        // Additional sculpt brushes live in their own expandable category.
+        final String[] specialBrushes = {
+                "Blob", "Clay Strips", "Elastic Deform", "Snake Hook", "Thumb",
+                "Pose", "Boundary", "Slide Relax", "Multiplane Scrape", "Fill",
+                "Deepen", "Nudge", "Simplify"
+        };
+        final String[] specialDescriptions = {
+                "Adds rounded volume beneath the brush.",
+                "Builds raised, elongated strips like layered clay.",
+                "Stretches the surface with an elastic, spring-like response.",
+                "Pulls geometry outward to form long extensions.",
+                "Pushes and smears surface geometry in the stroke direction.",
+                "Bends and shifts a broad region of the mesh.",
+                "Shapes open mesh borders and edge regions.",
+                "Relaxes uneven topology while sliding vertices along the surface.",
+                "Scrapes a surface against a multi-directional flattening plane.",
+                "Raises low areas and fills shallow depressions.",
+                "Carves a stronger groove into the surface.",
+                "Moves vertices along the stroke direction without adding volume.",
+                "Smooths and simplifies local surface detail."
+        };
+        TextView specialToggle = button("SPECIAL BRUSHES  ▾");
+        specialToggle.setTextColor(ACCENT);
+        bottom.addView(specialToggle, new LinearLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, dp(38)));
+        ScrollView specialScroll = new ScrollView(activity);
+        LinearLayout specialList = new LinearLayout(activity);
+        specialList.setOrientation(LinearLayout.VERTICAL);
+        specialList.setPadding(0, dp(4), 0, dp(4));
+        specialScroll.addView(specialList);
+        bottom.addView(specialScroll, new LinearLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, dp(190)));
+        specialScroll.setVisibility(View.GONE);
+        specialToggle.setOnClickListener(v -> {
+            boolean opening = specialScroll.getVisibility() != View.VISIBLE;
+            specialScroll.setVisibility(opening ? View.VISIBLE : View.GONE);
+            specialToggle.setText(opening ? "SPECIAL BRUSHES  ▴" : "SPECIAL BRUSHES  ▾");
+        });
+        for (int i = 0; i < specialBrushes.length; i++) {
+            final int brushIndex = 12 + i;
+            LinearLayout entry = new LinearLayout(activity);
+            entry.setOrientation(LinearLayout.VERTICAL);
+            entry.setPadding(dp(9), dp(6), dp(9), dp(6));
+            entry.setBackground(background(0xFF26313D));
+            TextView name = label(specialBrushes[i], 11, Color.WHITE, true);
+            TextView description = label(specialDescriptions[i], 9, 0xFFB8C4D1, false);
+            entry.addView(name);
+            entry.addView(description);
+            LinearLayout.LayoutParams entryParams = new LinearLayout.LayoutParams(
+                    LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
+            entryParams.setMargins(0, 0, 0, dp(4));
+            specialList.addView(entry, entryParams);
+            entry.setClickable(true);
+            entry.setOnClickListener(v -> {
+                selectedBrush = brushIndex;
+                activeTransformMode = -1;
+                orbitMode = false;
+                if (orbitButton != null) {
+                    orbitButton.setText("ORBIT VIEW: OFF");
+                    orbitButton.setTextColor(Color.WHITE);
+                }
+                sculptEnabled = true;
+                updateBrushButtons();
+                applyOptions();
+                selectedToolIndicator.setText("ACTIVE: " + specialBrushes[brushIndex - 12] + "  ▴ TOOLS");
+                specialScroll.setVisibility(View.GONE);
+                specialToggle.setText("SPECIAL BRUSHES  ▾");
+                closeToolDrawer.run();
+                status.setText(specialDescriptions[brushIndex - 12]);
+            });
+        }
 
         addSlider(bottom, "BRUSH SIZE", 1, 300, 33, value -> {
             radius = 0.02f + ((value - 1) / 299.0f) * 2.98f;
