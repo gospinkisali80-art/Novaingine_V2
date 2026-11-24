@@ -80,6 +80,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private int activeTransformMode = -1;
     private float[] transformDragState;
     private float uiScale = 1.0f;
+    private View brushDock;
+    private View rightDock;
+    private LinearLayout bottomDock;
 
     public ManualSculptWorkspace(Activity activity, EngineSurface engine, Runnable onExit) {
         super(activity);
@@ -132,6 +135,15 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 .setTitle("Sculpt workspace")
                 .setMessage("Choose a brush, adjust its controls, then drag on the model. Use two fingers to orbit/pan/zoom. Select a transform mode to edit the selected mesh.")
                 .setPositiveButton("OK", null).show());
+        TextView leftDockToggle = button("◧");
+        top.addView(leftDockToggle, new LinearLayout.LayoutParams(dp(38), LayoutParams.MATCH_PARENT));
+        leftDockToggle.setOnClickListener(v -> { if (brushDock != null) brushDock.setVisibility(brushDock.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE); });
+        TextView bottomDockToggle = button("▤");
+        top.addView(bottomDockToggle, new LinearLayout.LayoutParams(dp(38), LayoutParams.MATCH_PARENT));
+        bottomDockToggle.setOnClickListener(v -> toggleBottomDock());
+        TextView rightDockToggle = button("◨");
+        top.addView(rightDockToggle, new LinearLayout.LayoutParams(dp(38), LayoutParams.MATCH_PARENT));
+        rightDockToggle.setOnClickListener(v -> { if (rightDock != null) rightDock.setVisibility(rightDock.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE); });
 
         LinearLayout workArea = new LinearLayout(activity);
         workArea.setOrientation(LinearLayout.HORIZONTAL);
@@ -185,6 +197,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
         LinearLayout.LayoutParams browserParams = new LinearLayout.LayoutParams(dp(292), LayoutParams.MATCH_PARENT);
         browserParams.setMargins(dp(4), dp(4), dp(4), dp(4));
         workArea.addView(browser, browserParams);
+        brushDock = browser;
 
         LinearLayout browserHeader = new LinearLayout(activity);
         browserHeader.setGravity(Gravity.CENTER_VERTICAL);
@@ -314,6 +327,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
         rightRail.setPadding(dp(3), dp(5), dp(3), dp(5));
         rightRail.setBackgroundColor(0xE9161719);
         workArea.addView(rightRail, new LinearLayout.LayoutParams(dp(43), LayoutParams.MATCH_PARENT));
+        rightDock = rightRail;
         TextView scene = button("▤");
         rightRail.addView(scene, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)));
         scene.setOnClickListener(v -> showSceneObjects());
@@ -344,6 +358,31 @@ public final class ManualSculptWorkspace extends FrameLayout {
         TextView export = button("⇧");
         rightRail.addView(export, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)));
         export.setOnClickListener(v -> exportMesh());
+
+        bottomDock = new LinearLayout(activity);
+        bottomDock.setOrientation(LinearLayout.VERTICAL);
+        bottomDock.setBackgroundColor(0xF01B2027);
+        bottomDock.setVisibility(View.GONE);
+        root.addView(bottomDock, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0));
+        View dockGrip = new View(activity);
+        dockGrip.setBackgroundColor(ACCENT);
+        bottomDock.addView(dockGrip, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(6)));
+        final float[] dockY = new float[1];
+        final int[] dockHeight = new int[1];
+        dockGrip.setOnTouchListener((v, event) -> {
+            LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) bottomDock.getLayoutParams();
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) { dockY[0] = event.getRawY(); dockHeight[0] = lp.height; return true; }
+            if (event.getActionMasked() == MotionEvent.ACTION_MOVE) { lp.height = Math.max(dp(90), Math.min(dp(320), dockHeight[0] + Math.round(dockY[0] - event.getRawY()))); bottomDock.setLayoutParams(lp); return true; }
+            return event.getActionMasked() == MotionEvent.ACTION_UP;
+        });
+        LinearLayout dockTabs = new LinearLayout(activity);
+        dockTabs.setGravity(Gravity.CENTER_VERTICAL);
+        bottomDock.addView(dockTabs, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(34)));
+        TextView dockContent = label("Console  •  Ready", 11, Color.WHITE, false);
+        dockContent.setPadding(dp(12), dp(5), dp(12), dp(5));
+        bottomDock.addView(dockContent, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1));
+        String[] dockNames = {"Console", "Objects", "Properties", "Timeline", "Assets"};
+        for (String dockName : dockNames) { TextView tab = button(dockName); dockTabs.addView(tab, new LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT)); tab.setOnClickListener(v -> dockContent.setText(dockName + "  •  panel selected")); }
 
         // Bottom brush shelf: persistent shortcuts, not a close/drawer control.
         HorizontalScrollView shelfScroll = new HorizontalScrollView(activity);
@@ -390,6 +429,15 @@ public final class ManualSculptWorkspace extends FrameLayout {
 
         updateBrushButtons();
         applyOptions();
+    }
+
+    private void toggleBottomDock() {
+        if (bottomDock == null) return;
+        boolean show = bottomDock.getVisibility() != View.VISIBLE;
+        bottomDock.setVisibility(show ? View.VISIBLE : View.GONE);
+        LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) bottomDock.getLayoutParams();
+        lp.height = show ? dp(150) : 0;
+        bottomDock.setLayoutParams(lp);
     }
 
     private void selectBrush(int index) {
