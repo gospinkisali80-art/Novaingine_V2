@@ -284,6 +284,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     if (!value.isEmpty()) transform[axis + transformComponent * 3] = Float.parseFloat(value);
                 }
                 engine.setSelectedTransform(transform);
+                touch.invalidate();
                 status.setText(transformComponent == 0 ? "Selected mesh position updated."
                         : transformComponent == 1 ? "Selected mesh rotation updated."
                         : "Selected mesh scale updated.");
@@ -334,6 +335,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 engine.setTransformMode(nativeMode);
                 activeTransformMode = nativeMode;
                 gizmoAxis = -1;
+                touch.invalidate();
                 brushControls.setVisibility(View.GONE);
                 orbitMode = false;
                 orbitButton.setText("ORBIT VIEW: OFF");
