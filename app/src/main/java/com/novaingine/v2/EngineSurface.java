@@ -313,6 +313,15 @@ public final class EngineSurface extends GLSurfaceView
         queueEvent(() -> NativeBridge.nativeSetSelectedTransform(copy));
     }
 
+    public void beginTransformEdit() {
+        queueEvent(() -> NativeBridge.nativeBeginTransformEdit());
+    }
+
+    public void updateSelectedTransform(float[] values) {
+        float[] copy=values.clone();
+        queueEvent(() -> NativeBridge.nativeUpdateSelectedTransform(copy));
+    }
+
     public void setPhysicsEnabled(boolean enabled) {
         queueEvent(() -> NativeBridge.nativeSetPhysicsEnabled(enabled));
     }
