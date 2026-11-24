@@ -378,6 +378,72 @@ public:
                             p=p+averageNormal*(std::clamp(height+b.radius*0.12f,0.0f,b.radius*0.45f)*amount);
                             break;
                         }
+                        case 12: { // Blob: rounded, stronger radial volume.
+                            Vec3 radial=normalize(p-c);
+                            p=p+(ownNormal*0.65f+radial*0.35f)*(amount*b.radius*0.72f);
+                            break;
+                        }
+                        case 13: { // Clay Strips: raised flattened strip.
+                            float band=std::max(0.0f,1.0f-std::fabs(dot(p-c,normalize(cross(averageNormal,movement+Vec3(0.001f,0.0f,0.0f)))))/std::max(0.02f,b.radius*0.35f));
+                            p=p+averageNormal*(amount*b.radius*0.55f*std::max(w,band*0.45f));
+                            break;
+                        }
+                        case 14: { // Elastic Deform: combines drag and soft spring response.
+                            p=p+movement*(w*0.72f)+ownNormal*(amount*b.radius*0.18f);
+                            break;
+                        }
+                        case 15: { // Snake Hook: pull a tapered trail behind the cursor.
+                            p=p+movement*(w*w*1.35f)+averageNormal*(amount*b.radius*0.12f);
+                            break;
+                        }
+                        case 16: { // Thumb: smear along the stroke with gentle pressure.
+                            p=p+movement*(w*0.8f)-ownNormal*(amount*b.radius*0.08f);
+                            break;
+                        }
+                        case 17: { // Pose: broad weighted bend driven by stroke motion.
+                            Vec3 pivot=c-movement;
+                            Vec3 arm=p-pivot;
+                            p=p+movement*(w*0.9f)+cross(averageNormal,arm)*(amount*0.12f);
+                            break;
+                        }
+                        case 18: { // Boundary: emphasize edge vertices, retain a safe fallback.
+                            bool edge=adjacencyOffsets[i+1]-adjacencyOffsets[i] < 5;
+                            float edgeWeight=edge?1.0f:0.25f;
+                            p=p+ownNormal*(amount*b.radius*0.42f*edgeWeight);
+                            break;
+                        }
+                        case 19: { // Slide Relax: blend toward neighbor average.
+                            Vec3 sum;uint32_t count=0;
+                            for(uint32_t k=adjacencyOffsets[i];k<adjacencyOffsets[i+1];k++){uint32_t n=adjacency[k];if(n<positions.size()){sum=sum+positions[n];++count;}}
+                            if(count){Vec3 avg=sum/(float)count;Vec3 tangent=(avg-p)-ownNormal*dot(avg-p,ownNormal);p=p+tangent*std::clamp(std::fabs(amount)*1.8f,0.0f,0.8f);}
+                            break;
+                        }
+                        case 20: { // Multiplane Scrape: project against a slightly varied plane.
+                            Vec3 side=normalize(cross(averageNormal,normalize(movement+Vec3(0.0001f,0.0f,0.0f))));
+                            Vec3 planeNormal=normalize(averageNormal+side*0.28f);
+                            p=p-planeNormal*(dot(p-averagePosition,planeNormal)*std::fabs(amount));
+                            break;
+                        }
+                        case 21: { // Fill: raise only points below the local surface.
+                            float depth=dot(averagePosition-p,averageNormal);
+                            if(depth>0.0f)p=p+averageNormal*(std::min(depth,b.radius*0.22f)*std::fabs(amount)*2.0f);
+                            break;
+                        }
+                        case 22: { // Deepen: carve a narrow center-weighted groove.
+                            float centerWeight=w*w;
+                            p=p-averageNormal*(std::fabs(amount)*b.radius*0.5f*centerWeight);
+                            break;
+                        }
+                        case 23: { // Nudge: translate local vertices along the stroke.
+                            p=p+movement*(w*0.95f);
+                            break;
+                        }
+                        case 24: { // Simplify: stronger local relaxation.
+                            Vec3 sum;uint32_t count=0;
+                            for(uint32_t k=adjacencyOffsets[i];k<adjacencyOffsets[i+1];k++){uint32_t n=adjacency[k];if(n<positions.size()){sum=sum+positions[n];++count;}}
+                            if(count){Vec3 avg=sum/(float)count;p=p+(avg-p)*std::clamp(std::fabs(amount)*2.5f,0.0f,0.75f);}
+                            break;
+                        }
                     }
                     if(length(p-positions[i])>1e-7f){positions[i]=p;changed=true;}
                 }
