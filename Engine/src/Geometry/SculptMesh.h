@@ -520,7 +520,8 @@ public:
         std::unordered_map<uint64_t, uint32_t> edgeVertices;
         edgeVertices.reserve(indices.size());
         std::vector<Vec3> nextPositions = positions;
-        std::vector<float> nextMask = mask;
+        std::vector<float> nextMask(positions.size(), 0.0f);
+        for (size_t i = 0; i < std::min(mask.size(), nextMask.size()); ++i) nextMask[i] = mask[i];
         nextPositions.reserve(positions.size() + indices.size() / 2);
         nextMask.reserve(nextPositions.capacity());
         std::vector<uint32_t> nextIndices;
