@@ -509,6 +509,59 @@ public:
         return changed;
     }
 
+    // Uniform midpoint refinement for the active sculpt surface.
+    // Limits are intentionally conservative for mobile memory and GPU upload cost.
+    bool subdivideOnce(size_t maxTriangles = 220000) {
+        const size_t oldTriangleCount = indices.size() / 3;
+        if (positions.empty() || oldTriangleCount == 0 ||
+            oldTriangleCount > maxTriangles / 4 ||
+            positions.size() > 60000) return false;
+
+        std::unordered_map<uint64_t, uint32_t> edgeVertices;
+        edgeVertices.reserve(indices.size());
+        std::vector<Vec3> nextPositions = positions;
+        std::vector<float> nextMask = mask;
+        nextPositions.reserve(positions.size() + indices.size() / 2);
+        nextMask.reserve(nextPositions.capacity());
+        std::vector<uint32_t> nextIndices;
+        nextIndices.reserve(indices.size() * 4);
+
+        auto midpoint = [&](uint32_t a, uint32_t b) -> uint32_t {
+            const uint32_t lo = std::min(a, b), hi = std::max(a, b);
+            const uint64_t key = (static_cast<uint64_t>(lo) << 32) | hi;
+            auto found = edgeVertices.find(key);
+            if (found != edgeVertices.end()) return found->second;
+            const uint32_t id = static_cast<uint32_t>(nextPositions.size());
+            nextPositions.push_back((positions[a] + positions[b]) * 0.5f);
+            const float ma = a < mask.size() ? mask[a] : 0.0f;
+            const float mb = b < mask.size() ? mask[b] : 0.0f;
+            nextMask.push_back((ma + mb) * 0.5f);
+            edgeVertices.emplace(key, id);
+            return id;
+        };
+
+        for (size_t i = 0; i + 2 < indices.size(); i += 3) {
+            const uint32_t a = indices[i], b = indices[i + 1], c = indices[i + 2];
+            if (a >= positions.size() || b >= positions.size() || c >= positions.size()) return false;
+            const uint32_t ab = midpoint(a, b);
+            const uint32_t bc = midpoint(b, c);
+            const uint32_t ca = midpoint(c, a);
+            nextIndices.insert(nextIndices.end(), {
+                a, ab, ca, ab, b, bc, ca, bc, c, ab, bc, ca
+            });
+        }
+
+        if (nextPositions.size() > 180000 || nextIndices.size() / 3 > maxTriangles) return false;
+        positions.swap(nextPositions);
+        mask.swap(nextMask);
+        indices.swap(nextIndices);
+        recalculateNormals();
+        buildAdjacency();
+        buildChunks();
+        buildBVH();
+        return true;
+    }
+
     void recalculateNormals(){
         normals.assign(positions.size(),Vec3());
         for(size_t i=0;i+2<indices.size();i+=3){uint32_t a=indices[i],b=indices[i+1],c=indices[i+2];Vec3 n=cross(positions[b]-positions[a],positions[c]-positions[a]);normals[a]=normals[a]+n;normals[b]=normals[b]+n;normals[c]=normals[c]+n;}
