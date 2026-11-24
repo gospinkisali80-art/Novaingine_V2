@@ -85,360 +85,413 @@ public final class ManualSculptWorkspace extends FrameLayout {
         this.activity = activity;
         this.engine = engine;
         this.onExit = onExit;
-        // Keep the GL viewport visible beneath the sculpt controls.
-        // An opaque workspace background hides the SurfaceView and makes meshes appear missing.
         setBackgroundColor(Color.TRANSPARENT);
 
         SculptTouchSurface touch = new SculptTouchSurface();
-        addView(touch, new FrameLayout.LayoutParams(
-                LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+        addView(touch, new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+
+        // Reference-matched editor: fixed top bar, left brush workspace, open viewport,
+        // right tool rail and bottom shortcut shelf. The GL surface remains visible below.
+        LinearLayout root = new LinearLayout(activity);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(Color.TRANSPARENT);
+        FrameLayout.LayoutParams rootParams = new FrameLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT);
+        addView(root, rootParams);
 
         LinearLayout top = new LinearLayout(activity);
         top.setGravity(Gravity.CENTER_VERTICAL);
-        top.setPadding(dp(10), dp(7), dp(10), dp(7));
-        top.setBackgroundColor(0xEE171D25);
+        top.setPadding(dp(9), dp(3), dp(9), dp(3));
+        top.setBackgroundColor(0xF21B1B1B);
+        root.addView(top, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(43)));
 
-        TextView exit = button("‹  EXIT");
-        exit.setOnClickListener(v -> this.onExit.run());
-        top.addView(exit, weighted(0, 1));
-
-        TextView title = label("MANUAL SCULPT", 14, Color.WHITE, true);
-        title.setGravity(Gravity.CENTER);
-        top.addView(title, weighted(0, 2));
-
-        TextView undo = button("UNDO");
+        TextView home = button("⌂");
+        top.addView(home, new LinearLayout.LayoutParams(dp(42), LayoutParams.MATCH_PARENT));
+        home.setOnClickListener(v -> this.onExit.run());
+        TextView save = button("▣");
+        top.addView(save, new LinearLayout.LayoutParams(dp(42), LayoutParams.MATCH_PARENT));
+        save.setOnClickListener(v -> Toast.makeText(activity, "Use the project Save command to save the scene.", Toast.LENGTH_SHORT).show());
+        TextView import = button("⇧");
+        top.addView(import, new LinearLayout.LayoutParams(dp(42), LayoutParams.MATCH_PARENT));
+        import.setOnClickListener(v -> Toast.makeText(activity, "Import is available from the main editor tools.", Toast.LENGTH_SHORT).show());
+        TextView project = label("NOVAINGINE  •  SCULPT WORKSPACE", 11, Color.WHITE, true);
+        project.setGravity(Gravity.CENTER);
+        top.addView(project, new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1));
+        TextView undo = button("↶");
+        top.addView(undo, new LinearLayout.LayoutParams(dp(42), LayoutParams.MATCH_PARENT));
         undo.setOnClickListener(v -> engine.undoScene());
-        top.addView(undo, weighted(0, 1));
-
-        TextView redo = button("REDO");
+        TextView redo = button("↷");
+        top.addView(redo, new LinearLayout.LayoutParams(dp(42), LayoutParams.MATCH_PARENT));
         redo.setOnClickListener(v -> engine.redoScene());
-        top.addView(redo, weighted(0, 1));
+        TextView help = button("?");
+        top.addView(help, new LinearLayout.LayoutParams(dp(36), LayoutParams.MATCH_PARENT));
+        help.setOnClickListener(v -> new android.app.AlertDialog.Builder(activity)
+                .setTitle("Sculpt workspace")
+                .setMessage("Choose a brush, adjust its controls, then drag on the model. Use two fingers to orbit/pan/zoom. Select a transform mode to edit the selected mesh.")
+                .setPositiveButton("OK", null).show());
 
-        addView(top, new FrameLayout.LayoutParams(
-                LayoutParams.MATCH_PARENT, dp(52), Gravity.TOP));
+        LinearLayout workArea = new LinearLayout(activity);
+        workArea.setOrientation(LinearLayout.HORIZONTAL);
+        root.addView(workArea, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1));
 
-        LinearLayout bottom = new LinearLayout(activity);
-        bottom.setOrientation(LinearLayout.VERTICAL);
-        bottom.setPadding(dp(10), dp(7), dp(10), dp(8));
-        bottom.setBackground(new GradientDrawable(
-                GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{0xF51B222C, 0xFF10151C}));
-        // Keep the complete tool drawer reachable on short phone screens.
-        ScrollView drawerScroll = new ScrollView(activity);
-        drawerScroll.setFillViewport(false);
-        drawerScroll.setVerticalScrollBarEnabled(true);
-        drawerScroll.setBackgroundColor(Color.TRANSPARENT);
-        drawerScroll.addView(bottom, new ScrollView.LayoutParams(
-                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
-        int drawerHeight = (int)(getResources().getDisplayMetrics().heightPixels * 0.62f);
-        FrameLayout.LayoutParams bottomParams = new FrameLayout.LayoutParams(
-                LayoutParams.MATCH_PARENT, drawerHeight, Gravity.BOTTOM);
-        addView(drawerScroll, bottomParams);
-
-        final TextView selectedToolIndicator = button("ACTIVE: DRAW  ▴ TOOLS");
-        selectedToolIndicator.setTextColor(ACCENT);
-        FrameLayout.LayoutParams indicatorParams = new FrameLayout.LayoutParams(
-                LayoutParams.WRAP_CONTENT, dp(42), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        indicatorParams.bottomMargin = dp(12);
-        addView(selectedToolIndicator, indicatorParams);
-        final boolean[] drawerOpen = {false};
-        final Runnable closeToolDrawer = () -> {
-            if (!drawerOpen[0]) return;
-            drawerOpen[0] = false;
-            drawerScroll.animate().translationY(drawerScroll.getHeight() + dp(8)).setDuration(220).start();
-            selectedToolIndicator.setTextColor(ACCENT);
-        };
-        selectedToolIndicator.setOnClickListener(v -> {
-            if (drawerOpen[0]) {
-                closeToolDrawer.run();
-            } else {
-                drawerOpen[0] = true;
-                drawerScroll.animate().translationY(0).setDuration(220).start();
-                selectedToolIndicator.setText("CLOSE TOOLS  ▾");
-                selectedToolIndicator.setTextColor(Color.WHITE);
-            }
+        // Left quick-control rail (matching the reference's narrow strip).
+        LinearLayout leftRail = new LinearLayout(activity);
+        leftRail.setOrientation(LinearLayout.VERTICAL);
+        leftRail.setGravity(Gravity.CENTER_HORIZONTAL);
+        leftRail.setPadding(dp(3), dp(5), dp(3), dp(5));
+        leftRail.setBackgroundColor(0xE9161719);
+        workArea.addView(leftRail, new LinearLayout.LayoutParams(dp(42), LayoutParams.MATCH_PARENT));
+        TextView activeBrush = button("●");
+        leftRail.addView(activeBrush, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
+        activeBrush.setOnClickListener(v -> showBrushPicker());
+        TextView symmetry = button("X");
+        leftRail.addView(symmetry, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
+        symmetry.setOnClickListener(v -> {
+            symmetryAxis = symmetryAxis == 0 ? 1 : symmetryAxis == 1 ? 2 : symmetryAxis == 2 ? -1 : 0;
+            symmetry.setText(symmetryAxis < 0 ? "Ø" : symmetryAxis == 0 ? "X" : symmetryAxis == 1 ? "Y" : "Z");
+            symmetry.setTextColor(symmetryAxis < 0 ? Color.WHITE : ACCENT);
+            applyOptions();
         });
-        drawerScroll.post(() -> drawerScroll.setTranslationY(drawerScroll.getHeight() + dp(8)));
-
-        status = label("Choose a shape, then drag on the mesh to sculpt.", 10, 0xFFB8C4D1, false);
-        bottom.addView(status);
-
-        TextView brushSelector = button("SCULPT BRUSHES  ▴");
-        brushSelector.setTextColor(ACCENT);
-        bottom.addView(brushSelector, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
-        ScrollView brushScroll = new ScrollView(activity);
-        LinearLayout brushList = new LinearLayout(activity);
-        brushList.setOrientation(LinearLayout.VERTICAL);
-        brushList.setPadding(0, dp(4), 0, dp(4));
-        brushScroll.addView(brushList);
-        bottom.addView(brushScroll, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(190)));
-        brushScroll.setVisibility(View.VISIBLE);
-        brushSelector.setOnClickListener(v -> {
-            boolean opening = brushScroll.getVisibility() != View.VISIBLE;
-            brushScroll.setVisibility(opening ? View.VISIBLE : View.GONE);
-            brushSelector.setText(opening ? "SCULPT BRUSHES  ▴" : "SCULPT BRUSHES  ▾");
+        TextView subtractQuick = button("±");
+        leftRail.addView(subtractQuick, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
+        subtractQuick.setOnClickListener(v -> {
+            subtract = !subtract;
+            subtractQuick.setText(subtract ? "−" : "+");
+            subtractQuick.setTextColor(subtract ? ACCENT : Color.WHITE);
+            applyOptions();
         });
-        for (int i = 0; i < BRUSHES.length; i++) {
-            final int index = i;
-            LinearLayout entry = new LinearLayout(activity);
-            entry.setOrientation(LinearLayout.VERTICAL);
-            entry.setPadding(dp(9), dp(6), dp(9), dp(6));
-            entry.setBackground(background(0xFF26313D));
-            TextView name = label(BRUSHES[i], 11, Color.WHITE, true);
-            TextView description = label(BRUSH_DESCRIPTIONS[i], 9, 0xFFB8C4D1, false);
-            entry.addView(name);
-            entry.addView(description);
-            LinearLayout.LayoutParams entryParams = new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
-            entryParams.setMargins(0, 0, 0, dp(4));
-            brushList.addView(entry, entryParams);
-            brushButtons[i] = name;
-            entry.setClickable(true);
-            entry.setOnClickListener(v -> {
-                selectedBrush = index;
-                activeTransformMode = -1;
-                gizmoAxis = -1;
-                orbitMode = false;
-                if (orbitButton != null) { orbitButton.setText("ORBIT VIEW: OFF"); orbitButton.setTextColor(Color.WHITE); }
-                sculptEnabled = true;
-                brushControls.setVisibility(View.VISIBLE);
-                updateBrushButtons();
-                applyOptions();
-                selectedToolIndicator.setText("ACTIVE: " + BRUSHES[index] + "  ▴ TOOLS");
-                brushScroll.setVisibility(View.GONE);
-                brushSelector.setText("SCULPT BRUSHES  ▾");
-                closeToolDrawer.run();
-                status.setText(BRUSH_DESCRIPTIONS[index]);
+        TextView smoothQuick = button("S");
+        leftRail.addView(smoothQuick, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
+        smoothQuick.setOnClickListener(v -> selectBrush(1));
+        TextView maskQuick = button("M");
+        leftRail.addView(maskQuick, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
+        maskQuick.setOnClickListener(v -> selectBrush(7));
+        TextView undoQuick = button("↶");
+        leftRail.addView(undoQuick, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
+        undoQuick.setOnClickListener(v -> engine.undoScene());
+        TextView redoQuick = button("↷");
+        leftRail.addView(redoQuick, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
+        redoQuick.setOnClickListener(v -> engine.redoScene());
+
+        // Brush browser panel: categories and a three-column, scrollable brush grid.
+        LinearLayout browser = new LinearLayout(activity);
+        browser.setOrientation(LinearLayout.VERTICAL);
+        browser.setPadding(dp(7), dp(6), dp(7), dp(5));
+        browser.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                new int[]{0xF52B2B2B, 0xF51C1C1C}));
+        LinearLayout.LayoutParams browserParams = new LinearLayout.LayoutParams(dp(292), LayoutParams.MATCH_PARENT);
+        browserParams.setMargins(dp(4), dp(4), dp(4), dp(4));
+        workArea.addView(browser, browserParams);
+
+        LinearLayout browserHeader = new LinearLayout(activity);
+        browserHeader.setGravity(Gravity.CENTER_VERTICAL);
+        browser.addView(browserHeader, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
+        TextView browserTitle = label("Brushes", 17, Color.WHITE, true);
+        browserTitle.setGravity(Gravity.CENTER);
+        browserHeader.addView(browserTitle, new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1));
+        TextView filter = button("☷");
+        browserHeader.addView(filter, new LinearLayout.LayoutParams(dp(38), LayoutParams.MATCH_PARENT));
+        filter.setOnClickListener(v -> showBrushPicker());
+        TextView more = button("⋯");
+        browserHeader.addView(more, new LinearLayout.LayoutParams(dp(34), LayoutParams.MATCH_PARENT));
+        more.setOnClickListener(v -> new android.app.AlertDialog.Builder(activity)
+                .setTitle("Brush options")
+                .setItems(new String[]{"All brushes", "Recent", "Favorites", "Brush settings"}, (d, which) -> {
+                    if (which == 3) showBrushSettings();
+                }).show());
+
+        TextView featured = label("  SELECTED  •  " + BRUSHES[selectedBrush].toUpperCase(), 10, ACCENT, true);
+        featured.setGravity(Gravity.CENTER_VERTICAL);
+        browser.addView(featured, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(27)));
+
+        HorizontalScrollView categoriesScroll = new HorizontalScrollView(activity);
+        categoriesScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout categories = new LinearLayout(activity);
+        categories.setGravity(Gravity.CENTER_VERTICAL);
+        categoriesScroll.addView(categories);
+        browser.addView(categoriesScroll, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(34)));
+        String[] categoryNames = {"Recent", "Favorites", "All", "Clay", "Move", "Crease", "Mask", "Flatten", "Special"};
+        for (String category : categoryNames) {
+            TextView cat = button(category);
+            categories.addView(cat, new LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, dp(30)));
+            cat.setOnClickListener(v -> {
+                // Categories are quick filters; all brushes remain available in All.
+                String key = category.equals("Move") ? "Grab" : category.equals("Crease") ? "Crease" : category;
+                if (category.equals("All") || category.equals("Recent") || category.equals("Favorites")) {
+                    for (TextView b : brushButtons) if (b != null) b.setVisibility(View.VISIBLE);
+                } else {
+                    for (int i = 0; i < brushButtons.length; i++) {
+                        String n = BRUSHES[i].toLowerCase(java.util.Locale.US);
+                        boolean show = category.equals("Clay") ? n.contains("clay") || n.equals("blob")
+                                : category.equals("Mask") ? n.contains("mask")
+                                : category.equals("Flatten") ? n.contains("flatten") || n.contains("scrape")
+                                : category.equals("Special") ? i >= 12
+                                : n.contains(key.toLowerCase(java.util.Locale.US));
+                        brushButtons[i].setVisibility(show ? View.VISIBLE : View.GONE);
+                    }
+                }
             });
         }
-        updateBrushButtons();
+
+        ScrollView brushScroll = new ScrollView(activity);
+        brushScroll.setFillViewport(false);
+        brushScroll.setVerticalScrollBarEnabled(true);
+        LinearLayout brushGrid = new LinearLayout(activity);
+        brushGrid.setOrientation(LinearLayout.VERTICAL);
+        brushScroll.addView(brushGrid);
+        browser.addView(brushScroll, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1));
+
+        for (int row = 0; row < (BRUSHES.length + 2) / 3; row++) {
+            LinearLayout line = new LinearLayout(activity);
+            line.setOrientation(LinearLayout.HORIZONTAL);
+            brushGrid.addView(line, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(88)));
+            for (int col = 0; col < 3; col++) {
+                final int index = row * 3 + col;
+                if (index >= BRUSHES.length) break;
+                LinearLayout tile = new LinearLayout(activity);
+                tile.setOrientation(LinearLayout.VERTICAL);
+                tile.setGravity(Gravity.CENTER);
+                tile.setPadding(dp(2), dp(4), dp(2), dp(3));
+                tile.setBackground(background(index == selectedBrush ? 0xFF51402B : 0xFF292929));
+                TextView icon = label("◉", 22, index == selectedBrush ? ACCENT : 0xFFD7D7D7, true);
+                icon.setGravity(Gravity.CENTER);
+                tile.addView(icon, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)));
+                TextView name = label(BRUSHES[index], 9, Color.WHITE, true);
+                name.setGravity(Gravity.CENTER);
+                tile.addView(name, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(30)));
+                LinearLayout.LayoutParams tileParams = new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1);
+                tileParams.setMargins(dp(2), dp(2), dp(2), dp(2));
+                line.addView(tile, tileParams);
+                brushButtons[index] = name;
+                tile.setOnClickListener(v -> {
+                    selectBrush(index);
+                    featured.setText("  SELECTED  •  " + BRUSHES[index].toUpperCase());
+                    for (int i = 0; i < brushButtons.length; i++) {
+                        if (brushButtons[i] != null) {
+                            brushButtons[i].setTextColor(i == index ? ACCENT : Color.WHITE);
+                            View parent = (View) brushButtons[i].getParent();
+                            if (parent != null) parent.setBackground(background(i == index ? 0xFF51402B : 0xFF292929));
+                        }
+                    }
+                });
+            }
+        }
+
+        status = label("Drag on the model to sculpt.", 9, 0xFFB8C4D1, false);
+        status.setGravity(Gravity.CENTER_VERTICAL);
+        browser.addView(status, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(23)));
 
         brushControls = new LinearLayout(activity);
         brushControls.setOrientation(LinearLayout.VERTICAL);
-        bottom.addView(brushControls);
-        addSlider(brushControls, "BRUSH SIZE", 1, 300, 7, value -> {
-            radius = 0.02f + ((value - 1) / 299.0f) * 7.98f;
-            applyOptions();
+        brushControls.setPadding(dp(2), 0, dp(2), 0);
+        browser.addView(brushControls, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(112)));
+        addSlider(brushControls, "SIZE", 1, 300, 7, value -> {
+            radius = 0.02f + ((value - 1) / 299.0f) * 7.98f; applyOptions();
         });
         addSlider(brushControls, "STRENGTH", 0, 100, 40, value -> {
-            strength = value / 100.0f;
-            applyOptions();
+            strength = value / 100.0f; applyOptions();
         });
         addSlider(brushControls, "HARDNESS", 0, 100, 50, value -> {
-            falloff = value / 100.0f;
-            applyOptions();
+            falloff = value / 100.0f; applyOptions();
         });
         addSlider(brushControls, "PRESSURE", 5, 100, 100, value -> {
-            pressure = value / 100.0f;
+            pressure = value / 100.0f; applyOptions();
+        });
+
+        // The center remains an unobstructed 3D viewport.
+        View viewportSpacer = new View(activity);
+        viewportSpacer.setBackgroundColor(Color.TRANSPARENT);
+        workArea.addView(viewportSpacer, new LinearLayout.LayoutParams(0, 1, 1));
+
+        // Right-side modelling and scene rail, like the reference.
+        LinearLayout rightRail = new LinearLayout(activity);
+        rightRail.setOrientation(LinearLayout.VERTICAL);
+        rightRail.setGravity(Gravity.CENTER_HORIZONTAL);
+        rightRail.setPadding(dp(3), dp(5), dp(3), dp(5));
+        rightRail.setBackgroundColor(0xE9161719);
+        workArea.addView(rightRail, new LinearLayout.LayoutParams(dp(43), LayoutParams.MATCH_PARENT));
+        TextView scene = button("▤");
+        rightRail.addView(scene, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)));
+        scene.setOnClickListener(v -> showSceneObjects());
+        TextView layers = button("▱");
+        rightRail.addView(layers, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)));
+        layers.setOnClickListener(v -> showSceneObjects());
+        TextView shapes = button("◇");
+        rightRail.addView(shapes, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)));
+        shapes.setOnClickListener(v -> showShapes());
+        TextView transform = button("XYZ");
+        rightRail.addView(transform, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)));
+        transform.setOnClickListener(v -> showTransformEditor(touch));
+        TextView orbit = button("◎");
+        rightRail.addView(orbit, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)));
+        orbit.setOnClickListener(v -> {
+            orbitMode = !orbitMode;
+            sculptEnabled = !orbitMode;
+            applyOptions();
+            status.setText(orbitMode ? "Orbit mode: drag to rotate the selected object." : "Sculpt mode active.");
+        });
+        TextView symmetryRight = button("Y");
+        rightRail.addView(symmetryRight, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)));
+        symmetryRight.setOnClickListener(v -> {
+            symmetryAxis = symmetryAxis == 1 ? -1 : 1;
+            symmetryRight.setText(symmetryAxis == 1 ? "Y" : "Ø");
             applyOptions();
         });
-        addSlider(brushControls, "OBJECT SIZE", 10, 300, 100, value -> {
-            float[] transform = engine.getSelectedTransform();
-            if (transform == null || transform.length < 9) return;
-            float scale = value / 100.0f;
-            transform[6] = scale;
-            transform[7] = scale;
-            transform[8] = scale;
-            engine.setSelectedTransform(transform);
-            touch.invalidate();
-        });
-        brushControls.setVisibility(View.GONE);
+        TextView export = button("⇧");
+        rightRail.addView(export, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)));
+        export.setOnClickListener(v -> exportMesh());
 
-        LinearLayout actions = new LinearLayout(activity);
-        actions.setGravity(Gravity.CENTER_VERTICAL);
-        actions.setOrientation(LinearLayout.HORIZONTAL);
-        bottom.addView(actions, new LinearLayout.LayoutParams(
-                LayoutParams.MATCH_PARENT, dp(42)));
-
-        HorizontalScrollView shapeScroll = new HorizontalScrollView(activity);
-        shapeScroll.setHorizontalScrollBarEnabled(false);
-        LinearLayout shapeRow = new LinearLayout(activity);
-        shapeRow.setOrientation(LinearLayout.HORIZONTAL);
-        shapeScroll.addView(shapeRow);
-        TextView shapesToggle = button("SHAPES  ▾");
-        shapesToggle.setTextColor(ACCENT);
-        bottom.addView(shapesToggle, 0, new LinearLayout.LayoutParams(
-                LayoutParams.MATCH_PARENT, dp(38)));
-        bottom.addView(shapeScroll, 1, new LinearLayout.LayoutParams(
-                LayoutParams.MATCH_PARENT, dp(44)));
-        shapeScroll.setVisibility(View.GONE);
-        shapesToggle.setOnClickListener(v -> {
-            boolean opening = shapeScroll.getVisibility() != View.VISIBLE;
-            shapeScroll.setVisibility(opening ? View.VISIBLE : View.GONE);
-            shapesToggle.setText(opening ? "SHAPES  ▴" : "SHAPES  ▾");
-        });
-
-        LinearLayout transformRow = new LinearLayout(activity);
-        transformRow.setGravity(Gravity.CENTER_VERTICAL);
-        bottom.addView(transformRow, 2, new LinearLayout.LayoutParams(
-                LayoutParams.MATCH_PARENT, dp(42)));
-        String[] axes = {"X", "Y", "Z"};
-        float[] selectedTransform = engine.getSelectedTransform();
-        for (int axis = 0; axis < 3; axis++) {
-            final int index = axis;
-            EditText field = new EditText(activity);
-            positionInputs[axis] = field;
-            field.setSingleLine(true);
-            field.setTextSize(11);
-            field.setTextColor(Color.WHITE);
-            field.setHintTextColor(0xFF9AA8B7);
-            field.setHint(axes[axis]);
-            field.setInputType(android.text.InputType.TYPE_CLASS_NUMBER
-                    | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
-                    | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
-            field.setPadding(dp(6), 0, dp(6), 0);
-            field.setBackground(background(0xFF26313D));
-            LinearLayout.LayoutParams fieldParams = new LinearLayout.LayoutParams(0, dp(36), 1);
-            fieldParams.setMargins(0, 0, dp(5), 0);
-            transformRow.addView(field, fieldParams);
-            if (selectedTransform != null && selectedTransform.length >= 3) {
-                field.setText(String.valueOf(selectedTransform[axis + transformComponent * 3]));
-            }
-        }
-        TextView applyPosition = button("SET XYZ");
-        transformRow.addView(applyPosition, new LinearLayout.LayoutParams(dp(76), dp(36)));
-        applyPosition.setOnClickListener(v -> {
-            float[] transform = engine.getSelectedTransform();
-            if (transform == null || transform.length < 9) return;
-            try {
-                for (int axis = 0; axis < 3; axis++) {
-                    String value = positionInputs[axis].getText().toString().trim();
-                    if (!value.isEmpty()) transform[axis + transformComponent * 3] = Float.parseFloat(value);
-                }
-                engine.setSelectedTransform(transform);
-                touch.invalidate();
-                status.setText(transformComponent == 0 ? "Selected mesh position updated."
-                        : transformComponent == 1 ? "Selected mesh rotation updated."
-                        : "Selected mesh scale updated.");
-                selectedToolIndicator.setText("ACTIVE: XYZ TRANSFORM  ▴ TOOLS");
-                closeToolDrawer.run();
-            } catch (NumberFormatException error) {
-                status.setText("Enter valid X, Y and Z coordinates.");
-            }
-        });
-
-        LinearLayout transformModes = new LinearLayout(activity);
-        transformModes.setGravity(Gravity.CENTER_VERTICAL);
-        bottom.addView(transformModes, 3, new LinearLayout.LayoutParams(
-                LayoutParams.MATCH_PARENT, dp(38)));
-        LinearLayout viewRow = new LinearLayout(activity);
-        viewRow.setGravity(Gravity.CENTER_VERTICAL);
-        bottom.addView(viewRow, 4, new LinearLayout.LayoutParams(
-                LayoutParams.MATCH_PARENT, dp(40)));
-        orbitButton = button("ORBIT VIEW: OFF");
-        orbitButton.setTextColor(ACCENT);
-        viewRow.addView(orbitButton, weighted(0, 1));
-        orbitButton.setOnClickListener(v -> {
-            orbitMode = !orbitMode;
-            if (orbitMode) {
-                activeTransformMode = -1;
-                brushControls.setVisibility(View.GONE);
-                sculptEnabled = false;
-                applyOptions();
-                orbitButton.setText("ORBIT VIEW: ON  • DRAG TO ROTATE");
-                orbitButton.setTextColor(ACCENT);
-                selectedToolIndicator.setText("ORBIT SELECTED OBJECT  ▴ TOOLS");
-            } else {
-                sculptEnabled = true;
-                brushControls.setVisibility(activeTransformMode < 0 ? View.VISIBLE : View.GONE);
-                applyOptions();
-                orbitButton.setText("ORBIT VIEW: OFF");
-                orbitButton.setTextColor(Color.WHITE);
-                selectedToolIndicator.setText("ACTIVE: " + BRUSHES[selectedBrush] + "  ▴ TOOLS");
-            }
-        });
-
-        String[] modes = {"MOVE", "ROTATE", "SCALE"};
-        for (int modeIndex = 0; modeIndex < modes.length; modeIndex++) {
-            final int nativeMode = modeIndex;
-            TextView modeButton = button(modes[modeIndex]);
-            transformModes.addView(modeButton, weighted(0, 1));
-            modeButton.setOnClickListener(v -> {
-                engine.setTransformMode(nativeMode);
-                activeTransformMode = nativeMode;
-                gizmoAxis = -1;
-                touch.invalidate();
-                brushControls.setVisibility(View.GONE);
-                orbitMode = false;
-                orbitButton.setText("ORBIT VIEW: OFF");
-                orbitButton.setTextColor(Color.WHITE);
-                transformDragState = engine.getSelectedTransform();
-                sculptEnabled = false;
-                applyOptions();
-                transformComponent = nativeMode;
-                float[] values = engine.getSelectedTransform();
-                if (values != null && values.length >= 9) {
-                    for (int axis = 0; axis < 3; axis++) {
-                        positionInputs[axis].setText(String.valueOf(values[axis + transformComponent * 3]));
+        // Bottom brush shelf: persistent shortcuts, not a close/drawer control.
+        HorizontalScrollView shelfScroll = new HorizontalScrollView(activity);
+        shelfScroll.setHorizontalScrollBarEnabled(false);
+        shelfScroll.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{0xF52A2A2A, 0xF51B1B1B}));
+        LinearLayout shelf = new LinearLayout(activity);
+        shelf.setGravity(Gravity.CENTER_VERTICAL);
+        shelf.setPadding(dp(7), dp(3), dp(7), dp(3));
+        shelfScroll.addView(shelf);
+        root.addView(shelfScroll, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(52)));
+        int[] favorites = {1, 8, 0, 3, 4, 5, 6, 9, 10, 12, 13, 14, 15, 7, 11};
+        for (int brush : favorites) {
+            final int index = brush;
+            TextView shortcut = button(BRUSHES[index].equals("Clay Strips") ? "▧" : "●");
+            shortcut.setTextSize(16);
+            LinearLayout.LayoutParams shortcutParams = new LinearLayout.LayoutParams(dp(42), LayoutParams.MATCH_PARENT);
+            shortcutParams.setMargins(dp(2), 0, dp(2), 0);
+            shelf.addView(shortcut, shortcutParams);
+            shortcut.setOnClickListener(v -> {
+                selectBrush(index);
+                featured.setText("  SELECTED  •  " + BRUSHES[index].toUpperCase());
+                for (int i = 0; i < brushButtons.length; i++) {
+                    if (brushButtons[i] != null) {
+                        brushButtons[i].setTextColor(i == index ? ACCENT : Color.WHITE);
+                        View parent = (View) brushButtons[i].getParent();
+                        if (parent != null) parent.setBackground(background(i == index ? 0xFF51402B : 0xFF292929));
                     }
                 }
-                applyPosition.setText(nativeMode == 0 ? "SET POS" : nativeMode == 1 ? "SET ROT" : "SET SCALE");
-                selectedToolIndicator.setText("ACTIVE: " + modes[nativeMode] + "  ▴ TOOLS");
-                closeToolDrawer.run();
             });
         }
+        TextView shapeShelf = button("SHAPES");
+        shelf.addView(shapeShelf, new LinearLayout.LayoutParams(dp(76), LayoutParams.MATCH_PARENT));
+        shapeShelf.setOnClickListener(v -> showShapes());
+        TextView moveShelf = button("MOVE");
+        shelf.addView(moveShelf, new LinearLayout.LayoutParams(dp(64), LayoutParams.MATCH_PARENT));
+        moveShelf.setOnClickListener(v -> setTransformMode(0, touch));
+        TextView rotateShelf = button("ROT");
+        shelf.addView(rotateShelf, new LinearLayout.LayoutParams(dp(54), LayoutParams.MATCH_PARENT));
+        rotateShelf.setOnClickListener(v -> setTransformMode(1, touch));
+        TextView scaleShelf = button("SCALE");
+        shelf.addView(scaleShelf, new LinearLayout.LayoutParams(dp(64), LayoutParams.MATCH_PARENT));
+        scaleShelf.setOnClickListener(v -> setTransformMode(2, touch));
 
-        String[] shapeNames = {"SPHERE", "PLANE", "CUBE", "CYLINDER", "CONE",
-                "TORUS", "CAPSULE", "WEDGE", "ROUND SPHERE"};
-        int[] shapeDensities = {64, 128, 32, 48, 48, 48, 48, 32, 64};
-        for (int shape = 0; shape < shapeNames.length; shape++) {
-            final int shapeId = shape;
-            TextView shapeButton = button("+ " + shapeNames[shape]);
-            LinearLayout.LayoutParams shapeParams = new LinearLayout.LayoutParams(
-                    LayoutParams.WRAP_CONTENT, dp(36));
-            shapeParams.setMargins(0, 0, dp(6), 0);
-            shapeRow.addView(shapeButton, shapeParams);
-            shapeButton.setOnClickListener(v -> {
-                activeTransformMode = -1;
-                orbitMode = false;
-                orbitButton.setText("ORBIT VIEW: OFF");
-                orbitButton.setTextColor(Color.WHITE);
-                sculptEnabled = true;
-                applyOptions();
-                selectedToolIndicator.setText("ACTIVE: " + shapeNames[shapeId] + "  ▴ TOOLS");
-                shapeScroll.setVisibility(View.GONE);
-                shapesToggle.setText("SHAPES  ▾");
-                createMesh(shapeId, shapeDensities[shapeId]);
-                closeToolDrawer.run();
-            });
-        }
-
-        TextView mirror = button("SYMMETRY: X");
-        mirror.setTextColor(ACCENT);
-        mirror.setOnClickListener(v -> {
-            symmetryAxis = symmetryAxis == 0 ? 1 : symmetryAxis == 1 ? 2 : symmetryAxis == 2 ? -1 : 0;
-            String[] names = {"SYMMETRY: X", "SYMMETRY: Y", "SYMMETRY: Z", "SYMMETRY: OFF"};
-            mirror.setText(names[symmetryAxis < 0 ? 3 : symmetryAxis]);
-            mirror.setTextColor(symmetryAxis < 0 ? Color.WHITE : ACCENT);
-            applyOptions();
-        });
-        actions.addView(mirror, weighted(0, 1));
-
-        TextView subtractButton = button("SUBTRACT: OFF");
-        subtractButton.setOnClickListener(v -> {
-            subtract = !subtract;
-            subtractButton.setText(subtract ? "SUBTRACT: ON" : "SUBTRACT: OFF");
-            subtractButton.setTextColor(subtract ? ACCENT : Color.WHITE);
-            applyOptions();
-        });
-        actions.addView(subtractButton, weighted(0, 1));
-
-        TextView mode = button("SCULPT: ON");
-        mode.setTextColor(ACCENT);
-        mode.setOnClickListener(v -> {
-            sculptEnabled = !sculptEnabled;
-            brushControls.setVisibility(sculptEnabled && activeTransformMode < 0 && !orbitMode
-                    ? View.VISIBLE : View.GONE);
-            mode.setText(sculptEnabled ? "SCULPT: ON" : "SCULPT: OFF");
-            mode.setTextColor(sculptEnabled ? ACCENT : Color.WHITE);
-            applyOptions();
-        });
-        actions.addView(mode, weighted(0, 1));
-
-        TextView export = button("OBJ");
-        export.setOnClickListener(v -> exportMesh());
-        actions.addView(export, weighted(0, 1));
-
+        updateBrushButtons();
         applyOptions();
+    }
+
+    private void selectBrush(int index) {
+        selectedBrush = Math.max(0, Math.min(BRUSHES.length - 1, index));
+        activeTransformMode = -1;
+        orbitMode = false;
+        sculptEnabled = true;
+        applyOptions();
+        updateBrushButtons();
+        status.setText(BRUSH_DESCRIPTIONS[selectedBrush]);
+    }
+
+    private void showBrushPicker() {
+        new android.app.AlertDialog.Builder(activity).setTitle("Brushes")
+                .setItems(BRUSHES, (dialog, which) -> selectBrush(which)).show();
+    }
+
+    private void showBrushSettings() {
+        new android.app.AlertDialog.Builder(activity).setTitle("Brush settings")
+                .setMessage("Size, strength, hardness and pressure are available in the Brushes panel.")
+                .setPositiveButton("OK", null).show();
+    }
+
+    private void showShapes() {
+        String[] names = {"Sphere", "Plane", "Cube", "Cylinder", "Cone", "Torus", "Capsule", "Wedge", "Round Sphere"};
+        int[] densities = {64, 128, 32, 48, 48, 48, 48, 32, 64};
+        new android.app.AlertDialog.Builder(activity).setTitle("Shapes")
+                .setItems(names, (dialog, which) -> createMesh(which, densities[which])).show();
+    }
+
+    private void setTransformMode(int mode, View touch) {
+        engine.setTransformMode(mode);
+        activeTransformMode = mode;
+        transformComponent = mode;
+        sculptEnabled = false;
+        orbitMode = false;
+        transformDragState = engine.getSelectedTransform();
+        applyOptions();
+        touch.invalidate();
+        status.setText(mode == 0 ? "Move: drag an XYZ gizmo axis or set coordinates."
+                : mode == 1 ? "Rotate selected mesh." : "Scale selected mesh.");
+    }
+
+    private void showTransformEditor(View touch) {
+        float[] values = engine.getSelectedTransform();
+        if (values == null || values.length < 9) {
+            Toast.makeText(activity, "Select an object first.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        LinearLayout content = new LinearLayout(activity);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(12), dp(6), dp(12), dp(6));
+        EditText[][] fields = new EditText[3][3];
+        String[] names = {"POSITION", "ROTATION", "SCALE"};
+        for (int component = 0; component < 3; component++) {
+            TextView heading = label(names[component], 11, ACCENT, true);
+            content.addView(heading);
+            LinearLayout row = new LinearLayout(activity);
+            content.addView(row);
+            for (int axis = 0; axis < 3; axis++) {
+                EditText input = new EditText(activity);
+                input.setSingleLine(true);
+                input.setTextSize(11);
+                input.setHint(axis == 0 ? "X" : axis == 1 ? "Y" : "Z");
+                input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER
+                        | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+                        | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+                input.setText(String.valueOf(values[component * 3 + axis]));
+                row.addView(input, new LinearLayout.LayoutParams(0, dp(40), 1));
+                fields[component][axis] = input;
+            }
+        }
+        new android.app.AlertDialog.Builder(activity).setTitle("XYZ Transform")
+                .setView(content).setPositiveButton("APPLY", (dialog, which) -> {
+                    float[] next = values.clone();
+                    try {
+                        for (int c = 0; c < 3; c++) for (int a = 0; a < 3; a++)
+                            next[c * 3 + a] = Float.parseFloat(fields[c][a].getText().toString());
+                        engine.setSelectedTransform(next);
+                        touch.invalidate();
+                        status.setText("Position, rotation and scale updated.");
+                    } catch (NumberFormatException error) {
+                        status.setText("Invalid XYZ value.");
+                    }
+                }).setNegativeButton("CANCEL", null).show();
+    }
+
+    private void showSceneObjects() {
+        String[] objects = engine.getSceneObjects();
+        if (objects == null || objects.length == 0) {
+            new android.app.AlertDialog.Builder(activity).setTitle("Scene").setMessage("No objects in the scene.")
+                    .setPositiveButton("OK", null).show();
+            return;
+        }
+        String[] labels = new String[objects.length];
+        int[] ids = new int[objects.length];
+        for (int i = 0; i < objects.length; i++) {
+            String row = objects[i] == null ? "" : objects[i];
+            int split = row.indexOf('|');
+            try { ids[i] = Integer.parseInt(split < 0 ? row : row.substring(0, split)); }
+            catch (NumberFormatException ignored) { ids[i] = 0; }
+            labels[i] = split < 0 ? row : row.substring(split + 1);
+        }
+        new android.app.AlertDialog.Builder(activity).setTitle("Scene objects")
+                .setItems(labels, (dialog, which) -> { if (ids[which] != 0) engine.selectObjectById(ids[which]); })
+                .setNegativeButton("CLOSE", null).show();
     }
 
     private void createMesh(int shape, int density) {
