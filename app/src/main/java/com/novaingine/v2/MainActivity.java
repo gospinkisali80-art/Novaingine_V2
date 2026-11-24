@@ -55,6 +55,7 @@ public final class MainActivity extends Activity
     private float drawerScaleSnap = 0.25f;
     private float drawerCameraSpeed = 3.07f;
     private ManualSculptWorkspace manualSculptWorkspace;
+    private ControllerAgent controllerAgent;
     private View projectStartPage;
     private final Handler projectHandler = new Handler(Looper.getMainLooper());
     private File activeProjectDirectory;
@@ -196,6 +197,9 @@ public final class MainActivity extends Activity
         statisticsText.setText(
                 "NOVAINGINE V2  |  VIEWPORT"
         );
+
+        statisticsText.setOnClickListener(view -> showControllerPairing());
+        statisticsText.setOnLongClickListener(view -> { showControllerPairing(); return true; });
 
         FrameLayout.LayoutParams statsParams =
                 new FrameLayout.LayoutParams(
@@ -1359,7 +1363,64 @@ public final class MainActivity extends Activity
 
         if (engineSurface != null) {
             engineSurface.onResume();
+            startControllerAgent();
         }
+    }
+
+    private void startControllerAgent() {
+        if (!ControllerAgent.isConfigured(this) || engineSurface == null) return;
+        if (controllerAgent != null) controllerAgent.close();
+        controllerAgent = new ControllerAgent(this, engineSurface, status -> {
+            if (statisticsText != null) statisticsText.setText(status);
+        });
+        controllerAgent.start();
+    }
+
+    private void showControllerPairing() {
+        LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(dp(20), dp(12), dp(20), dp(4));
+        EditText address = new EditText(this);
+        address.setSingleLine(true);
+        address.setHint("Controller URL");
+        address.setText("http://127.0.0.1:8000");
+        EditText secret = new EditText(this);
+        secret.setSingleLine(true);
+        secret.setHint("Private DEVICE_TOKEN from Termux .env");
+        secret.setInputType(android.text.InputType.TYPE_CLASS_TEXT |
+                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        TextView help = new TextView(this);
+        help.setText("For same-phone Termux testing use 127.0.0.1:8000. The token is encrypted with Android Keystore and is never written into the APK.");
+        help.setTextColor(0xFFAAAAAA);
+        help.setTextSize(12);
+        form.addView(address);
+        form.addView(secret);
+        form.addView(help);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("NOVAINGINE AI LINK")
+                .setView(form)
+                .setPositiveButton("CONNECT", null)
+                .setNeutralButton("DISCONNECT", (d, which) -> {
+                    ControllerAgent.clearConfiguration(this);
+                    if (controllerAgent != null) {
+                        controllerAgent.close();
+                        controllerAgent = null;
+                    }
+                    if (statisticsText != null) statisticsText.setText("NOVAINGINE V2  |  AI LINK OFF");
+                })
+                .setNegativeButton("CANCEL", null)
+                .create();
+        dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            try {
+                ControllerAgent.saveConfiguration(this, address.getText().toString(), secret.getText().toString());
+                startControllerAgent();
+                dialog.dismiss();
+            } catch (Exception error) {
+                new AlertDialog.Builder(this).setMessage(error.getMessage()).setPositiveButton("OK", null).show();
+            }
+        }));
+        dialog.show();
     }
 
     @Override
@@ -1367,6 +1428,10 @@ public final class MainActivity extends Activity
 
         projectHandler.removeCallbacks(autoSaveTask);
         if (activeProjectScene != null && engineSurface != null) engineSurface.saveScene(activeProjectScene.getAbsolutePath());
+        if (controllerAgent != null) {
+            controllerAgent.close();
+            controllerAgent = null;
+        }
         if (engineSurface != null) {
             engineSurface.onPause();
         }
@@ -1378,6 +1443,10 @@ public final class MainActivity extends Activity
     protected void onDestroy() {
 
         projectHandler.removeCallbacks(autoSaveTask);
+        if (controllerAgent != null) {
+            controllerAgent.close();
+            controllerAgent = null;
+        }
         cameraControls = null;
         manualSculptWorkspace = null;
         viewportInput = null;
