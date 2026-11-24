@@ -141,6 +141,23 @@ public final class ManualSculptWorkspace extends FrameLayout {
             if (activity instanceof MainActivity) ((MainActivity) activity).openSculptAssetPicker();
             else Toast.makeText(activity, "Import picker unavailable.", Toast.LENGTH_SHORT).show();
         });
+        TextView refine = button("REFINE");
+        top.addView(refine, new LinearLayout.LayoutParams(dp(58), LayoutParams.MATCH_PARENT));
+        refine.setOnClickListener(v -> {
+            new android.app.AlertDialog.Builder(activity)
+                    .setTitle("Refine sculpt topology")
+                    .setMessage("Split each triangle into four and interpolate the existing mask. This increases mesh density without changing the overall silhouette. Mobile limits apply.")
+                    .setNegativeButton("CANCEL", null)
+                    .setPositiveButton("REFINE", (dialog, which) -> engine.refineSculptMesh(result -> {
+                        String message = result == 1 ? "Sculpt mesh refined."
+                                : result == -2 ? "Finish the current stroke, then try again."
+                                : result == -3 ? "Mesh is already at the mobile topology limit."
+                                : result == -1 ? "Enter Sculpt Mode and select its sculpt mesh first."
+                                : "Refinement failed (" + result + ").";
+                        Toast.makeText(activity, message, Toast.LENGTH_LONG).show();
+                        status.setText(message);
+                    })).show();
+        });
         TextView project = label("NOVAINGINE  •  SCULPT WORKSPACE", 11, Color.WHITE, true);
         project.setGravity(Gravity.CENTER);
         top.addView(project, new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1));
