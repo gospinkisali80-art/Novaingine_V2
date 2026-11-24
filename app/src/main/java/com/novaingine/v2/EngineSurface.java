@@ -27,6 +27,7 @@ public final class EngineSurface extends GLSurfaceView
     private volatile float lookVertical;
 
     private boolean enginePaused;
+    private final java.util.concurrent.atomic.AtomicBoolean sceneSaveInProgress = new java.util.concurrent.atomic.AtomicBoolean(false);
     private volatile boolean sculptMode;
     private volatile float sculptRadius = 0.18f;
     private volatile float sculptStrength = 0.12f;
@@ -254,10 +255,22 @@ public final class EngineSurface extends GLSurfaceView
     }
 
     public void saveSceneAsync(String path, java.util.function.Consumer<Boolean> callback) {
-        queueEvent(() -> {
-            boolean saved = NativeBridge.nativeSaveScene(path);
-            if (callback != null) post(() -> callback.accept(saved));
-        });
+        if (!sceneSaveInProgress.compareAndSet(false, true)) {
+            if (callback != null) post(() -> callback.accept(false));
+            return;
+        }
+        new Thread(() -> {
+            boolean saved = false;
+            try {
+                saved = NativeBridge.nativeSaveScene(path);
+            } catch (Throwable ignored) {
+                saved = false;
+            } finally {
+                sceneSaveInProgress.set(false);
+            }
+            final boolean result = saved;
+            if (callback != null) post(() -> callback.accept(result));
+        }, "NovaProjectAutoSave").start();
     }
 
     public void loadSceneAsync(String path, java.util.function.Consumer<Boolean> callback) {
