@@ -204,8 +204,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
         brushControls = new LinearLayout(activity);
         brushControls.setOrientation(LinearLayout.VERTICAL);
         bottom.addView(brushControls);
-        addSlider(brushControls, "BRUSH SIZE", 1, 300, 33, value -> {
-            radius = 0.02f + ((value - 1) / 299.0f) * 2.98f;
+        addSlider(brushControls, "BRUSH SIZE", 1, 300, 13, value -> {
+            radius = 0.02f + ((value - 1) / 299.0f) * 7.98f;
             applyOptions();
         });
         addSlider(brushControls, "STRENGTH", 0, 100, 40, value -> {
@@ -219,6 +219,16 @@ public final class ManualSculptWorkspace extends FrameLayout {
         addSlider(brushControls, "PRESSURE", 5, 100, 100, value -> {
             pressure = value / 100.0f;
             applyOptions();
+        });
+        addSlider(brushControls, "OBJECT SIZE", 10, 300, 100, value -> {
+            float[] transform = engine.getSelectedTransform();
+            if (transform == null || transform.length < 9) return;
+            float scale = value / 100.0f;
+            transform[6] = scale;
+            transform[7] = scale;
+            transform[8] = scale;
+            engine.setSelectedTransform(transform);
+            touch.invalidate();
         });
         brushControls.setVisibility(View.GONE);
 
