@@ -253,6 +253,28 @@ public final class EngineSurface extends GLSurfaceView
         return NativeBridge.nativeLoadScene(path);
     }
 
+    public void saveSceneAsync(String path, java.util.function.Consumer<Boolean> callback) {
+        queueEvent(() -> {
+            boolean saved = NativeBridge.nativeSaveScene(path);
+            if (callback != null) post(() -> callback.accept(saved));
+        });
+    }
+
+    public void loadSceneAsync(String path, java.util.function.Consumer<Boolean> callback) {
+        queueEvent(() -> {
+            boolean loaded = NativeBridge.nativeLoadScene(path);
+            if (callback != null) post(() -> callback.accept(loaded));
+        });
+    }
+
+    public void createEmptyScene(String path, java.util.function.Consumer<Boolean> callback) {
+        queueEvent(() -> {
+            NativeBridge.nativeCreateEmptyScene();
+            boolean saved = NativeBridge.nativeSaveScene(path);
+            if (callback != null) post(() -> callback.accept(saved));
+        });
+    }
+
     public void setVisualScript(int[] nodeData, float[] nodeValues, boolean enabled, java.util.function.Consumer<Boolean> callback) {
         int[] dataCopy = nodeData == null ? null : nodeData.clone();
         float[] valuesCopy = nodeValues == null ? null : nodeValues.clone();
