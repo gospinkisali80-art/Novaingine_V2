@@ -282,6 +282,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
             modeButton.setOnClickListener(v -> {
                 engine.setTransformMode(nativeMode);
                 activeTransformMode = nativeMode;
+                orbitMode = false;
+                orbitButton.setText("ORBIT VIEW: OFF");
+                orbitButton.setTextColor(Color.WHITE);
                 transformDragState = engine.getSelectedTransform();
                 sculptEnabled = false;
                 applyOptions();
