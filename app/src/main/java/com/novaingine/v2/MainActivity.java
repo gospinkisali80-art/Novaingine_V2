@@ -39,6 +39,8 @@ public final class MainActivity extends Activity
     private CameraControls cameraControls;
 
     private TextView statisticsText;
+    private TextView centeredStatisticsText;
+    private boolean centeredStatisticsVisible = true;
     private LinearLayout editorPanels;
     private TextView playStopButton;
     private boolean playMode;
@@ -219,8 +221,32 @@ public final class MainActivity extends Activity
                 statisticsText,
                 statsParams
         );
+
+        centeredStatisticsText = new TextView(this);
+        centeredStatisticsText.setTextColor(Color.WHITE);
+        centeredStatisticsText.setTextSize(11);
+        centeredStatisticsText.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        centeredStatisticsText.setPadding(dp(10), dp(6), dp(10), dp(6));
+        centeredStatisticsText.setBackground(new GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[]{0xDD172433, 0xDD26394B}
+        ));
+        centeredStatisticsText.setText("NOVAINGINE V2  |  VIEWPORT");
+        centeredStatisticsText.setGravity(Gravity.CENTER);
+        centeredStatisticsText.setOnClickListener(view -> showControllerPairing());
+        FrameLayout.LayoutParams centeredParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP | Gravity.CENTER_HORIZONTAL
+        );
+        centeredParams.setMargins(dp(8), dp(55), dp(8), 0);
+        rootLayout.addView(centeredStatisticsText, centeredParams);
     }
 
+    private void updateViewportStatus(String status) {
+        if (statisticsText != null) statisticsText.setText(status);
+        if (centeredStatisticsText != null) centeredStatisticsText.setText(status);
+    }
 
     private void createEditorPanels() {
         editorPanels = new LinearLayout(this);
@@ -325,6 +351,13 @@ public final class MainActivity extends Activity
         addDrawerItem("Camera View", "Perspective, top, bottom, front, back, left or right", this::showDrawerCameraViews);
         addDrawerItem("Rendering Mode", "Lit, unlit, wireframe, normals, roughness and metallic", this::showDrawerRenderModes);
         addDrawerItem("Show / Hide", "Grid, shadows, sky, characters and statistics", this::showDrawerVisibility);
+        addDrawerItem("Centered Viewport Label", "Show or hide the NOVAINGINE V2 status badge at the top center", () -> {
+            centeredStatisticsVisible = !centeredStatisticsVisible;
+            if (centeredStatisticsText != null) {
+                centeredStatisticsText.setVisibility(centeredStatisticsVisible ? View.VISIBLE : View.GONE);
+            }
+            closeToolsDrawer();
+        });
         addDrawerItem("Transform Tool", "Select, move, rotate or scale", this::showDrawerTransformModes);
         addDrawerItem("Coordinate Space: " + (drawerWorldSpace ? "WORLD" : "LOCAL"), "Switch transform orientation", () -> {
             drawerWorldSpace = !drawerWorldSpace;
