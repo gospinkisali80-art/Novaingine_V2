@@ -177,7 +177,7 @@ public final class RemoteCommandDispatcher implements AutoCloseable {
                 String shape = payload.getString("shape");
                 int density = payload.getInt("density");
                 if (!shape.equals("sphere") && !shape.equals("plane")) throw new IllegalArgumentException("Unsupported sculpt mesh shape.");
-                if (density < 16 || density > 80 || payload.length() != 2) throw new IllegalArgumentException("Sculpt density must be 8–80.");
+                if (density < 16 || density > 80 || payload.length() != 2) throw new IllegalArgumentException("Sculpt density must be 16–80.");
                 break;
             case "sculpt.stroke":
                 JSONArray points = payload.getJSONArray("points");
