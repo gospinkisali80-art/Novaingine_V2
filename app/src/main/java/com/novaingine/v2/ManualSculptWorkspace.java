@@ -92,7 +92,6 @@ public final class ManualSculptWorkspace extends FrameLayout {
         setBackgroundColor(Color.TRANSPARENT);
 
         SculptTouchSurface touch = new SculptTouchSurface();
-        addView(touch, new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
         // Reference-matched editor: fixed top bar, left brush workspace, open viewport,
         // right tool rail and bottom shortcut shelf. The GL surface remains visible below.
@@ -303,9 +302,10 @@ public final class ManualSculptWorkspace extends FrameLayout {
         });
 
         // The center remains an unobstructed 3D viewport.
-        View viewportSpacer = new View(activity);
+        // Sculpt input is confined to the viewport gap so it cannot intercept editor controls.
+        View viewportSpacer = touch;
         viewportSpacer.setBackgroundColor(Color.TRANSPARENT);
-        workArea.addView(viewportSpacer, new LinearLayout.LayoutParams(0, 1, 1));
+        workArea.addView(viewportSpacer, new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1));
 
         // Right-side modelling and scene rail, like the reference.
         LinearLayout rightRail = new LinearLayout(activity);
