@@ -43,6 +43,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private int symmetryAxis = 0;
     private boolean subtract;
     private boolean sculptEnabled = true;
+    private boolean orbitMode = false;
     private EditText[] positionInputs = new EditText[3];
     private int transformComponent = 0;
     private int activeTransformMode = -1;
@@ -180,8 +181,18 @@ public final class ManualSculptWorkspace extends FrameLayout {
         LinearLayout shapeRow = new LinearLayout(activity);
         shapeRow.setOrientation(LinearLayout.HORIZONTAL);
         shapeScroll.addView(shapeRow);
-        bottom.addView(shapeScroll, 0, new LinearLayout.LayoutParams(
+        TextView shapesToggle = button("SHAPES  ▾");
+        shapesToggle.setTextColor(ACCENT);
+        bottom.addView(shapesToggle, 0, new LinearLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, dp(38)));
+        bottom.addView(shapeScroll, 1, new LinearLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT, dp(44)));
+        shapeScroll.setVisibility(View.GONE);
+        shapesToggle.setOnClickListener(v -> {
+            boolean opening = shapeScroll.getVisibility() != View.VISIBLE;
+            shapeScroll.setVisibility(opening ? View.VISIBLE : View.GONE);
+            shapesToggle.setText(opening ? "SHAPES  ▴" : "SHAPES  ▾");
+        });
 
         LinearLayout transformRow = new LinearLayout(activity);
         transformRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -235,6 +246,31 @@ public final class ManualSculptWorkspace extends FrameLayout {
         transformModes.setGravity(Gravity.CENTER_VERTICAL);
         bottom.addView(transformModes, 2, new LinearLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT, dp(38)));
+        LinearLayout viewRow = new LinearLayout(activity);
+        viewRow.setGravity(Gravity.CENTER_VERTICAL);
+        bottom.addView(viewRow, 3, new LinearLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, dp(40)));
+        TextView orbitButton = button("ORBIT VIEW: OFF");
+        orbitButton.setTextColor(ACCENT);
+        viewRow.addView(orbitButton, weighted(0, 1));
+        orbitButton.setOnClickListener(v -> {
+            orbitMode = !orbitMode;
+            if (orbitMode) {
+                activeTransformMode = -1;
+                sculptEnabled = false;
+                applyOptions();
+                orbitButton.setText("ORBIT VIEW: ON  • DRAG TO ROTATE");
+                orbitButton.setTextColor(ACCENT);
+                selectedToolIndicator.setText("ORBIT SELECTED OBJECT  ▴ TOOLS");
+            } else {
+                sculptEnabled = true;
+                applyOptions();
+                orbitButton.setText("ORBIT VIEW: OFF");
+                orbitButton.setTextColor(Color.WHITE);
+                selectedToolIndicator.setText("ACTIVE: " + BRUSHES[selectedBrush] + "  ▴ TOOLS");
+            }
+        });
+
         String[] modes = {"MOVE", "ROTATE", "SCALE"};
         for (int modeIndex = 0; modeIndex < modes.length; modeIndex++) {
             final int nativeMode = modeIndex;
@@ -274,6 +310,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 sculptEnabled = true;
                 applyOptions();
                 selectedToolIndicator.setText("ACTIVE: " + shapeNames[shapeId] + "  ▴ TOOLS");
+                shapeScroll.setVisibility(View.GONE);
+                shapesToggle.setText("SHAPES  ▾");
                 createMesh(shapeId, shapeDensities[shapeId]);
                 closeToolDrawer.run();
             });
@@ -492,6 +530,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
                                     transform[axis + transformComponent * 3]));
                         }
                     }
+                } else if (orbitMode) {
+                    engine.queueEvent(() -> NativeBridge.nativeOrbitSelected(dx, dy));
                 } else {
                     engine.queueEvent(() -> NativeBridge.nativeTouch(dx, dy));
                 }
