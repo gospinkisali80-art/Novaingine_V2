@@ -1,7 +1,7 @@
 """Local-first Novaingine controller API.
 
 Run from the repository root:
-    uvicorn integration.controller_server:app --host 127.0.0.1 --port 8000
+    uvicorn integration.controller_server:app --host 127.0.0.1 --port 8001
 
 Set DEVICE_TOKEN in the environment (or a .env file in the working directory).
 This server intentionally binds to loopback in the documented command. Do not
@@ -11,6 +11,7 @@ separate device/client credentials, OAuth, persistent queue storage and audit.
 from __future__ import annotations
 
 import hmac
+import json
 import os
 import threading
 from collections import deque
@@ -145,7 +146,7 @@ def command_result(command_id: str, result: dict[str, Any]) -> dict[str, Any]:
         UUID(command_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid command ID.")
-    if len(str(result).encode("utf-8")) > 16384:
+    if len(json.dumps(result, separators=(",", ":"), ensure_ascii=False).encode("utf-8")) > 16384:
         raise HTTPException(status_code=413, detail="Result is too large.")
     if result.get("commandId") != command_id:
         raise HTTPException(status_code=400, detail="Result commandId does not match URL.")
@@ -181,6 +182,8 @@ def enqueue_command(data: CommandEnvelope) -> dict[str, Any]:
     command["commandId"] = str(data.commandId)
     with _lock:
         _clean_expired(now)
+        if command["deviceId"] not in _device_status:
+            raise HTTPException(status_code=404, detail="Device has not paired or sent a heartbeat.")
         if len(_commands) >= MAX_QUEUE:
             raise HTTPException(status_code=429, detail="Controller command queue is full.")
         if command["commandId"] in _results:
