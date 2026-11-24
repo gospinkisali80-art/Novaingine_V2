@@ -175,7 +175,7 @@ void restoreScene(const SceneSnapshot& snapshot) {
     for (const auto& entry : gCustomMeshes) gRenderer.uploadMesh(entry.first, entry.second);
     {
         std::lock_guard<std::mutex> qlock(gSculptQueueMutex);
-        gSculptQueue.clear();
+        { const uint32_t dropped = static_cast<uint32_t>(gSculptQueue.size()); gSculptQueue.clear(); if (dropped) gSculptJobsPending.fetch_sub(dropped, std::memory_order_release); }
     }
     {
         std::lock_guard<std::mutex> dataLock(gSculptDataMutex);
