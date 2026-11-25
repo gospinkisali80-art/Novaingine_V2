@@ -710,7 +710,7 @@ public final class MainActivity extends Activity
                         .setNegativeButton("Cancel", null)
                         .setPositiveButton("Revert", (d, w) -> {
                             if (activeMeshyDocument != null && activeMeshyDocument.isFile())
-                                android.widget.Toast.makeText(this, "Saved Meshy3D document is ready to reload.", android.widget.Toast.LENGTH_SHORT).show();
+                                loadMeshyDocumentIntoWorkspace(activeMeshyDocument);
                             else android.widget.Toast.makeText(this, "No saved Meshy3D document.", android.widget.Toast.LENGTH_SHORT).show();
                         }).show();
                 break;
