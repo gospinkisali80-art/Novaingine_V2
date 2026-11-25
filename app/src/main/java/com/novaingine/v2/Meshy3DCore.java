@@ -334,6 +334,61 @@ public final class Meshy3DCore {
         for(Face f:faces){LinkedHashSet<Integer> unique=new LinkedHashSet<>();for(int v:f.vertices)unique.add(v);int[] arr=new int[unique.size()];int k=0;for(int v:unique)arr[k++]=v;f.vertices=arr;}
         faces.removeIf(f->f.vertices.length<3);clearSelection();rebuildEdges();revision++;
     }
+    public float[][] copyVertices(){float[][] out=new float[vertices.size()][3];for(int i=0;i<out.length;i++)System.arraycopy(vertices.get(i),0,out[i],0,3);return out;}
+    public int[][] copyFaces(){int[][] out=new int[faces.size()][];for(int i=0;i<out.length;i++)out[i]=faces.get(i).vertices.clone();return out;}
+    public void replaceGeometry(float[][] v,int[][] f){
+        vertices.clear();for(float[] p:v)vertices.add(p.clone());faces.clear();
+        for(int[] ids:f)faces.add(new Face(ids.clone()));clearSelection();rebuildEdges();revision++;
+    }
+    public void selectNearestVertex(float x,float y,float cx,float cy,float unit,float yaw,float pitch,boolean additive){
+        int best=-1;float bestD=Float.MAX_VALUE;
+        for(int i=0;i<vertices.size();i++){float[] p=project(vertices.get(i),cx,cy,unit,yaw,pitch);float d=(p[0]-x)*(p[0]-x)+(p[1]-y)*(p[1]-y);if(d<bestD){bestD=d;best=i;}}
+        if(best>=0&&bestD<900f)selectVertex(best,additive);
+    }
+    public void selectNearestFace(float x,float y,float cx,float cy,float unit,float yaw,float pitch,boolean additive){
+        int best=-1;float bestD=Float.MAX_VALUE;
+        for(int i=0;i<faces.size();i++){int[] f=faces.get(i).vertices;float ax=0,ay=0;for(int id:f){float[] p=project(vertices.get(id),cx,cy,unit,yaw,pitch);ax+=p[0];ay+=p[1];}ax/=f.length;ay/=f.length;float d=(ax-x)*(ax-x)+(ay-y)*(ay-y);if(d<bestD){bestD=d;best=i;}}
+        if(best>=0&&bestD<2500f)selectFace(best,additive);
+    }
+    public void selectNearestEdge(float x,float y,float cx,float cy,float unit,float yaw,float pitch,boolean additive){
+        int best=-1;float bestD=Float.MAX_VALUE;
+        for(int i=0;i<edges.size();i++){Edge e=edges.get(i);float[] a=project(vertices.get(e.a),cx,cy,unit,yaw,pitch),b=project(vertices.get(e.b),cx,cy,unit,yaw,pitch);
+            float dx=b[0]-a[0],dy=b[1]-a[1],t=((x-a[0])*dx+(y-a[1])*dy)/Math.max(.0001f,dx*dx+dy*dy);t=Math.max(0,Math.min(1,t));float px=a[0]+t*dx,py=a[1]+t*dy;float d=(px-x)*(px-x)+(py-y)*(py-y);if(d<bestD){bestD=d;best=i;}}
+        if(best>=0&&bestD<625f)selectEdge(best,additive);
+    }
+    private static float[] project(float[] p,float cx,float cy,float unit,float yaw,float pitch){
+        double cyaw=Math.cos(yaw),syaw=Math.sin(yaw),cp=Math.cos(pitch),sp=Math.sin(pitch);
+        double rx=p[0]*cyaw-p[2]*syaw,rz=p[0]*syaw+p[2]*cyaw;
+        double ry=p[1]*cp-rz*sp,rz2=p[1]*sp+rz*cp;double depth=5.2-rz2;
+        double perspective=5.2/Math.max(2.0,depth);return new float[]{(float)(cx+rx*unit*perspective),(float)(cy-ry*unit*perspective)};
+    }
+    public void loopCutSelected(float factor){
+        HashSet<Long> cut=new HashSet<>();for(int i=selectedEdges.nextSetBit(0);i>=0;i=selectedEdges.nextSetBit(i+1)){
+            Edge e=edges.get(i);cut.add(edgeKey(e.a,e.b));
+            for(int fi:e.faces){int[] f=faces.get(fi).vertices;if(f.length!=4)continue;
+                for(int j=0;j<4;j++)if(edgeKey(f[j],f[(j+1)%4])==edgeKey(e.a,e.b)){
+                    int a=f[j],b=f[(j+1)%4],c=f[(j+2)%4],d=f[(j+3)%4];
+                    int oppA=d,oppB=c;
+                    int m1=midpoint(a,b,factor),m2=midpoint(oppA,oppB,factor);
+                    faces.set(fi,new Face(a,m1,m2,d));faces.add(new Face(m1,b,c,m2));break;
+                }
+            }
+        }rebuildEdges();revision++;
+    }
+    private int midpoint(int a,int b,float t){float[] p=vertices.get(a),q=vertices.get(b);int id=vertices.size();vertices.add(new float[]{p[0]+(q[0]-p[0])*t,p[1]+(q[1]-p[1])*t,p[2]+(q[2]-p[2])*t});return id;}
+    public void bevelSelectedEdges(float width){
+        // Chamfer selected edges by splitting their incident face corners.
+        if(selectedEdges.isEmpty())return;
+        HashSet<Long> selected=new HashSet<>();for(int i=selectedEdges.nextSetBit(0);i>=0;i=selectedEdges.nextSetBit(i+1)){Edge e=edges.get(i);selected.add(edgeKey(e.a,e.b));}
+        ArrayList<Face> out=new ArrayList<>();
+        for(Face face:faces){int[] old=face.vertices;ArrayList<Integer> ring=new ArrayList<>();
+            for(int i=0;i<old.length;i++){int a=old[i],b=old[(i+1)%old.length];float[] p=vertices.get(a),q=vertices.get(b);
+                if(selected.contains(edgeKey(a,b))){int ia=vertices.size();vertices.add(new float[]{p[0]+(q[0]-p[0])*width,p[1]+(q[1]-p[1])*width,p[2]+(q[2]-p[2])*width});
+                    int ib=vertices.size();vertices.add(new float[]{q[0]+(p[0]-q[0])*width,q[1]+(p[1]-q[1])*width,q[2]+(p[2]-q[2])*width});ring.add(ia);ring.add(ib);
+                }else ring.add(a);
+            }int[] f=new int[ring.size()];for(int i=0;i<f.length;i++)f[i]=ring.get(i);if(f.length>=3)out.add(new Face(f));
+        }faces.clear();faces.addAll(out);clearSelection();rebuildEdges();revision++;
+    }
     public JSONObject exportState(){
         JSONObject o=new JSONObject();JSONArray vs=new JSONArray(),fs=new JSONArray(),ss=new JSONArray();
         try{for(float[] p:vertices){JSONArray a=new JSONArray();for(float v:p)a.put(v);vs.put(a);}
