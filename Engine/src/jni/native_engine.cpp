@@ -1787,6 +1787,95 @@ Java_com_novaingine_v2_NativeBridge_nativeSaveScene(
     const std::string path(rawPath);
     env->ReleaseStringUTFChars(pathValue, rawPath);
 
+    struct LoadedLandscapeState {
+        int width = 0, height = 0;
+        float spacing = 0.5f, originX = 0.0f, originZ = 0.0f;
+        std::vector<float> baseHeights;
+        std::vector<std::array<float,4>> baseWeights;
+        std::vector<nova::LandscapeSystem::Layer> layers;
+        std::vector<std::vector<nova::LandscapeSystem::SplinePoint>> splines;
+    };
+    std::unordered_map<uint32_t, LoadedLandscapeState> loadedLandscapeStates;
+    if (current && version >= 5) {
+        size_t landscapeCount = 0;
+        if (!(file >> landscapeCount) || landscapeCount > 256) return JNI_FALSE;
+        for (size_t landscapeIndex = 0; landscapeIndex < landscapeCount; ++landscapeIndex) {
+            uint32_t objectId = 0;
+            LoadedLandscapeState state;
+            if (!(file >> objectId >> state.width >> state.height >> state.spacing
+                       >> state.originX >> state.originZ) ||
+                objectId == 0 || !loadedScene.find(objectId) ||
+                state.width != 129 || state.height != 129 ||
+                !std::isfinite(state.spacing) || state.spacing <= 0.0f ||
+                !std::isfinite(state.originX) || !std::isfinite(state.originZ))
+                return JNI_FALSE;
+            const size_t expectedSamples = 129u * 129u;
+            size_t count = 0;
+            if (!(file >> count) || count != expectedSamples) return JNI_FALSE;
+            state.baseHeights.resize(count);
+            for (float& value : state.baseHeights)
+                if (!(file >> value) || !std::isfinite(value) || std::fabs(value) > 100000.0f)
+                    return JNI_FALSE;
+            if (!(file >> count) || count != expectedSamples) return JNI_FALSE;
+            state.baseWeights.resize(count);
+            for (auto& weights : state.baseWeights) {
+                float total = 0.0f;
+                for (float& value : weights) {
+                    if (!(file >> value) || !std::isfinite(value)) return JNI_FALSE;
+                    value = std::clamp(value, 0.0f, 1.0f);
+                    total += value;
+                }
+                if (total < 1e-6f) weights = {1.0f, 0.0f, 0.0f, 0.0f};
+                else for (float& value : weights) value /= total;
+            }
+            size_t layerCount = 0;
+            if (!(file >> layerCount) || layerCount == 0 || layerCount > 32) return JNI_FALSE;
+            state.layers.reserve(layerCount);
+            for (size_t layerIndex = 0; layerIndex < layerCount; ++layerIndex) {
+                nova::LandscapeSystem::Layer layer;
+                if (!(file >> std::quoted(layer.name) >> layer.visible >> layer.locked
+                           >> layer.heightAlpha >> layer.paintAlpha) ||
+                    layer.name.size() > 256 || !std::isfinite(layer.heightAlpha) ||
+                    !std::isfinite(layer.paintAlpha)) return JNI_FALSE;
+                layer.heightAlpha = std::clamp(layer.heightAlpha, 0.0f, 1.0f);
+                layer.paintAlpha = std::clamp(layer.paintAlpha, 0.0f, 1.0f);
+                if (!(file >> count) || count != expectedSamples) return JNI_FALSE;
+                layer.heightDelta.resize(count);
+                for (float& value : layer.heightDelta)
+                    if (!(file >> value) || !std::isfinite(value) || std::fabs(value) > 100000.0f)
+                        return JNI_FALSE;
+                if (!(file >> count) || count != expectedSamples) return JNI_FALSE;
+                layer.paintDelta.resize(count);
+                for (auto& weights : layer.paintDelta)
+                    for (float& value : weights)
+                        if (!(file >> value) || !std::isfinite(value) || std::fabs(value) > 10.0f)
+                            return JNI_FALSE;
+                state.layers.push_back(std::move(layer));
+            }
+            size_t splineCount = 0;
+            if (!(file >> splineCount) || splineCount > 4096) return JNI_FALSE;
+            state.splines.reserve(splineCount);
+            for (size_t splineIndex = 0; splineIndex < splineCount; ++splineIndex) {
+                size_t pointCount = 0;
+                if (!(file >> pointCount) || pointCount < 2 || pointCount > 4096)
+                    return JNI_FALSE;
+                std::vector<nova::LandscapeSystem::SplinePoint> spline;
+                spline.reserve(pointCount);
+                for (size_t pointIndex = 0; pointIndex < pointCount; ++pointIndex) {
+                    nova::LandscapeSystem::SplinePoint point;
+                    if (!(file >> point.x >> point.z >> point.width) ||
+                        !std::isfinite(point.x) || !std::isfinite(point.z) ||
+                        !std::isfinite(point.width) || point.width < 0.5f || point.width > 32.0f)
+                        return JNI_FALSE;
+                    spline.push_back(point);
+                }
+                state.splines.push_back(std::move(spline));
+            }
+            if (!loadedLandscapeStates.emplace(objectId, std::move(state)).second)
+                return JNI_FALSE;
+        }
+    }
+
     std::lock_guard<std::mutex> lock(engineMutex);
     while (gSculptJobsPending.load(std::memory_order_acquire) != 0) {
         std::this_thread::yield();
@@ -2158,18 +2247,32 @@ Java_com_novaingine_v2_NativeBridge_nativeLoadScene(
     gLandscapeWorldTiles.clear();
     gVoxelCaves = std::move(loadedVoxelCaves);
 
-    auto restoreLandscapeData = [](nova::LandscapeSystem& data, const nova::Mesh& mesh,
-                                   float originX, float originZ) -> bool {
+    auto restoreLandscapeData = [&](nova::LandscapeSystem& data, const nova::Mesh& mesh,
+                                     uint32_t objectId, float originX, float originZ) -> bool {
         const auto& vertices = mesh.getVertices();
         if (vertices.size() != 129u * 129u) return false;
-        if (!data.initialize(129, 129, 0.5f, originX, originZ)) return false;
+        auto stateIt = loadedLandscapeStates.find(objectId);
+        const float spacing = stateIt != loadedLandscapeStates.end() ?
+            stateIt->second.spacing : 0.5f;
+        const float savedOriginX = stateIt != loadedLandscapeStates.end() ?
+            stateIt->second.originX : originX;
+        const float savedOriginZ = stateIt != loadedLandscapeStates.end() ?
+            stateIt->second.originZ : originZ;
+        if (!data.initialize(129, 129, spacing, savedOriginX, savedOriginZ)) return false;
         std::vector<float> heights(vertices.size());
         std::vector<std::array<float,4>> weights(vertices.size());
         for (size_t i = 0; i < vertices.size(); ++i) {
-            heights[i] = std::clamp(vertices[i].position.y, -12.0f, 24.0f);
+            heights[i] = std::clamp(vertices[i].position.y, -100000.0f, 100000.0f);
             for (int c = 0; c < 4; ++c) weights[i][c] = vertices[i].layerWeights[c];
         }
         if (!data.setBaseHeights(heights) || !data.setBaseWeights(weights)) return false;
+        if (stateIt != loadedLandscapeStates.end()) {
+            const LoadedLandscapeState& state = stateIt->second;
+            if (!data.setBaseHeights(state.baseHeights) ||
+                !data.setBaseWeights(state.baseWeights) ||
+                !data.restoreLayers(state.layers) ||
+                !data.restoreSplines(state.splines)) return false;
+        }
         std::vector<uint8_t> triangleCount(128u * 128u, 0);
         const auto& indices = mesh.getIndices();
         for (size_t i = 0; i + 2 < indices.size(); i += 3) {
@@ -2183,6 +2286,7 @@ Java_com_novaingine_v2_NativeBridge_nativeLoadScene(
         }
         for (int z = 0; z < 128; ++z) for (int x = 0; x < 128; ++x)
             if (triangleCount[static_cast<size_t>(z * 128 + x)] < 2) data.setHole(x, z, true);
+        data.buildChunks(gLandscapeChunkSize);
         return true;
     };
 
@@ -2190,13 +2294,13 @@ Java_com_novaingine_v2_NativeBridge_nativeLoadScene(
         auto meshIt = gCustomMeshes.find(object.id);
         if (meshIt == gCustomMeshes.end()) continue;
         if (object.name == "Landscape Terrain") {
-            restoreLandscapeData(gLandscape, meshIt->second, -32.0f, -36.0f);
+            restoreLandscapeData(gLandscape, meshIt->second, object.id, -32.0f, -36.0f);
         } else if (object.name.rfind("Landscape Tile ", 0) == 0) {
             int tileX = 0, tileZ = 0;
             if (std::sscanf(object.name.c_str(), "Landscape Tile %d %d", &tileX, &tileZ) != 2) continue;
             LandscapeWorldTile tile;
             tile.tileX = tileX; tile.tileZ = tileZ; tile.objectId = object.id;
-            if (!restoreLandscapeData(tile.data, meshIt->second,
+            if (!restoreLandscapeData(tile.data, meshIt->second, object.id,
                     landscapeTileOriginX(tileX), landscapeTileOriginZ(tileZ))) continue;
             tile.fullMesh = meshIt->second;
             tile.loaded = true; tile.lod = 0;
