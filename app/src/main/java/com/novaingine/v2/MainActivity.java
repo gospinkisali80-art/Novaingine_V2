@@ -177,9 +177,7 @@ public final class MainActivity extends Activity
                 viewportInput,
                 inputParams
         );
-        // Unreal-style editor navigation uses direct viewport gestures.
-        // Mobile MOVE/LOOK sticks belong to the live game preview only.
-        viewportInput.setVisibility(View.GONE);
+        // Keep the existing MOVE/LOOK controls available for viewport navigation.
     }
 
     private void createStatistics() {
@@ -813,7 +811,7 @@ public final class MainActivity extends Activity
         engineSurface.setSculptOptions(false, 0, 0.18f, 0.12f, 0.5f, 0, false, 1.0f);
         engineSurface.setManualSculptWorkspace(false);
         if (editorToolbar != null) editorToolbar.setVisibility(View.VISIBLE);
-        if (viewportInput != null) viewportInput.setVisibility(playMode ? View.VISIBLE : View.GONE);
+        if (viewportInput != null) viewportInput.setVisibility(View.VISIBLE);
         if (statisticsText != null) statisticsText.setVisibility(View.VISIBLE);
         if (editorPanels != null) editorPanels.setVisibility(View.VISIBLE);
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
@@ -1360,7 +1358,7 @@ public final class MainActivity extends Activity
             engineSurface.setPhysicsEnabled(false);
             editorToolbar.setVisibility(View.VISIBLE);
             if (editorPanels != null) editorPanels.setVisibility(View.VISIBLE);
-            if (viewportInput != null) viewportInput.setVisibility(View.GONE);
+            if (viewportInput != null) viewportInput.setVisibility(View.VISIBLE);
             updateViewportStatus("NOVAINGINE V2  |  VIEWPORT");
             if (playStopButton != null) playStopButton.setVisibility(View.GONE);
         }
@@ -1380,7 +1378,7 @@ public final class MainActivity extends Activity
         } else {
 
             editorToolbar.setVisibility(View.VISIBLE);
-            viewportInput.setVisibility(playMode ? View.VISIBLE : View.GONE);
+            viewportInput.setVisibility(View.VISIBLE);
             statisticsText.setVisibility(View.VISIBLE);
         }
     }
