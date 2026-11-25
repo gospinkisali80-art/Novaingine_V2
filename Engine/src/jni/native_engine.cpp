@@ -783,7 +783,6 @@ void stepLandscapeRigidBodies(float dt) {
         const float halfX = std::max(0.05f, std::fabs(object->transform.scale.x) * 0.5f);
         const float halfY = std::max(0.05f, std::fabs(object->transform.scale.y) * 0.5f);
         const float halfZ = std::max(0.05f, std::fabs(object->transform.scale.z) * 0.5f);
-        const float previousBottom = object->transform.position.y - halfY;
 
         body.velocity.y -= 9.81f * dt;
         object->transform.position = object->transform.position + body.velocity * dt;
@@ -826,18 +825,45 @@ void stepLandscapeRigidBodies(float dt) {
         for (const nova::SceneObject& other : gScene.getObjects()) {
             if (other.id == object->id || !other.visible || !other.isStatic ||
                 other.name == "Landscape Terrain" ||
-                other.name.rfind("Landscape Chunk ", 0) == 0) continue;
+                other.name.rfind("Landscape Chunk ", 0) == 0 ||
+                other.name.rfind("Landscape Tile ", 0) == 0) continue;
             const auto box = nova::PhysicsWorld::boundsFor(other);
             if (!box.valid) continue;
             const nova::Vec3 position = object->transform.position;
-            if (position.x + halfX <= box.min.x || position.x - halfX >= box.max.x ||
-                position.z + halfZ <= box.min.z || position.z - halfZ >= box.max.z) continue;
-            if (previousBottom >= box.max.y - 0.12f &&
-                position.y - halfY <= box.max.y) {
-                object->transform.position.y = box.max.y + halfY;
-                if (body.velocity.y < 0.0f) body.velocity.y = -body.velocity.y * body.restitution;
-                if (std::fabs(body.velocity.y) < 0.35f) body.velocity.y = 0.0f;
+            const float overlapX = std::min(position.x+halfX, box.max.x) -
+                                   std::max(position.x-halfX, box.min.x);
+            const float overlapY = std::min(position.y+halfY, box.max.y) -
+                                   std::max(position.y-halfY, box.min.y);
+            const float overlapZ = std::min(position.z+halfZ, box.max.z) -
+                                   std::max(position.z-halfZ, box.min.z);
+            if (overlapX <= 0.0f || overlapY <= 0.0f || overlapZ <= 0.0f) continue;
+            nova::Vec3 normal(0.0f,0.0f,0.0f);
+            float penetration = overlapX;
+            normal.x = position.x >= (box.min.x+box.max.x)*0.5f ? 1.0f : -1.0f;
+            if (overlapY < penetration) {
+                penetration = overlapY;
+                normal = nova::Vec3(0.0f,
+                    position.y >= (box.min.y+box.max.y)*0.5f ? 1.0f : -1.0f,0.0f);
             }
+            if (overlapZ < penetration) {
+                penetration = overlapZ;
+                normal = nova::Vec3(0.0f,0.0f,
+                    position.z >= (box.min.z+box.max.z)*0.5f ? 1.0f : -1.0f);
+            }
+            object->transform.position = object->transform.position +
+                normal * (penetration + 0.001f);
+            const float normalVelocity = body.velocity.x*normal.x +
+                body.velocity.y*normal.y + body.velocity.z*normal.z;
+            if (normalVelocity < 0.0f)
+                body.velocity = body.velocity -
+                    normal * ((1.0f+body.restitution)*normalVelocity);
+            const float afterNormal = body.velocity.x*normal.x +
+                body.velocity.y*normal.y + body.velocity.z*normal.z;
+            nova::Vec3 tangent(body.velocity.x-normal.x*afterNormal,
+                body.velocity.y-normal.y*afterNormal,
+                body.velocity.z-normal.z*afterNormal);
+            body.velocity = body.velocity - tangent*
+                std::clamp(body.friction*dt*5.0f,0.0f,1.0f);
         }
 
         for (const auto& otherBody : gLandscapeRigidBodies) {
