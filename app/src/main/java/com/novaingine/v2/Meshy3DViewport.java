@@ -339,11 +339,12 @@ public final class Meshy3DViewport extends View {
     }
 
     public String exportUvCsv(){
-        if(uvCoordinates==null)generatePlanarUv();
-        StringBuilder out=new StringBuilder("vertex,u,v\n");
-        for(int i=0;i<uvCoordinates.length;i++)out.append(i).append(',')
-                .append(uvCoordinates[i][0]).append(',').append(uvCoordinates[i][1]).append('\n');
-        return out.toString();
+        float[][][] uv=document.copyFaceUvs();if(uv==null){document.unwrapPlanar();uv=document.copyFaceUvs();}
+        StringBuilder out=new StringBuilder("face,corner,vertex,u,v\\n");
+        for(int fi=0;fi<uv.length;fi++){int[] ids=document.getFaceVertices(fi);
+            for(int j=0;j<uv[fi].length;j++)out.append(fi).append(',').append(j).append(',')
+                    .append(ids[j]).append(',').append(uv[fi][j][0]).append(',').append(uv[fi][j][1]).append('\\n');
+        }return out.toString();
     }
 
     public void storeMeshKeyframe(int frame){
