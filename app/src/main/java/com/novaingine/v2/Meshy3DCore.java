@@ -302,7 +302,7 @@ public final class Meshy3DCore {
     }
     public void createTexture(int width,int height,int color){
         textureWidth=Math.max(16,Math.min(4096,width));textureHeight=Math.max(16,Math.min(4096,height));
-        texturePixels=new int[textureWidth*textureHeight];Arrays.fill(texturePixels,color);revision++;
+        texturePixels=new int[textureWidth*textureHeight];Arrays.fill(texturePixels,color);if(faceUvs==null)unwrapPlanar();revision++;
     }
     public void setBrush(int color,float radius,float opacity){textureColor=color;brushRadius=Math.max(1,radius);brushOpacity=Math.max(0,Math.min(1,opacity));}
     public void paintPixel(int x,int y){
