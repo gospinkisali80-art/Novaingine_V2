@@ -252,7 +252,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
         }
 
         status = new TextView(activity);
-        status.setText("Meshy3D");
+        status.setText("Meshy3D  |  " + WORKSPACE_NAMES[activeWorkspaceIndex]);
         status.setTextColor(0xFFB8C4D1);
         status.setTextSize(9);
     }
