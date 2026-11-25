@@ -496,6 +496,14 @@ public final class EngineSurface extends GLSurfaceView
         queueEvent(() -> NativeBridge.nativeUpdateSelectedTransform(copy));
     }
 
+    public void setSelectedRigidBody(boolean enabled, float mass, float restitution, float friction,
+                                     java.util.function.Consumer<Boolean> callback) {
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeSetSelectedRigidBody(enabled, mass, restitution, friction);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
+    }
+
     public void setPhysicsEnabled(boolean enabled) {
         queueEvent(() -> NativeBridge.nativeSetPhysicsEnabled(enabled));
     }
