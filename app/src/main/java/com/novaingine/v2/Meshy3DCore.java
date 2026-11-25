@@ -423,11 +423,21 @@ public final class Meshy3DCore {
         }faces.clear();faces.addAll(out);clearSelection();rebuildEdges();revision++;
     }
     public void extrudeSelected(float distance){
-        if(selectedFaces.isEmpty())return;HashSet<Integer> verts=new HashSet<>();for(int fi=selectedFaces.nextSetBit(0);fi>=0;fi=selectedFaces.nextSetBit(fi+1))for(int v:faces.get(fi).vertices)verts.add(v);
-        float[] n={0,0,0};for(int fi=selectedFaces.nextSetBit(0);fi>=0;fi=selectedFaces.nextSetBit(fi+1)){float[] fn=normal(faces.get(fi).vertices);for(int k=0;k<3;k++)n[k]+=fn[k];}
+        if(selectedFaces.isEmpty())return;
+        HashSet<Integer> verts=new HashSet<>();HashSet<Integer> selectedFaceIds=new HashSet<>();
+        for(int fi=selectedFaces.nextSetBit(0);fi>=0;fi=selectedFaces.nextSetBit(fi+1)){
+            selectedFaceIds.add(fi);for(int v:faces.get(fi).vertices)verts.add(v);
+        }
+        float[] n={0,0,0};for(int fi:selectedFaceIds){float[] fn=normal(faces.get(fi).vertices);for(int k=0;k<3;k++)n[k]+=fn[k];}
         float len=(float)Math.sqrt(n[0]*n[0]+n[1]*n[1]+n[2]*n[2]);if(len<1e-6)return;for(int k=0;k<3;k++)n[k]/=len;
-        HashMap<Integer,Integer> duplicate=new HashMap<>();for(int v:verts){float[] p=vertices.get(v);int id=vertices.size();vertices.add(new float[]{p[0]+n[0]*distance,p[1]+n[1]*distance,p[2]+n[2]*distance});duplicate.put(v,id);}
-        ArrayList<Face> out=new ArrayList<>(faces);for(int fi=selectedFaces.nextSetBit(0);fi>=0;fi=selectedFaces.nextSetBit(fi+1)){int[] f=faces.get(fi).vertices;int[] top=new int[f.length];for(int j=0;j<f.length;j++)top[j]=duplicate.get(f[j]);out.add(new Face(top));for(int j=0;j<f.length;j++){int a=f[j],b=f[(j+1)%f.length];out.add(new Face(a,b,duplicate.get(b),duplicate.get(a)));}}
+        HashMap<Integer,Integer> duplicate=new HashMap<>();
+        for(int v:verts){float[] p=vertices.get(v);int id=vertices.size();vertices.add(new float[]{p[0]+n[0]*distance,p[1]+n[1]*distance,p[2]+n[2]*distance});duplicate.put(v,id);}
+        ArrayList<Face> out=new ArrayList<>(faces);
+        for(int fi:selectedFaceIds){int[] f=faces.get(fi).vertices;int[] top=new int[f.length];for(int j=0;j<f.length;j++)top[j]=duplicate.get(f[j]);out.add(new Face(top));}
+        // Side walls are generated only along the boundary of the selected face region.
+        for(Edge edge:edges){int selectedAdj=0;for(int fi:edge.faces)if(selectedFaceIds.contains(fi))selectedAdj++;
+            if(selectedAdj==1)out.add(new Face(edge.a,edge.b,duplicate.get(edge.b),duplicate.get(edge.a)));
+        }
         faces.clear();faces.addAll(out);clearSelection();rebuildEdges();revision++;
     }
     public void mergeSelectedByDistance(float threshold){
@@ -467,31 +477,65 @@ public final class Meshy3DCore {
         double perspective=5.2/Math.max(2.0,depth);return new float[]{(float)(cx+rx*unit*perspective),(float)(cy-ry*unit*perspective)};
     }
     public void loopCutSelected(float factor){
-        HashSet<Long> cut=new HashSet<>();for(int i=selectedEdges.nextSetBit(0);i>=0;i=selectedEdges.nextSetBit(i+1)){
-            Edge e=edges.get(i);cut.add(edgeKey(e.a,e.b));
-            for(int fi:e.faces){int[] f=faces.get(fi).vertices;if(f.length!=4)continue;
-                for(int j=0;j<4;j++)if(edgeKey(f[j],f[(j+1)%4])==edgeKey(e.a,e.b)){
-                    int a=f[j],b=f[(j+1)%4],c=f[(j+2)%4],d=f[(j+3)%4];
-                    int oppA=d,oppB=c;
-                    int m1=midpoint(a,b,factor),m2=midpoint(oppA,oppB,factor);
-                    faces.set(fi,new Face(a,m1,m2,d));faces.add(new Face(m1,b,c,m2));break;
+        if(selectedEdges.isEmpty())return;
+        HashMap<Long,Edge> edgeMap=new HashMap<>();for(Edge e:edges)edgeMap.put(edgeKey(e.a,e.b),e);
+        HashSet<Long> cut=new HashSet<>();ArrayDeque<Long> queue=new ArrayDeque<>();
+        for(int i=selectedEdges.nextSetBit(0);i>=0;i=selectedEdges.nextSetBit(i+1)){
+            Edge e=edges.get(i);long key=edgeKey(e.a,e.b);if(cut.add(key))queue.add(key);
+        }
+        // Follow opposite edges through connected quad faces to form a complete loop.
+        while(!queue.isEmpty()){
+            long key=queue.removeFirst();Edge edge=edgeMap.get(key);if(edge==null)continue;
+            for(int fi:edge.faces){int[] f=faces.get(fi).vertices;if(f.length!=4)continue;
+                for(int j=0;j<4;j++)if(edgeKey(f[j],f[(j+1)%4])==key){
+                    long opposite=edgeKey(f[(j+2)%4],f[(j+3)%4]);
+                    if(cut.add(opposite))queue.add(opposite);break;
                 }
             }
-        }rebuildEdges();revision++;
+        }
+        HashMap<Long,Integer> midpoints=new HashMap<>();ArrayList<Face> out=new ArrayList<>();
+        for(Face face:faces){int[] f=face.vertices;int split=-1;
+            for(int j=0;j<f.length;j++)if(f.length==4&&cut.contains(edgeKey(f[j],f[(j+1)%4]))
+                    &&cut.contains(edgeKey(f[(j+2)%4],f[(j+3)%4]))){split=j;break;}
+            if(split<0){out.add(face);continue;}
+            int a=f[split],b=f[(split+1)%4],cc=f[(split+2)%4],d=f[(split+3)%4];
+            int m1=midpoint(a,b,factor,midpoints),m2=midpoint(d,cc,factor,midpoints);
+            out.add(new Face(a,m1,m2,d));out.add(new Face(m1,b,cc,m2));
+        }
+        faces.clear();faces.addAll(out);clearSelection();rebuildEdges();revision++;
     }
-    private int midpoint(int a,int b,float t){float[] p=vertices.get(a),q=vertices.get(b);int id=vertices.size();vertices.add(new float[]{p[0]+(q[0]-p[0])*t,p[1]+(q[1]-p[1])*t,p[2]+(q[2]-p[2])*t});return id;}
+    private int midpoint(int a,int b,float t,HashMap<Long,Integer> cache){
+        long key=edgeKey(a,b);Integer existing=cache.get(key);if(existing!=null)return existing;
+        float[] p=vertices.get(a),q=vertices.get(b);int id=vertices.size();
+        vertices.add(new float[]{p[0]+(q[0]-p[0])*t,p[1]+(q[1]-p[1])*t,p[2]+(q[2]-p[2])*t});
+        cache.put(key,id);return id;
+    }
     public void bevelSelectedEdges(float width){
-        // Chamfer selected edges by splitting their incident face corners.
         if(selectedEdges.isEmpty())return;
+        width=Math.max(.001f,Math.min(.49f,width));
         HashSet<Long> selected=new HashSet<>();for(int i=selectedEdges.nextSetBit(0);i>=0;i=selectedEdges.nextSetBit(i+1)){Edge e=edges.get(i);selected.add(edgeKey(e.a,e.b));}
-        ArrayList<Face> out=new ArrayList<>();
-        for(Face face:faces){int[] old=face.vertices;ArrayList<Integer> ring=new ArrayList<>();
-            for(int i=0;i<old.length;i++){int a=old[i],b=old[(i+1)%old.length];float[] p=vertices.get(a),q=vertices.get(b);
-                if(selected.contains(edgeKey(a,b))){int ia=vertices.size();vertices.add(new float[]{p[0]+(q[0]-p[0])*width,p[1]+(q[1]-p[1])*width,p[2]+(q[2]-p[2])*width});
-                    int ib=vertices.size();vertices.add(new float[]{q[0]+(p[0]-q[0])*width,q[1]+(p[1]-q[1])*width,q[2]+(p[2]-q[2])*width});ring.add(ia);ring.add(ib);
+        HashMap<Long,HashMap<Integer,int[]>> bevelCorners=new HashMap<>();ArrayList<Face> out=new ArrayList<>();
+        for(int fi=0;fi<faces.size();fi++){
+            int[] old=faces.get(fi).vertices;ArrayList<Integer> ring=new ArrayList<>();
+            for(int j=0;j<old.length;j++){
+                int a=old[j],b=old[(j+1)%old.length];long key=edgeKey(a,b);
+                if(selected.contains(key)){
+                    float[] pa=vertices.get(a),pb=vertices.get(b),prev=vertices.get(old[(j+old.length-1)%old.length]),next=vertices.get(old[(j+2)%old.length]);
+                    int ia=vertices.size();vertices.add(new float[]{pa[0]+(prev[0]-pa[0])*width,pa[1]+(prev[1]-pa[1])*width,pa[2]+(prev[2]-pa[2])*width});
+                    int ib=vertices.size();vertices.add(new float[]{pb[0]+(next[0]-pb[0])*width,pb[1]+(next[1]-pb[1])*width,pb[2]+(next[2]-pb[2])*width});
+                    ring.add(ia);ring.add(ib);
+                    HashMap<Integer,int[]> byFace=bevelCorners.get(key);if(byFace==null){byFace=new HashMap<>();bevelCorners.put(key,byFace);}
+                    byFace.put(fi,a==Math.min(a,b)?new int[]{ia,ib}:new int[]{ib,ia});
                 }else ring.add(a);
-            }int[] f=new int[ring.size()];for(int i=0;i<f.length;i++)f[i]=ring.get(i);if(f.length>=3)out.add(new Face(f));
-        }faces.clear();faces.addAll(out);clearSelection();rebuildEdges();revision++;
+            }
+            int[] result=new int[ring.size()];for(int i=0;i<result.length;i++)result[i]=ring.get(i);if(result.length>=3)out.add(new Face(result));
+        }
+        for(Map.Entry<Long,HashMap<Integer,int[]>> entry:bevelCorners.entrySet()){
+            HashMap<Integer,int[]> byFace=entry.getValue();if(byFace.size()!=2)continue;
+            Iterator<int[]> it=byFace.values().iterator();int[] a=it.next(),b=it.next();
+            out.add(new Face(a[0],a[1],b[1],b[0]));
+        }
+        faces.clear();faces.addAll(out);clearSelection();rebuildEdges();revision++;
     }
     public void setTexturePixels(int[] pixels,int width,int height){
         if(pixels==null||width<1||height<1||pixels.length!=width*height)return;
