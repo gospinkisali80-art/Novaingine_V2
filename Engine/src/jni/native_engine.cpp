@@ -841,6 +841,21 @@ Java_com_novaingine_v2_NativeBridge_nativeFly(
             gPhysicsGrounded,
             gJumpWasPressed
         );
+
+        // Landscape collision samples the actual editable heightfield instead of
+        // treating the terrain as a flat primitive plane.
+        bool hasLandscapeGround = false;
+        const float landscapeGround = terrainHeightAt(
+            gCamera.position.x, gCamera.position.z, hasLandscapeGround);
+        if (hasLandscapeGround) {
+            const float minimumCameraY =
+                landscapeGround + nova::PhysicsWorld::PLAYER_HEIGHT;
+            if (gCamera.position.y < minimumCameraY) {
+                gCamera.position.y = minimumCameraY;
+                if (gVerticalVelocity < 0.0f) gVerticalVelocity = 0.0f;
+                gPhysicsGrounded = true;
+            }
+        }
     } else {
         gCamera.move(
             static_cast<float>(forward),
