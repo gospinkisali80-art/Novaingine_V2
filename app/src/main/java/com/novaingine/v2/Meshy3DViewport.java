@@ -32,6 +32,7 @@ public final class Meshy3DViewport extends View {
     private float metallic = 0.0f;
     private float roughness = 0.65f;
     private final float[][] originalVertices = document.copyVertices();
+    private final int[][] originalFaces = document.copyFaces();
     private float[][] uvCoordinates;
     private final java.util.HashMap<Integer, float[][]> meshKeyframes = new java.util.HashMap<>();
 
@@ -60,13 +61,13 @@ public final class Meshy3DViewport extends View {
         else document.selectNearestFace(x,y,cx,cy,unit,yaw,pitch,additive);
         invalidate();
     }
-    public void insetSelected(float amount){syncCoreFromViewport();document.insetSelected(amount);syncViewportFromCore();}
-    public void bevelSelected(float amount){syncCoreFromViewport();document.bevelSelectedEdges(amount);syncViewportFromCore();}
-    public void loopCutSelected(float factor){syncCoreFromViewport();document.loopCutSelected(factor);syncViewportFromCore();}
-    public void subdivideSelected(){syncCoreFromViewport();document.subdivide();syncViewportFromCore();}
-    public void extrudeSelected(float amount){syncCoreFromViewport();document.extrudeSelected(amount);syncViewportFromCore();}
-    public void mergeSelected(float distance){syncCoreFromViewport();document.mergeSelectedByDistance(distance);syncViewportFromCore();}
-    public void smoothTopology(float amount,int iterations){syncCoreFromViewport();document.smooth(amount,iterations);syncViewportFromCore();}
+    public void insetSelected(float amount){document.insetSelected(amount);syncViewportFromCore();}
+    public void bevelSelected(float amount){document.bevelSelectedEdges(amount);syncViewportFromCore();}
+    public void loopCutSelected(float factor){document.loopCutSelected(factor);syncViewportFromCore();}
+    public void subdivideSelected(){document.subdivide();syncViewportFromCore();}
+    public void extrudeSelected(float amount){document.extrudeSelected(amount);syncViewportFromCore();}
+    public void mergeSelected(float distance){document.mergeSelectedByDistance(distance);syncViewportFromCore();}
+    public void smoothTopology(float amount,int iterations){document.smooth(amount,iterations);syncViewportFromCore();}
     public void markSeams(boolean clear){syncCoreFromViewport();document.markSelectedSeams(clear);invalidate();}
     public void unwrapMesh(){syncCoreFromViewport();document.unwrapPlanar();generatePlanarUv();invalidate();}
     public void createPaintTexture(int width,int height,int color){document.createTexture(width,height,color);}
@@ -75,7 +76,7 @@ public final class Meshy3DViewport extends View {
     }
     public int getUvIslandCount(){return document.getUvIslandCount();}
     public void addGeometryNode(String type,float x,float y,float z,float value){document.addGeometryNode(type,x,y,z,value);}
-    public void evaluateGeometryNodes(){syncCoreFromViewport();document.evaluateGeometryNodes();syncViewportFromCore();}
+    public void evaluateGeometryNodes(){document.evaluateGeometryNodes();syncViewportFromCore();}
     public void addCompositorNode(String type,float value){document.addCompositorNode(type,value);}
     public int getCompositorNodeCount(){return document.getCompositorNodeCount();}
     public void addShaderNode(String type){document.addShaderNode(type);}
@@ -393,9 +394,11 @@ public final class Meshy3DViewport extends View {
     public int getVertexCount(){return vertices.length;}
     public int getFaceCount(){return faces.length;}
     public void resetMesh(){
-        vertices=document.copyVertices();faces=document.copyFaces();
+        vertices=new float[originalVertices.length][3];
+        for(int i=0;i<vertices.length;i++)System.arraycopy(originalVertices[i],0,vertices[i],0,3);
+        faces=new int[originalFaces.length][];for(int i=0;i<faces.length;i++)faces[i]=originalFaces[i].clone();
         vertexMask=new float[vertices.length];meshVisible=true;showTopology=true;
-        document.clearSelection();invalidate();
+        syncCoreFromViewport();invalidate();
     }
 
     public void setSculptSettings(boolean enabled, int brush, float radius, float strength,
