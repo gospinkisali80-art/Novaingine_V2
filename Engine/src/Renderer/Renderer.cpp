@@ -178,6 +178,15 @@ uniform int uUseShadows;
 uniform int uViewMode;
 uniform float uShadowStrength;
 uniform float uExposure;
+uniform float uDirectionalLightIntensity;
+uniform float uSkyLightIntensity;
+uniform int uDirectionalLightEnabled;
+uniform int uSkyLightEnabled;
+uniform int uFogEnabled;
+uniform float uFogDensity;
+uniform float uFogHeight;
+uniform float uFogFalloff;
+uniform vec3 uFogColor;
 
 out vec4 fragColor;
 
@@ -284,9 +293,10 @@ void main() {
 
     // Preserve the Task 1 hemisphere ambient, with reduced diffuse response
     // on metals and a small ambient specular term so metals remain visible.
-    vec3 skyColor = pow(vec3(110.0, 155.0, 214.0) / 255.0, vec3(2.2));
     vec3 groundColor = pow(vec3(122.0, 116.0, 104.0) / 255.0, vec3(2.2));
-    vec3 hemiColor = mix(groundColor, skyColor, N.y * 0.5 + 0.5);
+    vec3 hemiColor = uSkyLightEnabled == 1
+        ? mix(groundColor, uAmbientColor, N.y * 0.5 + 0.5) * uSkyLightIntensity
+        : vec3(0.025);
 
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
     vec3 ambientDiffuse = hemiColor * albedo * (1.0 - metallic);
@@ -326,7 +336,8 @@ void main() {
         clamp(shadow * uShadowStrength, 0.0, 0.95);
 
     vec3 direct = (kd * albedo / PI + specular) *
-                  sunColor * sunIntensity * NdotLRaw *
+                  uLightColor * uDirectionalLightIntensity *
+                  float(uDirectionalLightEnabled) * NdotLRaw *
                   shadowVisibility;
 
     // World-space concrete tiling: grout, subtle slab variation and fine
@@ -365,6 +376,17 @@ void main() {
         result = albedo;
     } else if (uViewMode == 3) {
         result = vec3(NdotLRaw);
+    }
+
+    // Exponential height fog: density falls with altitude and accumulates
+    // with camera distance. This is a mobile-friendly analytic approximation.
+    if (uFogEnabled == 1 && uFogDensity > 0.0001) {
+        float viewDistance = length(uCameraPosition - vWorldPosition);
+        float altitude = max(vWorldPosition.y - uFogHeight, 0.0);
+        float heightFactor = exp(-altitude * max(uFogFalloff, 0.001));
+        float fogAmount = 1.0 - exp(-uFogDensity * viewDistance * heightFactor);
+        vec3 fogLinear = pow(clamp(uFogColor, 0.0, 1.0), vec3(2.2));
+        result = mix(result, fogLinear, clamp(fogAmount, 0.0, 0.92));
     }
 
     // Task 1 exposure, ACES fit, clamp, and sRGB output remain unchanged.
@@ -436,14 +458,30 @@ uniform sampler2D uMask;
 uniform vec2 uTexelSize;
 uniform float uThickness;
 uniform int uHasSelection;
+uniform float uBloomIntensity;
+uniform float uColorContrast;
+uniform float uColorSaturation;
+uniform int uBloomEnabled;
 
 out vec4 fragColor;
 
 void main() {
     vec4 sceneColor = texture(uScene, vUV);
-
+    vec3 graded = sceneColor.rgb;
+    float luminance = dot(graded, vec3(0.2126, 0.7152, 0.0722));
+    graded = mix(vec3(luminance), graded, max(uColorSaturation, 0.0));
+    graded = (graded - 0.5) * max(uColorContrast, 0.0) + 0.5;
+    if (uBloomEnabled == 1 && uBloomIntensity > 0.001) {
+        vec2 texel = uTexelSize * 2.0;
+        vec3 glow = vec3(0.0);
+        glow += max(texture(uScene, vUV + vec2(texel.x, 0.0)).rgb - 0.72, 0.0);
+        glow += max(texture(uScene, vUV - vec2(texel.x, 0.0)).rgb - 0.72, 0.0);
+        glow += max(texture(uScene, vUV + vec2(0.0, texel.y)).rgb - 0.72, 0.0);
+        glow += max(texture(uScene, vUV - vec2(0.0, texel.y)).rgb - 0.72, 0.0);
+        graded += glow * (uBloomIntensity * 0.25);
+    }
     if (uHasSelection == 0) {
-        fragColor = sceneColor;
+        fragColor = vec4(clamp(graded, 0.0, 1.0), sceneColor.a);
         return;
     }
 
@@ -464,7 +502,7 @@ void main() {
     vec3 orange = vec3(1.0, 0.36, 0.0);
 
     fragColor = vec4(
-        mix(sceneColor.rgb, orange, clamp(outline, 0.0, 1.0)),
+        mix(graded, orange, clamp(outline, 0.0, 1.0)),
         sceneColor.a
     );
 }
@@ -478,6 +516,14 @@ in vec2 vUV;
 uniform mat4 uViewProjection;
 uniform vec3 uCameraPosition;
 uniform vec3 uSunDirection;
+uniform float uTime;
+uniform float uCloudCoverage;
+uniform float uCloudDensity;
+uniform float uCloudSpeed;
+uniform float uAtmosphereRayleigh;
+uniform float uAtmosphereMie;
+uniform int uCloudsEnabled;
+uniform int uAtmosphereEnabled;
 out vec4 fragColor;
 
 float hash31(vec3 p) {
@@ -529,21 +575,32 @@ void main() {
     vec3 zenith = vec3(0.16, 0.34, 0.62);
     float skyGradient = smoothstep(-0.02, 0.92, ray.y);
     vec3 sky = mix(horizon, zenith, skyGradient);
-
-    // Rayleigh-like horizon haze and a warmer band around the sun.
-    float horizonHaze = exp(-max(ray.y, 0.0) * 7.0);
-    sky = mix(sky, vec3(0.79, 0.85, 0.91), horizonHaze * 0.24);
+    if (uAtmosphereEnabled == 1) {
+        float rayleigh = clamp(uAtmosphereRayleigh, 0.0, 3.0);
+        float mie = clamp(uAtmosphereMie, 0.0, 2.0);
+        float horizonHaze = exp(-max(ray.y, 0.0) * (5.0 + rayleigh * 2.0));
+        sky = mix(sky, vec3(0.79, 0.85, 0.91),
+                  horizonHaze * (0.12 + 0.12 * rayleigh));
+        sky += vec3(1.0, 0.72, 0.48) *
+               pow(max(dot(ray, normalize(uSunDirection)), 0.0), 8.0) * mie * 0.035;
+    }
 
     // Two broad world-direction cloud layers with soft multi-octave edges.
     float cloudHeight = max(ray.y + 0.19, 0.10);
     vec2 cloudPlane = ray.xz / cloudHeight;
-    float cloudField = cloudFbm(vec3(cloudPlane * 1.05, 2.8));
-    float cloudMask = smoothstep(0.48, 0.68, cloudField);
+    vec3 cloudDrift = vec3(uTime * uCloudSpeed, 0.0,
+                           uTime * uCloudSpeed * 0.37);
+    float cloudField = cloudFbm(vec3(cloudPlane * 1.05, 2.8) + cloudDrift);
+    float cloudEdge = 0.78 - clamp(uCloudCoverage, 0.0, 1.0) * 0.38;
+    float cloudMask = smoothstep(cloudEdge - 0.10, cloudEdge + 0.10, cloudField);
     cloudMask *= smoothstep(-0.035, 0.20, ray.y);
     float underside = clamp(0.78 + ray.y * 0.38, 0.62, 1.0);
-    vec3 cloudColor = mix(vec3(0.67, 0.72, 0.79),
+    vec3 cloudColor = mix(vec3(0.57, 0.62, 0.70),
                           vec3(0.98, 0.985, 1.0), underside);
-    sky = mix(sky, cloudColor, cloudMask * 0.82);
+    if (uCloudsEnabled == 1) {
+        sky = mix(sky, cloudColor,
+                  cloudMask * clamp(uCloudDensity, 0.0, 1.0) * 0.90);
+    }
 
     vec3 sunDirection = normalize(uSunDirection);
     float sunDot = dot(ray, sunDirection);
@@ -1068,9 +1125,9 @@ void Renderer::endFrame() {
 
 Mat4 Renderer::calculateLightViewProjection() const {
     nova::Vec3 direction(
-        lightDirection_[0],
-        lightDirection_[1],
-        lightDirection_[2]
+        settings_.directionalLightDirection[0],
+        settings_.directionalLightDirection[1],
+        settings_.directionalLightDirection[2]
     );
 
     direction = nova::normalize(direction);
@@ -1376,10 +1433,20 @@ void Renderer::renderSky(const Camera& camera) {
     );
     setVec3Uniform(
         skyProgram_, "uSunDirection",
-        -lightDirection_[0], -lightDirection_[1], -lightDirection_[2]
+        -settings_.directionalLightDirection[0],
+        -settings_.directionalLightDirection[1],
+        -settings_.directionalLightDirection[2]
     );
 
     glBindVertexArray(fullscreenVAO_);
+    setFloatUniform(skyProgram_, "uTime", elapsedTime_);
+    setFloatUniform(skyProgram_, "uCloudCoverage", settings_.cloudCoverage);
+    setFloatUniform(skyProgram_, "uCloudDensity", settings_.cloudDensity);
+    setFloatUniform(skyProgram_, "uCloudSpeed", settings_.cloudSpeed);
+    setFloatUniform(skyProgram_, "uAtmosphereRayleigh", settings_.atmosphereRayleigh);
+    setFloatUniform(skyProgram_, "uAtmosphereMie", settings_.atmosphereMie);
+    setIntUniform(skyProgram_, "uCloudsEnabled", settings_.volumetricCloudsEnabled ? 1 : 0);
+    setIntUniform(skyProgram_, "uAtmosphereEnabled", settings_.skyAtmosphereEnabled ? 1 : 0);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
     glBindVertexArray(0);
@@ -1484,26 +1551,42 @@ void Renderer::renderObject(
         setVec3Uniform(
             sceneProgram_,
             "uLightDirection",
-            lightDirection_[0],
-            lightDirection_[1],
-            lightDirection_[2]
+            settings_.directionalLightDirection[0],
+            settings_.directionalLightDirection[1],
+            settings_.directionalLightDirection[2]
         );
 
         setVec3Uniform(
             sceneProgram_,
             "uLightColor",
-            lightColor_[0],
-            lightColor_[1],
-            lightColor_[2]
+            settings_.directionalLightColor[0],
+            settings_.directionalLightColor[1],
+            settings_.directionalLightColor[2]
         );
 
         setVec3Uniform(
             sceneProgram_,
             "uAmbientColor",
-            ambientColor_[0],
-            ambientColor_[1],
-            ambientColor_[2]
+            settings_.skyLightColor[0],
+            settings_.skyLightColor[1],
+            settings_.skyLightColor[2]
         );
+
+        setFloatUniform(sceneProgram_, "uDirectionalLightIntensity",
+                        settings_.directionalLightIntensity);
+        setFloatUniform(sceneProgram_, "uSkyLightIntensity",
+                        settings_.skyLightIntensity);
+        setIntUniform(sceneProgram_, "uDirectionalLightEnabled",
+                      settings_.directionalLightEnabled ? 1 : 0);
+        setIntUniform(sceneProgram_, "uSkyLightEnabled",
+                      settings_.skyLightEnabled ? 1 : 0);
+        setIntUniform(sceneProgram_, "uFogEnabled",
+                      settings_.heightFogEnabled ? 1 : 0);
+        setFloatUniform(sceneProgram_, "uFogDensity", settings_.fogDensity);
+        setFloatUniform(sceneProgram_, "uFogHeight", settings_.fogHeight);
+        setFloatUniform(sceneProgram_, "uFogFalloff", settings_.fogFalloff);
+        setVec3Uniform(sceneProgram_, "uFogColor",
+                       settings_.fogColor[0], settings_.fogColor[1], settings_.fogColor[2]);
 
         setIntUniform(
             sceneProgram_,
@@ -1631,6 +1714,10 @@ void Renderer::renderSelectionOutline() {
     glDepthMask(GL_FALSE);
 
     outlineProgram_.use();
+    setFloatUniform(outlineProgram_, "uBloomIntensity", settings_.bloomIntensity);
+    setFloatUniform(outlineProgram_, "uColorContrast", settings_.colorContrast);
+    setFloatUniform(outlineProgram_, "uColorSaturation", settings_.colorSaturation);
+    setIntUniform(outlineProgram_, "uBloomEnabled", settings_.bloomEnabled ? 1 : 0);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, sceneTarget_.colorTexture);
@@ -1874,6 +1961,7 @@ void Renderer::setSculptCursor(bool visible, const Vec3& point, const Vec3& norm
 void Renderer::render(Scene& scene, Camera& camera) {
     if (!initialized_ || !viewportEnabled_) return;
 
+    elapsedTime_ += 0.016f;
     updateStatistics(scene);
 
     renderShadowMap(scene, camera);
@@ -1927,6 +2015,21 @@ void Renderer::setSettings(const RendererSettings& settings) {
         settings_.shadowResolution != settings.shadowResolution;
 
     settings_ = settings;
+    for (int i = 0; i < 3; ++i) {
+        settings_.directionalLightColor[i] = std::clamp(settings_.directionalLightColor[i], 0.0f, 4.0f);
+        settings_.skyLightColor[i] = std::clamp(settings_.skyLightColor[i], 0.0f, 4.0f);
+        settings_.fogColor[i] = std::clamp(settings_.fogColor[i], 0.0f, 1.0f);
+    }
+    settings_.directionalLightIntensity = std::clamp(settings_.directionalLightIntensity, 0.0f, 20.0f);
+    settings_.skyLightIntensity = std::clamp(settings_.skyLightIntensity, 0.0f, 4.0f);
+    settings_.cloudCoverage = std::clamp(settings_.cloudCoverage, 0.0f, 1.0f);
+    settings_.cloudDensity = std::clamp(settings_.cloudDensity, 0.0f, 1.0f);
+    settings_.cloudSpeed = std::clamp(settings_.cloudSpeed, 0.0f, 0.05f);
+    settings_.fogDensity = std::clamp(settings_.fogDensity, 0.0f, 0.08f);
+    settings_.fogFalloff = std::clamp(settings_.fogFalloff, 0.001f, 4.0f);
+    settings_.bloomIntensity = std::clamp(settings_.bloomIntensity, 0.0f, 2.0f);
+    settings_.colorContrast = std::clamp(settings_.colorContrast, 0.0f, 2.0f);
+    settings_.colorSaturation = std::clamp(settings_.colorSaturation, 0.0f, 2.0f);
 
     if (shadowResolutionChanged && initialized_) {
         createShadowTarget();
