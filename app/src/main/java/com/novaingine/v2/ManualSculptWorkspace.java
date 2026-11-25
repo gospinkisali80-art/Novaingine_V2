@@ -390,6 +390,10 @@ public final class ManualSculptWorkspace extends FrameLayout {
         TextView shapes = button("◇");
         rightRail.addView(shapes, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)));
         shapes.setOnClickListener(v -> showShapes());
+        TextView color = button("●");
+        color.setContentDescription("Material color");
+        rightRail.addView(color, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)));
+        color.setOnClickListener(v -> showMaterialColorPicker());
         TextView transform = button("XYZ");
         rightRail.addView(transform, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)));
         transform.setOnClickListener(v -> showTransformEditor(touch));
@@ -686,6 +690,59 @@ public final class ManualSculptWorkspace extends FrameLayout {
         new android.app.AlertDialog.Builder(activity).setTitle("Brush settings")
                 .setMessage("Size, strength, hardness and pressure are available in the Brushes panel.")
                 .setPositiveButton("OK", null).show();
+    }
+
+    private void showMaterialColorPicker() {
+        final int[] palette = {
+                0xFFF2F2F2, 0xFF222222, 0xFFE53935, 0xFFFF8F00,
+                0xFFFFD600, 0xFF43A047, 0xFF00ACC1, 0xFF1E88E5,
+                0xFF3949AB, 0xFF8E24AA, 0xFFD81B60, 0xFF795548
+        };
+        LinearLayout content = new LinearLayout(activity);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(12), dp(8), dp(12), dp(8));
+        TextView hint = label("Apply a material color to the selected object", 11, Color.WHITE, false);
+        content.addView(hint, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(30)));
+        for (int row = 0; row < 3; row++) {
+            LinearLayout line = new LinearLayout(activity);
+            line.setGravity(Gravity.CENTER_VERTICAL);
+            content.addView(line, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(48)));
+            for (int col = 0; col < 4; col++) {
+                final int value = palette[row * 4 + col];
+                TextView swatch = label("●", 25, value, true);
+                swatch.setGravity(Gravity.CENTER);
+                swatch.setBackground(background(0xFF30343B));
+                LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, dp(42), 1);
+                p.setMargins(dp(3), dp(2), dp(3), dp(2));
+                line.addView(swatch, p);
+                swatch.setOnClickListener(v -> {
+                    engine.setSelectedMaterialColor(Color.red(value) / 255.0f,
+                            Color.green(value) / 255.0f, Color.blue(value) / 255.0f);
+                    status.setText("Material color applied to selected object.");
+                });
+            }
+        }
+        EditText hex = new EditText(activity);
+        hex.setSingleLine(true);
+        hex.setTextColor(Color.WHITE);
+        hex.setHintTextColor(0xFF9BA7B5);
+        hex.setHint("Custom HEX color, e.g. #40A0FF");
+        content.addView(hex, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(46)));
+        new android.app.AlertDialog.Builder(activity)
+                .setTitle("Material Color")
+                .setView(content)
+                .setPositiveButton("APPLY HEX", (dialog, which) -> {
+                    try {
+                        int value = Color.parseColor(hex.getText().toString().trim());
+                        engine.setSelectedMaterialColor(Color.red(value) / 255.0f,
+                                Color.green(value) / 255.0f, Color.blue(value) / 255.0f);
+                        status.setText("Custom material color applied.");
+                    } catch (IllegalArgumentException error) {
+                        Toast.makeText(activity, "Enter a valid HEX color such as #40A0FF.", Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton("CLOSE", null)
+                .show();
     }
 
     private void showShapes() {
