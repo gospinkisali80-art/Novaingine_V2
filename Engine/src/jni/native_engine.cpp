@@ -43,6 +43,8 @@ std::mutex engineMutex;
 Renderer gRenderer;
 nova::Scene gScene;
 nova::LandscapeSystem gLandscape;
+struct LandscapeRigidBody { nova::Vec3 velocity; float mass=1.0f; float restitution=0.12f; float friction=0.7f; };
+std::unordered_map<uint32_t, LandscapeRigidBody> gLandscapeRigidBodies;
 std::unordered_map<uint32_t, nova::Mesh> gCustomMeshes;
 std::unordered_map<uint32_t, std::vector<float>> gSculptMasks;
 std::unique_ptr<nova::SculptMesh> gSculptMesh;
@@ -445,6 +447,44 @@ void updateTerrainLod() {
         gTerrainLodLevel = level;
     }
 }
+void stepLandscapeRigidBodies(float dt) {
+    dt=std::clamp(dt,0.0f,0.05f);
+    for(auto it=gLandscapeRigidBodies.begin();it!=gLandscapeRigidBodies.end();){
+        nova::SceneObject* object=gScene.find(it->first);
+        if(!object){it=gLandscapeRigidBodies.erase(it);continue;}
+        auto& body=it->second;
+        const float halfX=std::max(0.05f,std::fabs(object->transform.scale.x)*0.5f);
+        const float halfY=std::max(0.05f,std::fabs(object->transform.scale.y)*0.5f);
+        const float halfZ=std::max(0.05f,std::fabs(object->transform.scale.z)*0.5f);
+        const float previousBottom=object->transform.position.y-halfY;
+        body.velocity.y-=9.81f*dt;
+        object->transform.position=object->transform.position+body.velocity*dt;
+        bool found=false;
+        const float ground=terrainHeightAt(object->transform.position.x,object->transform.position.z,found);
+        if(found&&object->transform.position.y-halfY<ground){
+            object->transform.position.y=ground+halfY;
+            if(body.velocity.y<0.0f)body.velocity.y=-body.velocity.y*body.restitution;
+            if(std::fabs(body.velocity.y)<0.35f)body.velocity.y=0.0f;
+            const float drag=std::clamp(body.friction*dt,0.0f,1.0f);
+            body.velocity.x*=1.0f-drag;body.velocity.z*=1.0f-drag;
+        }
+        for(const nova::SceneObject& other:gScene.getObjects()){
+            if(other.id==object->id||!other.visible||!other.isStatic||other.name=="Landscape Terrain")continue;
+            const auto box=nova::PhysicsWorld::boundsFor(other);
+            if(!box.valid)continue;
+            const auto p=object->transform.position;
+            if(p.x+halfX<=box.min.x||p.x-halfX>=box.max.x||
+               p.z+halfZ<=box.min.z||p.z-halfZ>=box.max.z)continue;
+            if(previousBottom>=box.max.y-0.12f&&p.y-halfY<=box.max.y){
+                object->transform.position.y=box.max.y+halfY;
+                if(body.velocity.y<0.0f)body.velocity.y=-body.velocity.y*body.restitution;
+                if(std::fabs(body.velocity.y)<0.35f)body.velocity.y=0.0f;
+            }
+        }
+        ++it;
+    }
+}
+
 // Transform helpers use the same Rz * Ry * Rx order as Renderer::makeModelMatrix.
 nova::Vec3 rotateByObject(const nova::Vec3& v, const nova::Vec3& degrees) {
     const float k=3.14159265358979323846f/180.0f;
@@ -821,6 +861,7 @@ Java_com_novaingine_v2_NativeBridge_nativeRender(
         }
     }
 
+    if (!gPaused) stepLandscapeRigidBodies(dt);
     updateTerrainLod();
     gRenderer.beginFrame();
     gRenderer.render(gScene, gCamera);
@@ -2804,6 +2845,23 @@ Java_com_novaingine_v2_NativeBridge_nativeSetLandscapeChunkSize(JNIEnv*,jclass,j
     std::lock_guard<std::mutex> lock(engineMutex);
     if(!gLandscape.valid())return JNI_FALSE;recordUndo(true);
     gLandscape.buildChunks(std::clamp(static_cast<int>(size),8,128));return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetSelectedRigidBody(
+    JNIEnv*,jclass,jboolean enabled,jfloat mass,jfloat restitution,jfloat friction
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if(!gInitialized)return JNI_FALSE;
+    nova::SceneObject* selected=gScene.selected();if(!selected||selected->name=="Landscape Terrain")return JNI_FALSE;
+    if(enabled==JNI_TRUE){
+        LandscapeRigidBody body;
+        body.mass=std::clamp(static_cast<float>(mass),0.05f,1000.0f);
+        body.restitution=std::clamp(static_cast<float>(restitution),0.0f,0.9f);
+        body.friction=std::clamp(static_cast<float>(friction),0.0f,2.0f);
+        gLandscapeRigidBodies[selected->id]=body;
+    }else gLandscapeRigidBodies.erase(selected->id);
+    return JNI_TRUE;
 }
 
 JNIEXPORT jint JNICALL
