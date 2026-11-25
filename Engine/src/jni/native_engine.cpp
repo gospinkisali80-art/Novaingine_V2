@@ -2825,6 +2825,30 @@ Java_com_novaingine_v2_NativeBridge_nativeSetTerrainTexture(
         ? JNI_TRUE : JNI_FALSE;
 }
 
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetTerrainHeightmapPng16(
+    JNIEnv* env, jclass, jbyteArray pngArray
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized || !gLandscape.valid() || !pngArray) return JNI_FALSE;
+    const jsize length = env->GetArrayLength(pngArray);
+    if (length < 64 || length > 16 * 1024 * 1024) return JNI_FALSE;
+    std::vector<uint8_t> bytes(static_cast<size_t>(length));
+    env->GetByteArrayRegion(pngArray, 0, length, reinterpret_cast<jbyte*>(bytes.data()));
+    if (env->ExceptionCheck()) { env->ExceptionClear(); return JNI_FALSE; }
+    std::vector<uint16_t> samples;
+    int width = 0, height = 0;
+    if (!decodeGray16Png(bytes.data(), bytes.size(), samples, width, height) ||
+        width != 129 || height != 129 || samples.size() != 129u * 129u) return JNI_FALSE;
+    std::vector<float> heights(samples.size());
+    for (size_t i = 0; i < samples.size(); ++i)
+        heights[i] = -12.0f + (static_cast<float>(samples[i]) / 65535.0f) * 36.0f;
+    recordUndo(true);
+    gLandscape.initialize(129, 129, 0.5f, -32.0f, -36.0f);
+    if (!gLandscape.setBaseHeights(heights)) return JNI_FALSE;
+    return syncLandscapeMeshFromData() ? JNI_TRUE : JNI_FALSE;
+}
+
 JNIEXPORT jfloatArray JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeGetTerrainHeights(JNIEnv* env, jclass) {
     std::lock_guard<std::mutex> lock(engineMutex);
