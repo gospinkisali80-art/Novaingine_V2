@@ -408,13 +408,13 @@ public final class ManualSculptWorkspace extends FrameLayout {
         switch (activeWorkspaceIndex) {
             case 0:
                 if ("Hide / Show Objects".equals(item)) {
-                    meshyViewport.setMeshVisible(true);
-                    status.setText("Layout | Cube visible");
+                    meshyViewport.toggleMeshVisible();
+                    status.setText("Layout | Cube visibility toggled");
                 } else if ("Camera View".equals(item)) {
                     meshyViewport.resetView();
                     status.setText("Layout | View framed on Cube");
                 } else if ("Show Grid".equals(item) || "Grid".equals(item)) {
-                    meshyViewport.setShowFloorGrid(true);
+                    meshyViewport.toggleFloorGrid();
                 } else if ("Move".equals(item) || "Rotate".equals(item) || "Scale".equals(item)
                         || "Transform".equals(item)) showTransformDialog(item.equals("Transform") ? "Move" : item);
                 else if ("Hide Object".equals(item)) meshyViewport.setMeshVisible(false);
@@ -437,7 +437,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 } else if ("Object Mode".equals(item)) {
                     activeEditorMode = "Object Mode"; if (modeButton != null) modeButton.setText(activeEditorMode);
                     status.setText("Modeling | Object Mode");
-                } else if ("Reset Mesh".equals(item)) meshyViewport.resetMesh();
+                } else if ("Wireframe".equals(item)) meshyViewport.toggleTopology();
+                else if ("Reset Mesh".equals(item)) meshyViewport.resetMesh();
                 else showWorkspaceActionInfo(item);
                 break;
             case 3:
