@@ -15,6 +15,18 @@ public final class Meshy3DViewport extends View {
     private float pitch = 0.42f;
     private float lastX, lastY, lastPinchDistance;
     private float zoom = 1.0f;
+    private final float[][] vertices = {
+        {-1,-1,-1},{1,-1,-1},{1,1,-1},{-1,1,-1},
+        {-1,-1,1},{1,-1,1},{1,1,1},{-1,1,1}
+    };
+    private final float[] vertexMask = new float[8];
+    private boolean sculpting;
+    private int sculptBrush;
+    private float sculptRadius = 0.18f, sculptStrength = 0.40f, sculptFalloff = 0.5f, sculptPressure = 1.0f;
+    private int sculptSymmetry;
+    private boolean sculptSubtract;
+    private float strokeX, strokeY, previousStrokeX, previousStrokeY;
+    private boolean strokeActive;
     private boolean moved;
     private float downX, downY;
 
@@ -86,7 +98,7 @@ public final class Meshy3DViewport extends View {
         canvas.drawLine(y1[0],y1[1],y2[0],y2[1],paint);
 
         float[][] p=new float[8][3];
-        for(int i=0;i<8;i++) p[i]=project(V[i][0],V[i][1],V[i][2],cx,cy,unit);
+        for(int i=0;i<8;i++) p[i]=project(vertices[i][0],vertices[i][1],vertices[i][2],cx,cy,unit);
 
         // Draw only outward-facing faces, sorted far-to-near. This prevents the
         // previous see-through/inverted-looking cube caused by drawing all six sides.
@@ -95,13 +107,13 @@ public final class Meshy3DViewport extends View {
         int count=0;
         for(int f=0;f<FACES.length;f++){
             int[] face=FACES[f];
-            float[] a=cameraPoint(V[face[0]][0],V[face[0]][1],V[face[0]][2]);
-            float[] b=cameraPoint(V[face[1]][0],V[face[1]][1],V[face[1]][2]);
-            float[] c=cameraPoint(V[face[2]][0],V[face[2]][1],V[face[2]][2]);
+            float[] a=cameraPoint(vertices[face[0]][0],vertices[face[0]][1],vertices[face[0]][2]);
+            float[] b=cameraPoint(vertices[face[1]][0],vertices[face[1]][1],vertices[face[1]][2]);
+            float[] c=cameraPoint(vertices[face[2]][0],vertices[face[2]][1],vertices[face[2]][2]);
             float abx=b[0]-a[0], aby=b[1]-a[1], abz=b[2]-a[2];
             float acx=c[0]-a[0], acy=c[1]-a[1], acz=c[2]-a[2];
             float nx=aby*acz-abz*acy, ny=abz*acx-abx*acz, nz=abx*acy-aby*acx;
-            float centerZ=(a[2]+b[2]+c[2]+cameraPoint(V[face[3]][0],V[face[3]][1],V[face[3]][2])[2])*0.25f;
+            float centerZ=(a[2]+b[2]+c[2]+cameraPoint(vertices[face[3]][0],vertices[face[3]][1],vertices[face[3]][2])[2])*0.25f;
             // Camera looks toward negative camera-Z; visible outward normals face camera.
             if(nx*0f+ny*0f+nz > 0.0001f) {
                 order[count]=f; depth[f]=centerZ; count++;
@@ -144,6 +156,73 @@ public final class Meshy3DViewport extends View {
             paint.setStyle(Paint.Style.STROKE);
         }
         paint.setStyle(Paint.Style.FILL);
+    }
+
+    public void setSculptSettings(boolean enabled, int brush, float radius, float strength,
+                                   float falloff, int symmetry, boolean subtract, float pressure) {
+        sculpting = enabled;
+        sculptBrush = Math.max(0, Math.min(24, brush));
+        sculptRadius = Math.max(0.02f, Math.min(1.0f, radius));
+        sculptStrength = Math.max(0f, Math.min(1f, strength));
+        sculptFalloff = Math.max(0f, Math.min(1f, falloff));
+        sculptSymmetry = Math.max(0, Math.min(3, symmetry));
+        sculptSubtract = subtract;
+        sculptPressure = Math.max(0.05f, Math.min(1f, pressure));
+        invalidate();
+    }
+
+    private void applySculptDab(float x, float y, float dragX, float dragY) {
+        float cx=getWidth()*0.5f, cy=getHeight()*0.49f;
+        float unit=Math.min(getWidth(),getHeight())*0.235f*zoom;
+        float brushPx=Math.max(5f, Math.min(getWidth(),getHeight())*sculptRadius*0.55f);
+        float amount=sculptStrength*sculptPressure*(sculptSubtract?-1f:1f)*0.075f;
+        float[] center = cameraPoint(0,0,0);
+        float meanY=0f; for(float[] v:vertices) meanY+=v[1]; meanY/=vertices.length;
+        float meanX=0f, meanZ=0f;
+        for(float[] v:vertices){meanX+=v[0];meanZ+=v[2];}
+        meanX/=vertices.length; meanZ/=vertices.length;
+        for(int i=0;i<vertices.length;i++){
+            float[] q=project(vertices[i][0],vertices[i][1],vertices[i][2],cx,cy,unit);
+            float dx=q[0]-x, dy=q[1]-y, dist=(float)Math.sqrt(dx*dx+dy*dy);
+            if(dist>brushPx || vertexMask[i]>0.95f) continue;
+            float t=1f-dist/brushPx;
+            float weight=(float)Math.pow(Math.max(0f,t),0.5f+sculptFalloff*3f)*(1f-vertexMask[i]);
+            float a=amount*weight;
+            float nx=vertices[i][0], ny=vertices[i][1], nz=vertices[i][2];
+            float len=(float)Math.sqrt(nx*nx+ny*ny+nz*nz); if(len<0.001f) len=1f;
+            switch(sculptBrush){
+                case 0: case 8: case 10: case 12: case 13: case 21:
+                    vertices[i][0]+=nx/len*a*(sculptBrush==12?1.8f:1f);
+                    vertices[i][1]+=ny/len*a*(sculptBrush==8?1.35f:1f);
+                    vertices[i][2]+=nz/len*a; break;
+                case 1: case 19: case 24:
+                    vertices[i][0]+=(meanX-nx)*Math.abs(a)*0.45f;
+                    vertices[i][1]+=(meanY-ny)*Math.abs(a)*0.45f;
+                    vertices[i][2]+=(meanZ-nz)*Math.abs(a)*0.45f; break;
+                case 2: case 14: case 15: case 16: case 17: case 23:
+                    vertices[i][0]+=dragX/Math.max(1f,unit)*a*4f;
+                    vertices[i][1]-=dragY/Math.max(1f,unit)*a*4f;
+                    vertices[i][2]+=a*0.35f; break;
+                case 3: case 11:
+                    vertices[i][0]+=nx/len*a*1.2f; vertices[i][1]+=ny/len*a*1.2f;
+                    vertices[i][2]+=nz/len*a*1.2f; break;
+                case 4:
+                    vertices[i][0]+=(meanX-nx)*a*1.8f;
+                    vertices[i][2]+=(meanZ-nz)*a*1.8f; break;
+                case 5: case 9: case 20:
+                    vertices[i][1]+=(meanY-ny)*Math.abs(a)*1.5f; break;
+                case 6: case 22:
+                    vertices[i][0]-=nx/len*a; vertices[i][1]-=ny/len*a;
+                    vertices[i][2]-=nz/len*a; break;
+                case 7: vertexMask[i]=Math.min(1f,vertexMask[i]+weight*0.65f); break;
+                case 18:
+                    if(Math.abs(nx)>0.85f || Math.abs(ny)>0.85f || Math.abs(nz)>0.85f)
+                        vertices[i][1]+=a; break;
+                default: vertices[i][0]+=a*0.25f; break;
+            }
+        }
+        if(sculptBrush==11) for(int i=0;i<vertexMask.length;i++) vertexMask[i]=Math.max(0f,vertexMask[i]-0.2f);
+        invalidate();
     }
 
     private float pointerDistance(MotionEvent e) {
