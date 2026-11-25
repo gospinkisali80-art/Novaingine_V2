@@ -99,6 +99,11 @@ public final class ManualSculptWorkspace extends FrameLayout {
     };
     private final ArrayList<TextView> workspaceTabs = new ArrayList<>();
     private int activeWorkspaceIndex;
+    private FrameLayout workspaceLayoutLayer;
+    private LinearLayout workspaceToolbar;
+    private LinearLayout workspaceLeftDock;
+    private LinearLayout workspaceRightDock;
+    private LinearLayout workspaceBottomDock;
     private final Handler timelineHandler = new Handler(Looper.getMainLooper());
     private boolean timelinePlaying;
     private long timelineStartMs;
@@ -255,6 +260,12 @@ public final class ManualSculptWorkspace extends FrameLayout {
         status.setText("Meshy3D  |  " + WORKSPACE_NAMES[activeWorkspaceIndex]);
         status.setTextColor(0xFFB8C4D1);
         status.setTextSize(9);
+        workspaceLayoutLayer = new FrameLayout(activity);
+        FrameLayout.LayoutParams layerParams = new FrameLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT);
+        layerParams.topMargin = dp(86);
+        addView(workspaceLayoutLayer, layerParams);
+        renderWorkspaceLayout(0);
     }
 
     public void setActiveWorkspaceIndex(int index) {
@@ -274,6 +285,200 @@ public final class ManualSculptWorkspace extends FrameLayout {
             }
         }
         if (status != null) status.setText("Meshy3D  |  " + WORKSPACE_NAMES[index]);
+        renderWorkspaceLayout(index);
+    }
+
+    private TextView dockHeading(String text) {
+        TextView view = new TextView(activity);
+        view.setText(text.toUpperCase());
+        view.setTextColor(0xFFFFB45A);
+        view.setTextSize(10);
+        view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        view.setPadding(dp(9), dp(8), dp(7), dp(6));
+        return view;
+    }
+
+    private TextView dockItem(String text, boolean selected) {
+        TextView view = new TextView(activity);
+        view.setText(text);
+        view.setTextColor(selected ? Color.WHITE : 0xFFD0D6DE);
+        view.setTextSize(10);
+        view.setPadding(dp(9), dp(7), dp(7), dp(7));
+        if (selected) {
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(0xFF394654);
+            bg.setCornerRadius(dp(3));
+            view.setBackground(bg);
+        }
+        return view;
+    }
+
+    private LinearLayout createDock(String title, int width, int gravity) {
+        LinearLayout dock = new LinearLayout(activity);
+        dock.setOrientation(LinearLayout.VERTICAL);
+        dock.setBackgroundColor(0xF0181D24);
+        dock.addView(dockHeading(title), new LinearLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                dp(width), LayoutParams.MATCH_PARENT, gravity);
+        params.topMargin = dp(36);
+        params.bottomMargin = dp(8);
+        params.leftMargin = dp(6);
+        params.rightMargin = dp(6);
+        workspaceLayoutLayer.addView(dock, params);
+        return dock;
+    }
+
+    private void addDockItems(LinearLayout dock, String heading, String... items) {
+        dock.addView(dockHeading(heading));
+        for (String item : items) dock.addView(dockItem(item, false));
+    }
+
+    private void renderWorkspaceLayout(int index) {
+        if (workspaceLayoutLayer == null) return;
+        workspaceLayoutLayer.removeAllViews();
+        workspaceToolbar = new LinearLayout(activity);
+        workspaceToolbar.setGravity(Gravity.CENTER_VERTICAL);
+        workspaceToolbar.setBackgroundColor(0xE02B333D);
+        workspaceToolbar.setPadding(dp(6), 0, dp(6), 0);
+        HorizontalScrollView toolbarScroll = new HorizontalScrollView(activity);
+        toolbarScroll.setHorizontalScrollBarEnabled(false);
+        toolbarScroll.addView(workspaceToolbar, new HorizontalScrollView.LayoutParams(
+                LayoutParams.WRAP_CONTENT, dp(32)));
+        FrameLayout.LayoutParams toolbarParams = new FrameLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, dp(32), Gravity.TOP);
+        workspaceLayoutLayer.addView(toolbarScroll, toolbarParams);
+
+        String[] tools;
+        String leftTitle;
+        String rightTitle;
+        String bottomTitle = null;
+        String[] leftItems;
+        String[] rightItems;
+        String[] bottomItems = null;
+        switch (index) {
+            case 0:
+                tools = new String[]{"Select", "Move", "Rotate", "Scale", "Add", "Camera View"};
+                leftTitle = "Scene Outliner";
+                leftItems = new String[]{"Scene Collection", "  Camera", "  Cube", "  Light", "Collections"};
+                rightTitle = "Object Properties";
+                rightItems = new String[]{"Transform", "Location  X 0  Y 0  Z 0", "Rotation  X 0  Y 0  Z 0",
+                        "Scale  X 1  Y 1  Z 1", "Object Data", "Modifiers", "Materials"};
+                bottomTitle = "Timeline";
+                bottomItems = new String[]{"Current Frame: 1", "Start: 1", "End: 250", "Playback Controls"};
+                break;
+            case 1:
+                tools = new String[]{"Vertex Select", "Edge Select", "Face Select", "Extrude", "Inset", "Bevel", "Loop Cut", "Subdivide"};
+                leftTitle = "Modeling Tools";
+                leftItems = new String[]{"Select", "Transform", "Extrude", "Inset", "Bevel", "Loop Cut", "Subdivide",
+                        "Merge by Distance", "Knife Split"};
+                rightTitle = "Tool Properties";
+                rightItems = new String[]{"Active Tool", "Selection Mode", "Operation Amount", "Mesh Statistics",
+                        "Vertices", "Edges", "Faces"};
+                bottomTitle = "Mesh Information";
+                bottomItems = new String[]{"Object Mode / Edit Mode", "Selected Mesh", "Topology Overview"};
+                break;
+            case 2:
+                tools = new String[]{"Draw", "Smooth", "Grab", "Inflate", "Pinch", "Flatten", "Crease", "Mask"};
+                leftTitle = "Sculpt Brushes";
+                leftItems = BRUSHES;
+                rightTitle = "Brush Settings";
+                rightItems = new String[]{"Radius", "Strength", "Falloff", "Pressure", "Symmetry", "Add / Subtract"};
+                bottomTitle = "Sculpt Options";
+                bottomItems = new String[]{"Brush Preview", "Stroke Method", "Dyntopo / Remesh options"};
+                break;
+            case 3:
+                tools = new String[]{"Select", "Move UV", "Rotate UV", "Scale UV", "Pin", "Unpin", "Pack Islands"};
+                leftTitle = "UV Tools";
+                leftItems = new String[]{"Select", "Move", "Rotate", "Scale", "Pin", "Unpin", "Pack Islands"};
+                rightTitle = "UV Properties";
+                rightItems = new String[]{"UV Maps", "Island Transform", "Unwrap Options", "Image Settings"};
+                bottomTitle = "UV Editor";
+                bottomItems = new String[]{"UV workspace panel", "Image / UV canvas area", "UV island controls"};
+                break;
+            case 4:
+                tools = new String[]{"Draw", "Soften", "Smear", "Clone", "Fill", "Mask"};
+                leftTitle = "Paint Tools";
+                leftItems = new String[]{"Draw", "Soften", "Smear", "Clone", "Fill", "Mask"};
+                rightTitle = "Texture Properties";
+                rightItems = new String[]{"Active Texture", "Brush Color", "Brush Radius", "Strength", "Blend Mode", "Texture Slots"};
+                bottomTitle = "Image Editor";
+                bottomItems = new String[]{"Texture image area", "Image Slots", "Paint Layers"};
+                break;
+            case 5:
+                tools = new String[]{"New Material", "Preview", "Add Node", "Connect", "Frame", "Search"};
+                leftTitle = "Material Browser";
+                leftItems = new String[]{"Scene Materials", "Material Preview", "Surface", "Principled Shader"};
+                rightTitle = "Shader Properties";
+                rightItems = new String[]{"Base Color", "Metallic", "Roughness", "Normal", "Alpha", "Emission"};
+                bottomTitle = "Shader Editor";
+                bottomItems = new String[]{"Material Node Graph", "Add Node", "Connect Node Sockets"};
+                break;
+            case 6:
+                tools = new String[]{"Select", "Move", "Rotate", "Scale", "Insert Keyframe", "Play"};
+                leftTitle = "Animation Channels";
+                leftItems = new String[]{"Scene", "Object Transforms", "Location", "Rotation", "Scale", "Keyframes"};
+                rightTitle = "Keyframe Properties";
+                rightItems = new String[]{"Frame", "Interpolation", "Handle Type", "Playback Range"};
+                bottomTitle = "Dope Sheet / Timeline";
+                bottomItems = new String[]{"Frame 1", "Keyframe Track", "Play / Pause", "Start / End"};
+                break;
+            case 7:
+                tools = new String[]{"Render Image", "Render Animation", "Preview", "Camera View", "Settings"};
+                leftTitle = "Render Settings";
+                leftItems = new String[]{"Render Engine", "Sampling", "Resolution", "Frame Range", "Output Format"};
+                rightTitle = "Output Properties";
+                rightItems = new String[]{"Resolution", "Frame Rate", "File Format", "Output Path", "Color Management"};
+                bottomTitle = "Render Status";
+                bottomItems = new String[]{"Viewport Preview", "Render Queue", "Last Render"};
+                break;
+            case 8:
+                tools = new String[]{"Add Node", "Connect", "Reroute", "Frame", "Search", "Preview"};
+                leftTitle = "Compositor Nodes";
+                leftItems = new String[]{"Input", "Output", "Color", "Filter", "Distort", "Utilities"};
+                rightTitle = "Node Properties";
+                rightItems = new String[]{"Selected Node", "Inputs", "Outputs", "Properties", "Preview"};
+                bottomTitle = "Compositor Node Editor";
+                bottomItems = new String[]{"Node Graph Canvas", "Connect Sockets", "Backdrop Preview"};
+                break;
+            default:
+                tools = new String[]{"Add Node", "Search", "Connect", "Group", "Reroute", "Preview"};
+                leftTitle = "Geometry Node Library";
+                leftItems = new String[]{"Input", "Geometry", "Mesh", "Curve", "Instances", "Utilities", "Output"};
+                rightTitle = "Modifier Properties";
+                rightItems = new String[]{"Geometry Nodes Modifier", "Group Inputs", "Attributes", "Output Geometry"};
+                bottomTitle = "Geometry Node Editor";
+                bottomItems = new String[]{"Node Graph Canvas", "Group Inputs", "Group Outputs"};
+                break;
+        }
+        for (String tool : tools) {
+            TextView item = dockItem(tool, false);
+            item.setPadding(dp(9), dp(6), dp(9), dp(6));
+            workspaceToolbar.addView(item, new LinearLayout.LayoutParams(
+                    LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
+        }
+        workspaceLeftDock = createDock(leftTitle, index == 2 ? 126 : 142, Gravity.LEFT);
+        addDockItems(workspaceLeftDock, leftTitle, leftItems);
+        workspaceRightDock = createDock(rightTitle, index == 2 ? 142 : 156, Gravity.RIGHT);
+        addDockItems(workspaceRightDock, rightTitle, rightItems);
+        if (bottomTitle != null) {
+            workspaceBottomDock = new LinearLayout(activity);
+            workspaceBottomDock.setOrientation(LinearLayout.VERTICAL);
+            workspaceBottomDock.setBackgroundColor(0xF0181D24);
+            workspaceBottomDock.addView(dockHeading(bottomTitle));
+            for (String item : bottomItems) workspaceBottomDock.addView(dockItem(item, false));
+            FrameLayout.LayoutParams bottomParams = new FrameLayout.LayoutParams(
+                    LayoutParams.MATCH_PARENT, dp(index == 0 || index == 6 ? 72 : 82), Gravity.BOTTOM);
+            bottomParams.leftMargin = dp(154);
+            bottomParams.rightMargin = dp(166);
+            bottomParams.bottomMargin = dp(8);
+            workspaceLayoutLayer.addView(workspaceBottomDock, bottomParams);
+        }
+        if (index == 2) {
+            workspaceLeftDock.setVisibility(sculptEnabled ? View.VISIBLE : View.GONE);
+            workspaceRightDock.setVisibility(sculptEnabled ? View.VISIBLE : View.GONE);
+        }
+        status.setText("Meshy3D  |  " + WORKSPACE_NAMES[index] + " Workspace");
     }
 
     public int getActiveWorkspaceIndex() { return activeWorkspaceIndex; }
