@@ -76,7 +76,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private float pressure = 1.0f;
     private int symmetryAxis = 0;
     private boolean subtract;
-    private boolean sculptEnabled = true;
+    private boolean sculptEnabled = false;
     private boolean orbitMode = false;
     private TextView orbitButton;
     private EditText[] positionInputs = new EditText[3];
@@ -93,7 +93,6 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private final Handler timelineHandler = new Handler(Looper.getMainLooper());
     private boolean timelinePlaying;
     private long timelineStartMs;
-    private final Runnable timelineTick = this::advanceTimeline;
 
     public ManualSculptWorkspace(Activity activity, EngineSurface engine, Runnable onExit) {
         super(activity);
@@ -105,6 +104,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
         uiScale = Math.max(0.55f, Math.min(1.0f, availableHeightDp / 260.0f));
         setBackgroundColor(Color.TRANSPARENT);
         setClickable(false);
+
+        SculptTouchSurface viewportTouchSurface = new SculptTouchSurface();
+        addView(viewportTouchSurface, new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
         // Meshy3D is being rebuilt from the Blender reference one section at a time.
         // This pass contains ONLY the complete top header; the native viewport remains below.
@@ -232,7 +234,10 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
         }
 
-        status = label("Meshy3D", 9, 0xFFB8C4D1, false);
+        status = new TextView(activity);
+        status.setText("Meshy3D");
+        status.setTextColor(0xFFB8C4D1);
+        status.setTextSize(9);
     }
 
     private int dp(float value) {
@@ -334,6 +339,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
         }
 
         @Override public boolean onTouchEvent(MotionEvent event) {
+            if (event.getY() < dp(86)) return false;
             int action = event.getActionMasked();
             if (event.getPointerCount() == 1 && activeTransformMode == 0) {
                 if (action == MotionEvent.ACTION_DOWN) {
