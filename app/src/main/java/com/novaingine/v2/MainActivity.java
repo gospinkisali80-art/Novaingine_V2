@@ -752,6 +752,81 @@ public final class MainActivity extends Activity
         }
     }
 
+    public void showMeshyEditMenu(View anchor) {
+        android.widget.PopupMenu popup = new android.widget.PopupMenu(this, anchor);
+        String[] entries = {
+                "Undo", "Redo", "Extrude", "Inset", "Bevel",
+                "Loop Cut", "Subdivide", "Merge by Distance", "Knife Split"
+        };
+        for (int i = 0; i < entries.length; i++) popup.getMenu().add(0, i, i, entries[i]);
+        popup.setOnMenuItemClickListener(item -> {
+            performMeshyEditAction(item.getTitle().toString());
+            return true;
+        });
+        popup.show();
+    }
+
+    private void performMeshyEditAction(String action) {
+        if ("Undo".equals(action)) {
+            engineSurface.undoScene();
+            return;
+        }
+        if ("Redo".equals(action)) {
+            engineSurface.redoScene();
+            return;
+        }
+        final int operation;
+        switch (action) {
+            case "Extrude": operation = 0; break;
+            case "Inset": operation = 1; break;
+            case "Bevel": operation = 2; break;
+            case "Loop Cut": operation = 3; break;
+            case "Subdivide": operation = 4; break;
+            case "Merge by Distance": operation = 5; break;
+            case "Knife Split": operation = 6; break;
+            default: return;
+        }
+        LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+        int pad = (int)(16 * getResources().getDisplayMetrics().density);
+        form.setPadding(pad, pad, pad, 0);
+        EditText element = new EditText(this);
+        element.setSingleLine(true);
+        element.setInputType(android.text.InputType.TYPE_CLASS_NUMBER | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+        element.setHint("Element index (0 for default)");
+        element.setText("0");
+        form.addView(element);
+        EditText amount = new EditText(this);
+        amount.setSingleLine(true);
+        amount.setInputType(android.text.InputType.TYPE_CLASS_NUMBER | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+        amount.setHint("Amount / cut factor");
+        amount.setText(operation == 4 ? "1" : "0.1");
+        form.addView(amount);
+        new AlertDialog.Builder(this).setTitle(action)
+                .setMessage("Runs the selected native mesh operation on the active mesh. Select a supported editable mesh first.")
+                .setView(form)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Apply", (dialog, which) -> {
+                    int elementIndex;
+                    float value;
+                    try {
+                        elementIndex = Integer.parseInt(element.getText().toString().trim());
+                        value = Float.parseFloat(amount.getText().toString().trim());
+                    } catch (Exception error) {
+                        android.widget.Toast.makeText(this, "Enter a valid element index and amount.", android.widget.Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    engineSurface.modelSelectedMesh(operation, elementIndex, value, result -> {
+                        String message;
+                        if (result == 1) message = action + " completed.";
+                        else if (result == -1) message = "Select or create a supported custom mesh first.";
+                        else if (result == -2) message = "The 3D engine is not initialized.";
+                        else message = action + " could not be applied (result " + result + ").";
+                        android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show();
+                    });
+                }).show();
+    }
+
     private void openNovaDocumentPicker() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
