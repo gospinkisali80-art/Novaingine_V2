@@ -369,7 +369,7 @@ bool terrainScreenHit(float screenX, float screenY, float& hitX, float& hitZ, fl
     for(float distance=0.15f;distance<=500.0f;distance+=0.12f){
         const nova::Vec3 p=origin+ray*distance;
         if(p.x < -32.0f || p.x > 32.0f || p.z < -36.0f || p.z > 28.0f) continue;
-        bool found=false;float h=terrainHeightAt(p.x,p.z,found);
+        bool found=false;float h=terrainHeightAt(p.x,p.z,found,allowHole);
         if(found&&p.y<=h+0.04f){hitX=p.x;hitZ=p.z;hitY=h;return true;}
     }
     return false;
