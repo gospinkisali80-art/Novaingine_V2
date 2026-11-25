@@ -60,6 +60,7 @@ bool gSculptStrokeActive = false;
 bool gTerrainStrokeActive = false;
 bool gTerrainStrokeHasUndo = false;
 int gTerrainLodLevel = -1;
+bool gTerrainChunksDirty = true;
 bool gHasPreviousSculptHit = false;
 nova::Vec3 gPreviousSculptHit;
 nova::Vec3 gPreviousSculptNormal;
@@ -185,6 +186,7 @@ void restoreScene(const SceneSnapshot& snapshot) {
     }
     gRenderer.releaseAllMeshes();
     gTerrainLodLevel = -1;
+    gTerrainChunksDirty = true;
     for (const auto& entry : gCustomMeshes) gRenderer.uploadMesh(entry.first, entry.second);
     {
         std::lock_guard<std::mutex> qlock(gSculptQueueMutex);
@@ -354,7 +356,7 @@ bool syncLandscapeMeshFromData() {
     if (!updated.isValid()) return false;
     meshIt->second = std::move(updated);
     const bool ok = gRenderer.uploadMesh(terrain->id, meshIt->second);
-    if (ok) gTerrainLodLevel = -1;
+    if (ok) { gTerrainLodLevel = -1; gTerrainChunksDirty = true; }
     return ok;
 }
 
@@ -429,60 +431,89 @@ nova::Mesh buildTerrainLodMesh(const nova::Mesh& source, int stride) {
     return result;
 }
 
-void updateTerrainLod() {
-    nova::SceneObject* terrain = nullptr;
-    for (nova::SceneObject& object : gScene.getObjects()) {
-        if (object.name == "Landscape Terrain") { terrain = &object; break; }
-    }
-    if (!terrain) { gTerrainLodLevel = -1; return; }
-    auto meshIt = gCustomMeshes.find(terrain->id);
-    if (meshIt == gCustomMeshes.end()) { gTerrainLodLevel = -1; return; }
-
-    const float distance = nova::length(gCamera.position - nova::Vec3(0.0f, 0.0f, -4.0f));
-    const int level = distance < 55.0f ? 0 : (distance < 110.0f ? 1 : (distance < 190.0f ? 2 : 3));
-    if (level == gTerrainLodLevel) return;
-    const int stride = level == 0 ? 1 : (level == 1 ? 2 : (level == 2 ? 4 : 8));
-    nova::Mesh lodMesh = buildTerrainLodMesh(meshIt->second, stride);
-    if (lodMesh.isValid() && gRenderer.uploadMesh(terrain->id, lodMesh)) {
-        gTerrainLodLevel = level;
-    }
-}
-void stepLandscapeRigidBodies(float dt) {
-    dt=std::clamp(dt,0.0f,0.05f);
-    for(auto it=gLandscapeRigidBodies.begin();it!=gLandscapeRigidBodies.end();){
-        nova::SceneObject* object=gScene.find(it->first);
-        if(!object){it=gLandscapeRigidBodies.erase(it);continue;}
-        auto& body=it->second;
-        const float halfX=std::max(0.05f,std::fabs(object->transform.scale.x)*0.5f);
-        const float halfY=std::max(0.05f,std::fabs(object->transform.scale.y)*0.5f);
-        const float halfZ=std::max(0.05f,std::fabs(object->transform.scale.z)*0.5f);
-        const float previousBottom=object->transform.position.y-halfY;
-        body.velocity.y-=9.81f*dt;
-        object->transform.position=object->transform.position+body.velocity*dt;
-        bool found=false;
-        const float ground=terrainHeightAt(object->transform.position.x,object->transform.position.z,found);
-        if(found&&object->transform.position.y-halfY<ground){
-            object->transform.position.y=ground+halfY;
-            if(body.velocity.y<0.0f)body.velocity.y=-body.velocity.y*body.restitution;
-            if(std::fabs(body.velocity.y)<0.35f)body.velocity.y=0.0f;
-            const float drag=std::clamp(body.friction*dt,0.0f,1.0f);
-            body.velocity.x*=1.0f-drag;body.velocity.z*=1.0f-drag;
+nova::Mesh buildLandscapeChunkMesh(const nova::Mesh& source,
+    const nova::LandscapeSystem::Chunk& chunk, int stride) {
+    const auto& src=source.getVertices();
+    stride=std::clamp(stride,1,8);
+    const int side=chunk.quads/stride+1;
+    if(side<2)return nova::Mesh();
+    std::vector<nova::Vertex> vertices;
+    std::vector<uint32_t> indices;
+    vertices.reserve(static_cast<size_t>(side*side));
+    for(int z=0;z<=chunk.quads;z+=stride)
+        for(int x=0;x<=chunk.quads;x+=stride){
+            const int gx=chunk.x+x,gz=chunk.z+z;
+            vertices.push_back(src[static_cast<size_t>(gz*129+gx)]);
         }
-        for(const nova::SceneObject& other:gScene.getObjects()){
-            if(other.id==object->id||!other.visible||!other.isStatic||other.name=="Landscape Terrain")continue;
-            const auto box=nova::PhysicsWorld::boundsFor(other);
-            if(!box.valid)continue;
-            const auto p=object->transform.position;
-            if(p.x+halfX<=box.min.x||p.x-halfX>=box.max.x||
-               p.z+halfZ<=box.min.z||p.z-halfZ>=box.max.z)continue;
-            if(previousBottom>=box.max.y-0.12f&&p.y-halfY<=box.max.y){
-                object->transform.position.y=box.max.y+halfY;
-                if(body.velocity.y<0.0f)body.velocity.y=-body.velocity.y*body.restitution;
-                if(std::fabs(body.velocity.y)<0.35f)body.velocity.y=0.0f;
+    for(int z=0;z<side-1;++z)for(int x=0;x<side-1;++x){
+        const int gx=chunk.x+x*stride,gz=chunk.z+z*stride;
+        if(gLandscape.isHole(gx,gz))continue;
+        const uint32_t a=static_cast<uint32_t>(z*side+x),b=a+1,c=a+side,d=c+1;
+        indices.insert(indices.end(),{a,c,b,b,c,d});
+    }
+    nova::Mesh result(std::move(vertices),std::move(indices));
+    if(result.isValid())result.recalculateNormals();
+    return result;
+}
+
+void removeLandscapeChunkObjects() {
+    std::vector<uint32_t> remove;
+    for(const auto& object:gScene.getObjects())
+        if(object.name.rfind("Landscape Chunk ",0)==0)remove.push_back(object.id);
+    for(uint32_t id:remove){gRenderer.releaseMesh(id);gCustomMeshes.erase(id);gScene.removeObject(id);}
+    gTerrainChunksDirty=true;
+}
+
+void updateTerrainLod() {
+    nova::SceneObject* terrain=nullptr;
+    for(nova::SceneObject& object:gScene.getObjects())
+        if(object.name=="Landscape Terrain"){terrain=&object;break;}
+    if(!terrain||!gLandscape.valid())return;
+    terrain->visible=false;
+    auto rootIt=gCustomMeshes.find(terrain->id);
+    if(rootIt==gCustomMeshes.end())return;
+
+    const auto& chunks=gLandscape.chunks();
+    for(size_t i=0;i<chunks.size();++i){
+        const auto& chunk=chunks[i];
+        const float cx=gLandscape.originX()+(chunk.x+chunk.quads*0.5f)*gLandscape.spacing();
+        const float cz=gLandscape.originZ()+(chunk.z+chunk.quads*0.5f)*gLandscape.spacing();
+        const float dx=gCamera.position.x-cx,dz=gCamera.position.z-cz;
+        const float distance=std::sqrt(dx*dx+dz*dz);
+        const bool shouldLoad=distance<240.0f;
+        const int lod=distance<65.0f?0:(distance<125.0f?1:(distance<190.0f?2:3));
+        const bool wasLoaded=chunk.loaded;
+        const int oldLod=chunk.lod;
+        gLandscape.setChunkState(i,shouldLoad,lod);
+
+        const std::string name="Landscape Chunk "+std::to_string(i);
+        nova::SceneObject* chunkObject=nullptr;
+        for(nova::SceneObject& object:gScene.getObjects())
+            if(object.name==name){chunkObject=&object;break;}
+
+        if(!shouldLoad){
+            if(chunkObject){const uint32_t id=chunkObject->id;gRenderer.releaseMesh(id);gCustomMeshes.erase(id);gScene.removeObject(id);}
+            continue;
+        }
+        if(!chunkObject){
+            nova::Transform transform;
+            const nova::Color grass(0.28f,0.40f,0.19f,1.0f);
+            const uint32_t id=gScene.addObject(name,nova::PrimitiveType::Plane,transform,grass);
+            chunkObject=gScene.find(id);
+            if(!chunkObject)continue;
+            chunkObject->material.baseColor=nova::Vec3(grass.r,grass.g,grass.b);
+            chunkObject->material.roughness=0.94f;
+        }
+        if(gTerrainChunksDirty||!wasLoaded||oldLod!=lod||!gCustomMeshes.count(chunkObject->id)){
+            const int stride=lod==0?1:(lod==1?2:(lod==2?4:8));
+            nova::Mesh chunkMesh=buildLandscapeChunkMesh(rootIt->second,chunk,stride);
+            if(chunkMesh.isValid()){
+                gCustomMeshes[chunkObject->id]=std::move(chunkMesh);
+                gRenderer.uploadMesh(chunkObject->id,gCustomMeshes[chunkObject->id]);
             }
         }
-        ++it;
     }
+    gTerrainChunksDirty=false;
 }
 
 // Transform helpers use the same Rz * Ry * Rx order as Renderer::makeModelMatrix.
@@ -2571,7 +2602,8 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateTerrain(
     std::vector<uint32_t> oldTerrain;
     for (const nova::SceneObject& object : gScene.getObjects()) {
         if (object.name == "Landscape Terrain" ||
-            object.name.rfind("Terrain Tile ", 0) == 0) {
+            object.name.rfind("Terrain Tile ", 0) == 0 ||
+            object.name.rfind("Landscape Chunk ", 0) == 0) {
             oldTerrain.push_back(object.id);
         }
     }
@@ -2635,7 +2667,9 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateTerrain(
         gScene.removeObject(terrainId);
         return JNI_FALSE;
     }
+    terrain->visible = false;
     gTerrainLodLevel = -1;
+    gTerrainChunksDirty = true;
     gScene.select(terrainId);
     return JNI_TRUE;
 }
@@ -2844,7 +2878,7 @@ JNIEXPORT jboolean JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeSetLandscapeChunkSize(JNIEnv*,jclass,jint size) {
     std::lock_guard<std::mutex> lock(engineMutex);
     if(!gLandscape.valid())return JNI_FALSE;recordUndo(true);
-    gLandscape.buildChunks(std::clamp(static_cast<int>(size),8,128));return JNI_TRUE;
+    removeLandscapeChunkObjects();gLandscape.buildChunks(std::clamp(static_cast<int>(size),8,128));gTerrainChunksDirty=true;return JNI_TRUE;
 }
 
 JNIEXPORT jboolean JNICALL
