@@ -2678,6 +2678,123 @@ Java_com_novaingine_v2_NativeBridge_nativeSculptTerrainAtScreen(
     return syncLandscapeMeshFromData()?JNI_TRUE:JNI_FALSE;
 }
 
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativePaintTerrainAtScreen(
+    JNIEnv*, jclass, jfloat screenX, jfloat screenY,
+    jfloat radiusValue, jfloat strengthValue, jint material, jint phase
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if(!gInitialized||!gLandscape.valid())return JNI_FALSE;
+    if(phase==1){gTerrainStrokeActive=true;gTerrainStrokeHasUndo=false;}
+    if(phase==2){gTerrainStrokeActive=false;gTerrainStrokeHasUndo=false;gRenderer.setSculptCursor(false,nova::Vec3(),nova::Vec3(0,1,0),0.18f);return JNI_TRUE;}
+    float x=0,z=0,y=0;if(!terrainScreenHit(screenX,screenY,x,z,y))return JNI_FALSE;
+    if(!gTerrainStrokeActive||!gTerrainStrokeHasUndo){recordUndo(true);if(gTerrainStrokeActive)gTerrainStrokeHasUndo=true;}
+    const float radius=std::clamp(static_cast<float>(radiusValue),0.5f,24.0f);
+    const float strength=std::clamp(static_cast<float>(strengthValue),0.0f,1.0f);
+    const int layer=std::clamp(static_cast<int>(material),0,3);
+    bool changed=gLandscape.paint(x,z,radius,strength,layer);
+    gRenderer.setSculptCursor(true,nova::Vec3(x,y+0.02f,z),nova::Vec3(0,1,0),radius);
+    return changed&&syncLandscapeMeshFromData()?JNI_TRUE:JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeRunTerrainErosion(
+    JNIEnv*, jclass, jint type, jint iterations, jfloat strength
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if(!gInitialized||!gLandscape.valid())return JNI_FALSE;
+    recordUndo(true);
+    bool ok=false;
+    if(type==0)ok=gLandscape.hydraulicErosion(iterations,0.8f,2.2f,
+        std::clamp(static_cast<float>(strength),0.001f,1.0f),0.28f);
+    else ok=gLandscape.thermalErosion(iterations,
+        std::clamp(0.08f+strength*0.35f,0.02f,2.0f),
+        std::clamp(0.04f+strength*0.08f,0.005f,0.35f));
+    return ok&&syncLandscapeMeshFromData()?JNI_TRUE:JNI_FALSE;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeAddLandscapeLayer(JNIEnv* env,jclass,jstring nameValue) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if(!gInitialized||!gLandscape.valid()||!nameValue)return -1;
+    const char* chars=env->GetStringUTFChars(nameValue,nullptr);
+    if(!chars)return -1;std::string name(chars);env->ReleaseStringUTFChars(nameValue,chars);
+    recordUndo(true);return gLandscape.addLayer(name);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSelectLandscapeLayer(JNIEnv*,jclass,jint index) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    return gLandscape.selectLayer(index)?JNI_TRUE:JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetLandscapeLayerState(
+    JNIEnv*,jclass,jint index,jboolean visible,jboolean locked,jfloat heightAlpha,jfloat paintAlpha
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if(!gInitialized)return JNI_FALSE;recordUndo(true);
+    bool ok=gLandscape.setLayerState(index,visible==JNI_TRUE,locked==JNI_TRUE,heightAlpha,paintAlpha);
+    return ok&&syncLandscapeMeshFromData()?JNI_TRUE:JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeMoveLandscapeLayer(JNIEnv*,jclass,jint from,jint to) {
+    std::lock_guard<std::mutex> lock(engineMutex);if(!gInitialized)return JNI_FALSE;
+    recordUndo(true);bool ok=gLandscape.moveLayer(from,to);
+    return ok&&syncLandscapeMeshFromData()?JNI_TRUE:JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeDeleteLandscapeLayer(JNIEnv*,jclass,jint index) {
+    std::lock_guard<std::mutex> lock(engineMutex);if(!gInitialized)return JNI_FALSE;
+    recordUndo(true);bool ok=gLandscape.deleteLayer(index);
+    return ok&&syncLandscapeMeshFromData()?JNI_TRUE:JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetTerrainHoleAtScreen(
+    JNIEnv*,jclass,jfloat screenX,jfloat screenY,jboolean makeHole
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if(!gInitialized||!gLandscape.valid())return JNI_FALSE;
+    float x=0,z=0,y=0;if(!terrainScreenHit(screenX,screenY,x,z,y))return JNI_FALSE;
+    const int gx=std::clamp(static_cast<int>((x+32.0f)/0.5f),0,127);
+    const int gz=std::clamp(static_cast<int>((z+36.0f)/0.5f),0,127);
+    recordUndo(true);
+    return gLandscape.setHole(gx,gz,makeHole==JNI_TRUE)&&syncLandscapeMeshFromData()?JNI_TRUE:JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeAddLandscapeSpline(
+    JNIEnv* env,jclass,jfloatArray pointArray
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if(!gInitialized||!gLandscape.valid()||!pointArray)return JNI_FALSE;
+    const jsize count=env->GetArrayLength(pointArray);
+    if(count<6||count%3!=0||count>12288)return JNI_FALSE;
+    std::vector<jfloat> values(static_cast<size_t>(count));
+    env->GetFloatArrayRegion(pointArray,0,count,values.data());
+    if(env->ExceptionCheck()){env->ExceptionClear();return JNI_FALSE;}
+    std::vector<nova::LandscapeSystem::SplinePoint> points;
+    points.reserve(static_cast<size_t>(count/3));
+    for(jsize i=0;i<count;i+=3)points.push_back({values[i],values[i+1],std::clamp(values[i+2],0.5f,32.0f)});
+    recordUndo(true);
+    return gLandscape.addSpline(points)&&syncLandscapeMeshFromData()?JNI_TRUE:JNI_FALSE;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeGetLandscapeChunkCount(JNIEnv*,jclass) {
+    std::lock_guard<std::mutex> lock(engineMutex);return static_cast<jint>(gLandscape.chunks().size());
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetLandscapeChunkSize(JNIEnv*,jclass,jint size) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if(!gLandscape.valid())return JNI_FALSE;recordUndo(true);
+    gLandscape.buildChunks(std::clamp(static_cast<int>(size),8,128));return JNI_TRUE;
+}
+
 JNIEXPORT jint JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeGetFps(
     JNIEnv*,
