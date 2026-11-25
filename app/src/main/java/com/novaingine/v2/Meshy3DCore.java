@@ -357,8 +357,24 @@ public final class Meshy3DCore {
             if("Transform Geometry".equals(n.type)){for(float[] p:vertices){p[0]+=n.x;p[1]+=n.y;p[2]+=n.z;}}
             else if("Set Position".equals(n.type)){for(float[] p:vertices)p[1]+=n.value;}
             else if("Smooth".equals(n.type))smooth(.2f,1);
-            else if("Subdivide".equals(n.type))subdivide();
+            else if("Subdivide".equals(n.type)||"Subdivide Mesh".equals(n.type))subdivide();
+            else if("Delete Geometry".equals(n.type))deleteSelectedFaces();
+            else if("Set Material".equals(n.type))baseColor=(int)n.value;
+            else if("Random Value".equals(n.type)){Random random=new Random(7);for(float[] p:vertices){p[0]+=(random.nextFloat()-.5f)*n.value;p[1]+=(random.nextFloat()-.5f)*n.value;p[2]+=(random.nextFloat()-.5f)*n.value;}}
+            else if("Math".equals(n.type)){for(float[] p:vertices){p[0]*=n.value;p[1]*=n.value;p[2]*=n.value;}}
+            else if("Instance on Points".equals(n.type))duplicateMesh(n.x,n.y,n.z);
         }revision++;
+    }
+    private void deleteSelectedFaces(){
+        if(selectedFaces.isEmpty())return;
+        ArrayList<Face> keep=new ArrayList<>();for(int i=0;i<faces.size();i++)if(!selectedFaces.get(i))keep.add(faces.get(i));
+        faces.clear();faces.addAll(keep);clearSelection();rebuildEdges();
+    }
+    private void duplicateMesh(float dx,float dy,float dz){
+        int base=vertices.size(),count=vertices.size();ArrayList<float[]> copy=new ArrayList<>();
+        for(float[] p:vertices)copy.add(new float[]{p[0]+dx,p[1]+dy,p[2]+dz});
+        ArrayList<Face> extra=new ArrayList<>();for(Face f:faces){int[] ids=f.vertices.clone();for(int i=0;i<ids.length;i++)ids[i]+=base;extra.add(new Face(ids));}
+        vertices.addAll(copy);faces.addAll(extra);rebuildEdges();
     }
     public void addCompositorNode(String type,float value){Node n=new Node(type);n.value=value;compositorNodes.add(n);revision++;}
     public int getCompositorNodeCount(){return compositorNodes.size();}
