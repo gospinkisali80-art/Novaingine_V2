@@ -309,8 +309,11 @@ public final class Meshy3DViewport extends View {
         invalidate();
     }
     public void setMeshVisible(boolean visible){meshVisible=visible;invalidate();}
+    public void toggleMeshVisible(){meshVisible=!meshVisible;invalidate();}
     public void setShowFloorGrid(boolean visible){showFloorGrid=visible;invalidate();}
+    public void toggleFloorGrid(){showFloorGrid=!showFloorGrid;invalidate();}
     public void setShowTopology(boolean visible){showTopology=visible;invalidate();}
+    public void toggleTopology(){showTopology=!showTopology;invalidate();}
     public void setMeshTint(int color){meshTint=color|0xFF000000;invalidate();}
     public void setMaterialParameters(float metallicValue,float roughnessValue){
         metallic=Math.max(0f,Math.min(1f,metallicValue));roughness=Math.max(0.02f,Math.min(1f,roughnessValue));invalidate();
