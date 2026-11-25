@@ -1044,6 +1044,12 @@ public final class MainActivity extends Activity
     }
 
     private void meshyUndo() {
+        if (manualSculptWorkspace != null) {
+            boolean changed = manualSculptWorkspace.undoMeshEdit();
+            android.widget.Toast.makeText(this, changed ? "Meshy3D mesh edit undone."
+                    : "Meshy3D mesh undo history is empty.", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
         if (meshyUndo.isEmpty()) {
             android.widget.Toast.makeText(this, "Meshy3D editor history is empty.", android.widget.Toast.LENGTH_SHORT).show();
             return;
@@ -1057,6 +1063,12 @@ public final class MainActivity extends Activity
     }
 
     private void meshyRedo() {
+        if (manualSculptWorkspace != null) {
+            boolean changed = manualSculptWorkspace.redoMeshEdit();
+            android.widget.Toast.makeText(this, changed ? "Meshy3D mesh edit redone."
+                    : "Meshy3D mesh redo history is empty.", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
         if (meshyRedo.isEmpty()) {
             android.widget.Toast.makeText(this, "Meshy3D editor redo history is empty.", android.widget.Toast.LENGTH_SHORT).show();
             return;
@@ -1070,6 +1082,14 @@ public final class MainActivity extends Activity
     }
 
     private void showMeshyUndoHistory() {
+        if (manualSculptWorkspace != null) {
+            int count = manualSculptWorkspace.getMeshUndoCount();
+            new AlertDialog.Builder(this).setTitle("Meshy3D Undo History")
+                    .setMessage("Saved mesh edit checkpoints: " + count
+                            + "\nUse Undo and Redo to move through the document history.")
+                    .setPositiveButton("Close", null).show();
+            return;
+        }
         java.util.ArrayList<String> rows = new java.util.ArrayList<>();
         rows.add("Current state");
         for (int i = meshyUndo.size() - 1; i >= 0; i--) rows.add("Undo checkpoint " + (meshyUndo.size() - i));
