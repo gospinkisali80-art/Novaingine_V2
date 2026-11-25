@@ -192,6 +192,23 @@ uniform float uFogHeight;
 uniform float uFogFalloff;
 uniform vec3 uFogColor;
 uniform int uTerrainMaterial;
+uniform int uTerrainAlbedoMask;
+uniform int uTerrainNormalMask;
+uniform int uTerrainRoughnessMask;
+uniform float uTerrainTextureTiling;
+uniform sampler2D uTerrainAlbedo0;
+uniform sampler2D uTerrainNormal0;
+uniform sampler2D uTerrainRoughness0;
+uniform sampler2D uTerrainAlbedo1;
+uniform sampler2D uTerrainNormal1;
+uniform sampler2D uTerrainRoughness1;
+uniform sampler2D uTerrainAlbedo2;
+uniform sampler2D uTerrainNormal2;
+uniform sampler2D uTerrainRoughness2;
+uniform sampler2D uTerrainAlbedo3;
+uniform sampler2D uTerrainNormal3;
+uniform sampler2D uTerrainRoughness3;
+
 
 out vec4 fragColor;
 
@@ -305,22 +322,63 @@ void main() {
     );
 
     if (uTerrainMaterial == 1) {
+        vec2 terrainUV = vWorldPosition.xz * max(uTerrainTextureTiling, 0.001);
         float detail = terrainFbm(vWorldPosition.xz * 0.42);
         vec3 grass = mix(vec3(0.075, 0.16, 0.045), vec3(0.22, 0.34, 0.10), detail);
         vec3 rock = mix(vec3(0.19, 0.19, 0.18), vec3(0.42, 0.40, 0.36), detail);
         vec3 sand = mix(vec3(0.42, 0.32, 0.18), vec3(0.72, 0.58, 0.34), detail);
         vec3 snow = mix(vec3(0.68, 0.74, 0.78), vec3(0.96, 0.98, 1.0), detail);
+        if ((uTerrainAlbedoMask & 1) != 0) grass = texture(uTerrainAlbedo0, terrainUV).rgb;
+        if ((uTerrainAlbedoMask & 2) != 0) rock = texture(uTerrainAlbedo1, terrainUV).rgb;
+        if ((uTerrainAlbedoMask & 4) != 0) sand = texture(uTerrainAlbedo2, terrainUV).rgb;
+        if ((uTerrainAlbedoMask & 8) != 0) snow = texture(uTerrainAlbedo3, terrainUV).rgb;
         float steepness = 1.0 - clamp(N.y, 0.0, 1.0);
         float exposedRock = smoothstep(0.28, 0.82, steepness) * 0.28;
-        vec3 weights = vec3(vLayerWeights.x * (1.0 - exposedRock),
-                            max(vLayerWeights.y, exposedRock),
-                            vLayerWeights.z * (1.0 - exposedRock));
-        weights /= max(weights.x + weights.y + weights.z, 0.0001);
-        vec3 baseTerrain = grass * weights.x + rock * weights.y + sand * weights.z;
-        float snowAmount = clamp(vLayerWeights.w, 0.0, 1.0);
-        albedo = pow(max(mix(baseTerrain, snow, snowAmount), vec3(0.001)), vec3(2.2));
-        roughness = mix(0.92, 0.72, clamp(vLayerWeights.w, 0.0, 1.0));
+        vec4 weights = max(vLayerWeights, vec4(0.0));
+        weights.x *= 1.0 - exposedRock;
+        weights.y = max(weights.y, exposedRock);
+        float weightSum = max(dot(weights, vec4(1.0)), 0.0001);
+        weights /= weightSum;
+        vec3 baseTerrain = grass * weights.x + rock * weights.y + sand * weights.z + snow * weights.w;
+        albedo = pow(max(baseTerrain, vec3(0.001)), vec3(2.2));
+
+        vec4 layerRoughness = vec4(0.92, 0.78, 0.88, 0.72);
+        if ((uTerrainRoughnessMask & 1) != 0) layerRoughness.x = texture(uTerrainRoughness0, terrainUV).r;
+        if ((uTerrainRoughnessMask & 2) != 0) layerRoughness.y = texture(uTerrainRoughness1, terrainUV).r;
+        if ((uTerrainRoughnessMask & 4) != 0) layerRoughness.z = texture(uTerrainRoughness2, terrainUV).r;
+        if ((uTerrainRoughnessMask & 8) != 0) layerRoughness.w = texture(uTerrainRoughness3, terrainUV).r;
+        roughness = clamp(dot(layerRoughness, weights), 0.04, 1.0);
         metallic = 0.0;
+
+        vec3 tangentNormal = vec3(0.0, 0.0, 1.0);
+        vec3 weightedNormal = vec3(0.0);
+        float normalWeight = 0.0;
+        if ((uTerrainNormalMask & 1) != 0) {
+            weightedNormal += (texture(uTerrainNormal0, terrainUV).xyz * 2.0 - 1.0) * weights.x;
+            normalWeight += weights.x;
+        }
+        if ((uTerrainNormalMask & 2) != 0) {
+            weightedNormal += (texture(uTerrainNormal1, terrainUV).xyz * 2.0 - 1.0) * weights.y;
+            normalWeight += weights.y;
+        }
+        if ((uTerrainNormalMask & 4) != 0) {
+            weightedNormal += (texture(uTerrainNormal2, terrainUV).xyz * 2.0 - 1.0) * weights.z;
+            normalWeight += weights.z;
+        }
+        if ((uTerrainNormalMask & 8) != 0) {
+            weightedNormal += (texture(uTerrainNormal3, terrainUV).xyz * 2.0 - 1.0) * weights.w;
+            normalWeight += weights.w;
+        }
+        if (normalWeight > 0.0001) {
+            tangentNormal = normalize(weightedNormal / normalWeight);
+            vec3 dp1 = dFdx(vWorldPosition);
+            vec3 dp2 = dFdy(vWorldPosition);
+            vec2 duv1 = dFdx(terrainUV);
+            vec2 duv2 = dFdy(terrainUV);
+            vec3 tangent = normalize(dp1 * duv2.y - dp2 * duv1.y);
+            vec3 bitangent = normalize(-dp1 * duv2.x + dp2 * duv1.x);
+            N = normalize(mat3(tangent, bitangent, N) * tangentNormal);
+        }
     }
 
     // Material inspection modes bypass lighting and display the raw value.
@@ -823,6 +881,16 @@ void Renderer::shutdown() {
     destroyFullscreenQuad();
     destroyGridGeometry();
     destroyLineGeometry();
+
+    for (int layer = 0; layer < 4; ++layer) {
+        for (int mapType = 0; mapType < 3; ++mapType) {
+            if (terrainTextures_[layer][mapType]) {
+                glDeleteTextures(1, &terrainTextures_[layer][mapType]);
+                terrainTextures_[layer][mapType] = 0;
+            }
+        }
+    }
+    for (auto& mask : terrainTextureMask_) mask = 0;
 
     if (whiteTexture_) {
         glDeleteTextures(1, &whiteTexture_);
@@ -1402,6 +1470,40 @@ void Renderer::releaseGPUBuffer(GPUBuffer& buffer) {
     buffer = GPUBuffer{};
 }
 
+bool Renderer::setTerrainTexture(int layer, int mapType, int width, int height, const uint8_t* rgbaPixels) {
+    if (!initialized_ || !rgbaPixels || layer < 0 || layer >= 4 ||
+        mapType < 0 || mapType >= 3 || width < 1 || height < 1 ||
+        width > 4096 || height > 4096) return false;
+
+    GLuint& texture = terrainTextures_[layer][mapType];
+    if (texture) {
+        glDeleteTextures(1, &texture);
+        texture = 0;
+    }
+    glGenTextures(1, &texture);
+    if (!texture) return false;
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, rgbaPixels);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    const GLenum error = glGetError();
+    if (error != GL_NO_ERROR) {
+        NOVA_LOGE("Terrain texture upload failed (layer=%d map=%d GL=%u)", layer, mapType, error);
+        glDeleteTextures(1, &texture);
+        texture = 0;
+        terrainTextureMask_[mapType] &= ~(1u << layer);
+        return false;
+    }
+    terrainTextureMask_[mapType] |= (1u << layer);
+    return true;
+}
+
 void Renderer::releaseMesh(uint32_t objectId) {
     auto found = gpuBuffers_.find(objectId);
     if (found == gpuBuffers_.end()) return;
@@ -1675,6 +1777,49 @@ void Renderer::renderObject(
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, shadowTarget_.depthTexture);
         setIntUniform(sceneProgram_, "uShadowMap", 1);
+
+        const bool isTerrain = object.name == "Landscape Terrain" ||
+                               object.name.rfind("Landscape Chunk ", 0) == 0;
+        setIntUniform(sceneProgram_, "uTerrainAlbedoMask", isTerrain ? static_cast<int>(terrainTextureMask_[0]) : 0);
+        setIntUniform(sceneProgram_, "uTerrainNormalMask", isTerrain ? static_cast<int>(terrainTextureMask_[1]) : 0);
+        setIntUniform(sceneProgram_, "uTerrainRoughnessMask", isTerrain ? static_cast<int>(terrainTextureMask_[2]) : 0);
+        setFloatUniform(sceneProgram_, "uTerrainTextureTiling", 0.12f);
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, terrainTextures_[0][0] ? terrainTextures_[0][0] : whiteTexture_);
+        setIntUniform(sceneProgram_, "uTerrainAlbedo0", 2);
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_2D, terrainTextures_[0][1] ? terrainTextures_[0][1] : whiteTexture_);
+        setIntUniform(sceneProgram_, "uTerrainNormal0", 3);
+        glActiveTexture(GL_TEXTURE4);
+        glBindTexture(GL_TEXTURE_2D, terrainTextures_[0][2] ? terrainTextures_[0][2] : whiteTexture_);
+        setIntUniform(sceneProgram_, "uTerrainRoughness0", 4);
+        glActiveTexture(GL_TEXTURE5);
+        glBindTexture(GL_TEXTURE_2D, terrainTextures_[1][0] ? terrainTextures_[1][0] : whiteTexture_);
+        setIntUniform(sceneProgram_, "uTerrainAlbedo1", 5);
+        glActiveTexture(GL_TEXTURE6);
+        glBindTexture(GL_TEXTURE_2D, terrainTextures_[1][1] ? terrainTextures_[1][1] : whiteTexture_);
+        setIntUniform(sceneProgram_, "uTerrainNormal1", 6);
+        glActiveTexture(GL_TEXTURE7);
+        glBindTexture(GL_TEXTURE_2D, terrainTextures_[1][2] ? terrainTextures_[1][2] : whiteTexture_);
+        setIntUniform(sceneProgram_, "uTerrainRoughness1", 7);
+        glActiveTexture(GL_TEXTURE8);
+        glBindTexture(GL_TEXTURE_2D, terrainTextures_[2][0] ? terrainTextures_[2][0] : whiteTexture_);
+        setIntUniform(sceneProgram_, "uTerrainAlbedo2", 8);
+        glActiveTexture(GL_TEXTURE9);
+        glBindTexture(GL_TEXTURE_2D, terrainTextures_[2][1] ? terrainTextures_[2][1] : whiteTexture_);
+        setIntUniform(sceneProgram_, "uTerrainNormal2", 9);
+        glActiveTexture(GL_TEXTURE10);
+        glBindTexture(GL_TEXTURE_2D, terrainTextures_[2][2] ? terrainTextures_[2][2] : whiteTexture_);
+        setIntUniform(sceneProgram_, "uTerrainRoughness2", 10);
+        glActiveTexture(GL_TEXTURE11);
+        glBindTexture(GL_TEXTURE_2D, terrainTextures_[3][0] ? terrainTextures_[3][0] : whiteTexture_);
+        setIntUniform(sceneProgram_, "uTerrainAlbedo3", 11);
+        glActiveTexture(GL_TEXTURE12);
+        glBindTexture(GL_TEXTURE_2D, terrainTextures_[3][1] ? terrainTextures_[3][1] : whiteTexture_);
+        setIntUniform(sceneProgram_, "uTerrainNormal3", 12);
+        glActiveTexture(GL_TEXTURE13);
+        glBindTexture(GL_TEXTURE_2D, terrainTextures_[3][2] ? terrainTextures_[3][2] : whiteTexture_);
+        setIntUniform(sceneProgram_, "uTerrainRoughness3", 13);
         glActiveTexture(GL_TEXTURE0);
     }
 
