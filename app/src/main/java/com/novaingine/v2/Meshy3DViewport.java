@@ -357,5 +357,59 @@ public final class Meshy3DViewport extends View {
         invalidate();
     }
 
+    /** Serialize the actual editable Meshy3D mesh and viewport state. */
+    public org.json.JSONObject exportDocumentState() {
+        try {
+            org.json.JSONObject state = new org.json.JSONObject();
+            state.put("meshSubdivisions", MESH_SUBDIVISIONS);
+            state.put("vertexCount", vertices.length);
+            org.json.JSONArray vertexArray = new org.json.JSONArray();
+            org.json.JSONArray maskArray = new org.json.JSONArray();
+            for (int i = 0; i < vertices.length; i++) {
+                org.json.JSONArray point = new org.json.JSONArray();
+                point.put(vertices[i][0]); point.put(vertices[i][1]); point.put(vertices[i][2]);
+                vertexArray.put(point);
+                maskArray.put(vertexMask[i]);
+            }
+            state.put("vertices", vertexArray);
+            state.put("mask", maskArray);
+            state.put("yaw", yaw); state.put("pitch", pitch); state.put("zoom", zoom);
+            return state;
+        } catch (org.json.JSONException error) {
+            throw new IllegalStateException("Could not serialize Meshy3D mesh", error);
+        }
+    }
+
+    /** Restore mesh coordinates only when the saved topology matches this editor build. */
+    public boolean importDocumentState(org.json.JSONObject state) {
+        if (state == null) return false;
+        try {
+            org.json.JSONArray savedVertices = state.getJSONArray("vertices");
+            if (savedVertices.length() != vertices.length) return false;
+            org.json.JSONArray savedMask = state.optJSONArray("mask");
+            for (int i = 0; i < vertices.length; i++) {
+                org.json.JSONArray point = savedVertices.getJSONArray(i);
+                if (point.length() != 3) return false;
+                for (int axis = 0; axis < 3; axis++) {
+                    double value = point.getDouble(axis);
+                    if (Double.isNaN(value) || Double.isInfinite(value) || Math.abs(value) > 100000.0) return false;
+                }
+            }
+            for (int i = 0; i < vertices.length; i++) {
+                org.json.JSONArray point = savedVertices.getJSONArray(i);
+                for (int axis = 0; axis < 3; axis++) vertices[i][axis] = (float) point.getDouble(axis);
+                vertexMask[i] = savedMask != null && i < savedMask.length()
+                        ? Math.max(0f, Math.min(1f, (float) savedMask.optDouble(i, 0.0))) : 0f;
+            }
+            yaw = (float) state.optDouble("yaw", yaw);
+            pitch = Math.max(-1.35f, Math.min(1.35f, (float) state.optDouble("pitch", pitch)));
+            zoom = Math.max(0.35f, Math.min(3.4f, (float) state.optDouble("zoom", zoom)));
+            invalidate();
+            return true;
+        } catch (Exception error) {
+            return false;
+        }
+    }
+
     @Override public boolean performClick(){super.performClick();return true;}
 }
