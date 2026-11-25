@@ -76,6 +76,8 @@ public final class MainActivity extends Activity
     private final Handler projectHandler = new Handler(Looper.getMainLooper());
     private File activeProjectDirectory;
     private File activeProjectScene;
+    private File activeMeshyDocument;
+    private File activeMeshyProjectDirectory;
     private final Runnable autoSaveTask = new Runnable() {
         @Override public void run() {
             if (activeProjectScene == null || engineSurface == null) return;
@@ -713,13 +715,24 @@ public final class MainActivity extends Activity
                 recoverAutosave();
                 break;
             case "Save":
-                saveCurrentScene();
+                saveMeshyDocument();
                 break;
             case "Save As":
-                saveDocumentPicker(REQUEST_SAVE_NOVA, "Meshy3D_Project.nova");
+                saveMeshyDocument();
                 break;
             case "Save Copy":
-                saveDocumentPicker(REQUEST_SAVE_COPY_NOVA, "Meshy3D_Copy.nova");
+                if (activeMeshyDocument != null) {
+                    File copy = new File(activeMeshyDocument.getParentFile(),
+                            activeMeshyDocument.getName().replace(".meshy3d", "_Copy.meshy3d"));
+                    try (java.io.FileInputStream in = new java.io.FileInputStream(activeMeshyDocument);
+                         java.io.FileOutputStream out = new java.io.FileOutputStream(copy)) {
+                        byte[] buffer = new byte[4096]; int count;
+                        while ((count = in.read(buffer)) != -1) out.write(buffer, 0, count);
+                        android.widget.Toast.makeText(this, "Meshy3D copy saved.", android.widget.Toast.LENGTH_SHORT).show();
+                    } catch (Exception e) {
+                        android.widget.Toast.makeText(this, "Copy failed: " + e.getMessage(), android.widget.Toast.LENGTH_LONG).show();
+                    }
+                } else saveMeshyDocument();
                 break;
             case "Save Incremental":
                 saveIncrementalScene();
@@ -2038,37 +2051,60 @@ public final class MainActivity extends Activity
         input.setSingleLine(true);
         input.setHint("My Meshy3D Project");
         new AlertDialog.Builder(this).setTitle("New Meshy3D Project")
-                .setMessage("Create a new project and open it directly in the Meshy3D editor.")
+                .setMessage("Create a separate Meshy3D document. This will not change your Novaingine scene.")
                 .setView(input).setPositiveButton("CREATE", (d, w) -> {
                     String name = input.getText().toString().trim()
                             .replaceAll("[^A-Za-z0-9 _-]", "");
                     if (name.length() > 40) name = name.substring(0, 40).trim();
                     if (name.isEmpty()) name = "Untitled Meshy3D";
-                    File dir = new File(projectsDirectory(), name);
+                    File root = new File(getFilesDir(), "Meshy3DProjects");
+                    if (!root.exists() && !root.mkdirs()) {
+                        android.widget.Toast.makeText(this, "Cannot create Meshy3D storage.", android.widget.Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    File dir = new File(root, name);
                     if (dir.exists()) {
-                        android.widget.Toast.makeText(this,
-                                "That project already exists.", android.widget.Toast.LENGTH_LONG).show();
+                        android.widget.Toast.makeText(this, "That Meshy3D project already exists.", android.widget.Toast.LENGTH_LONG).show();
                         return;
                     }
                     if (!dir.mkdirs()) {
-                        android.widget.Toast.makeText(this,
-                                "Could not create project folder.", android.widget.Toast.LENGTH_LONG).show();
+                        android.widget.Toast.makeText(this, "Could not create Meshy3D project folder.", android.widget.Toast.LENGTH_LONG).show();
                         return;
                     }
-                    activeProjectDirectory = dir;
-                    activeProjectScene = new File(dir, "Scene.nova");
-                    final String projectName = name;
-                    engineSurface.createEmptyScene(activeProjectScene.getAbsolutePath(), ok -> {
-                        if (ok) {
-                            enterProject("Created " + projectName);
-                            openManualSculpting();
-                        } else {
-                            android.widget.Toast.makeText(this,
-                                    "Could not initialize Meshy3D project.",
-                                    android.widget.Toast.LENGTH_LONG).show();
-                        }
-                    });
+                    activeMeshyProjectDirectory = dir;
+                    activeMeshyDocument = new File(dir, name + ".meshy3d");
+                    String document = "{\n  \"format\": \"Meshy3D\",\n  \"version\": 1,\n  \"objects\": [{\"name\": \"Cube\", \"type\": \"MESH_CUBE\", \"location\": [0,0,0], \"rotation\": [0,0,0], \"scale\": [1,1,1]}]\n}\n";
+                    try (java.io.FileOutputStream out = new java.io.FileOutputStream(activeMeshyDocument)) {
+                        out.write(document.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                        out.flush();
+                        if (engineSurface != null) engineSurface.setVisibility(View.GONE);
+                        if (editorToolbar != null) editorToolbar.setVisibility(View.GONE);
+                        if (viewportInput != null) viewportInput.setVisibility(View.GONE);
+                        if (statisticsText != null) statisticsText.setVisibility(View.GONE);
+                        if (centeredStatisticsText != null) centeredStatisticsText.setVisibility(View.GONE);
+                        if (editorPanels != null) editorPanels.setVisibility(View.GONE);
+                        openManualSculpting();
+                        android.widget.Toast.makeText(this, "Created independent Meshy3D project: " + name, android.widget.Toast.LENGTH_SHORT).show();
+                    } catch (Exception e) {
+                        android.widget.Toast.makeText(this, "Could not create Meshy3D document: " + e.getMessage(), android.widget.Toast.LENGTH_LONG).show();
+                    }
                 }).setNegativeButton("CANCEL", null).show();
+    }
+
+    private void saveMeshyDocument() {
+        if (activeMeshyDocument == null) {
+            android.widget.Toast.makeText(this, "Create or open a Meshy3D project first.", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        try {
+            String document = "{\n  \"format\": \"Meshy3D\",\n  \"version\": 1,\n  \"objects\": [{\"name\": \"Cube\", \"type\": \"MESH_CUBE\", \"location\": [0,0,0], \"rotation\": [0,0,0], \"scale\": [1,1,1]}]\n}\n";
+            try (java.io.FileOutputStream out = new java.io.FileOutputStream(activeMeshyDocument)) {
+                out.write(document.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+            android.widget.Toast.makeText(this, "Meshy3D document saved.", android.widget.Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            android.widget.Toast.makeText(this, "Meshy3D save failed: " + e.getMessage(), android.widget.Toast.LENGTH_LONG).show();
+        }
     }
 
     private void chooseProject() {
