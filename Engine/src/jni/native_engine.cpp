@@ -593,6 +593,10 @@ Java_com_novaingine_v2_NativeBridge_nativeInit(
 
     nova::SceneFactory::buildDefaultScene(gScene);
 
+    // Frame the default cube in the centre of the Meshy3D viewport.
+    gCamera.position = nova::Vec3(0.0f, 2.35f, 8.0f);
+    setCameraDirection(nova::Vec3(0.0f, 1.0f, 0.0f) - gCamera.position);
+
     if (!gRenderer.initialize()) {
         NOVA_LOG("Renderer initialization failed");
         gInitialized = false;
@@ -752,7 +756,9 @@ Java_com_novaingine_v2_NativeBridge_nativeZoom(
         return;
     }
 
-    gCamera.zoom(static_cast<float>(scale));
+    // Damp pinch changes so zooming is gradual and controllable.
+    const float gentleScale = 1.0f + (static_cast<float>(scale) - 1.0f) * 0.20f;
+    gCamera.zoom(gentleScale);
 }
 
 JNIEXPORT void JNICALL
