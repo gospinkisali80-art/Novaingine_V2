@@ -43,6 +43,7 @@ public final class EngineSurface extends GLSurfaceView
     private volatile float terrainBrushStrength = 0.35f;
     private volatile boolean terrainPaintMode;
     private volatile boolean terrainHoleMode;
+    private volatile boolean terrainHoleValue = true;
     private volatile int terrainMaterial = 0;
 
     public EngineSurface(Context context) {
@@ -355,8 +356,9 @@ public final class EngineSurface extends GLSurfaceView
         terrainBrushStrength = Math.max(0.0f, Math.min(1.0f, strength));
     }
 
-    public void setTerrainHoleMode(boolean enabled) {
+    public void setTerrainHoleMode(boolean enabled, boolean makeHole) {
         terrainHoleMode = enabled;
+        terrainHoleValue = makeHole;
         terrainPaintMode = false;
         terrainSculptMode = false;
     }
@@ -619,7 +621,8 @@ public final class EngineSurface extends GLSurfaceView
         if (terrainHoleMode) {
             if (event.getActionMasked() == MotionEvent.ACTION_UP) {
                 final float x = event.getX(), y = event.getY();
-                queueEvent(() -> NativeBridge.nativeSetTerrainHoleAtScreen(x, y, true));
+                final boolean makeHole = terrainHoleValue;
+                queueEvent(() -> NativeBridge.nativeSetTerrainHoleAtScreen(x, y, makeHole));
             }
             return true;
         }
