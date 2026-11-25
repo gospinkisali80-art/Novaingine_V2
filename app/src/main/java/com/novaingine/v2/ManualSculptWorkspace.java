@@ -99,6 +99,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
     };
     private final ArrayList<TextView> workspaceTabs = new ArrayList<>();
     private int activeWorkspaceIndex;
+    private int workspaceTransitionToken;
     private FrameLayout workspaceLayoutLayer;
     private LinearLayout workspaceToolbar;
     private LinearLayout workspaceLeftDock;
@@ -269,6 +270,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
 
     public void setActiveWorkspaceIndex(int index) {
         if (index < 0 || index >= WORKSPACE_NAMES.length) return;
+        int previousIndex = activeWorkspaceIndex;
+        boolean shouldSlide = workspaceLayoutLayer != null && previousIndex != index;
         activeWorkspaceIndex = index;
         for (int i = 0; i < workspaceTabs.size(); i++) {
             TextView tab = workspaceTabs.get(i);
@@ -283,8 +286,31 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 tab.setBackgroundColor(Color.TRANSPARENT);
             }
         }
-        if (status != null) status.setText("Meshy3D  |  " + WORKSPACE_NAMES[index]);
-        renderWorkspaceLayout(index);
+        if (status != null) status.setText("Meshy3D  |  " + WORKSPACE_NAMES[index] + " Workspace");
+        if (!shouldSlide) {
+            renderWorkspaceLayout(index);
+            return;
+        }
+
+        // Slide the previous workspace out, rebuild its replacement, then slide it in.
+        final int transition = ++workspaceTransitionToken;
+        final float direction = index > previousIndex ? 1.0f : -1.0f;
+        workspaceLayoutLayer.animate().cancel();
+        workspaceLayoutLayer.animate()
+                .translationX(direction * dp(54))
+                .alpha(0.0f)
+                .setDuration(145)
+                .withEndAction(() -> {
+                    if (transition != workspaceTransitionToken || workspaceLayoutLayer == null) return;
+                    renderWorkspaceLayout(index);
+                    workspaceLayoutLayer.setTranslationX(-direction * dp(54));
+                    workspaceLayoutLayer.animate()
+                            .translationX(0.0f)
+                            .alpha(1.0f)
+                            .setDuration(185)
+                            .start();
+                })
+                .start();
     }
 
     private TextView dockHeading(String text) {
@@ -366,14 +392,18 @@ public final class ManualSculptWorkspace extends FrameLayout {
         String[] bottomItems = null;
         switch (index) {
             case 0:
-                tools = new String[]{"Select", "Move", "Rotate", "Scale", "Add", "Camera View"};
+                tools = new String[]{"Select Box", "3D Cursor", "Move", "Rotate", "Scale", "Transform",
+                        "Annotate", "Measure", "Add", "Camera View"};
                 leftTitle = "Scene Outliner";
-                leftItems = new String[]{"Scene Collection", "  Camera", "  Cube", "  Light", "Collections"};
-                rightTitle = "Object Properties";
-                rightItems = new String[]{"Transform", "Location  X 0  Y 0  Z 0", "Rotation  X 0  Y 0  Z 0",
-                        "Scale  X 1  Y 1  Z 1", "Object Data", "Modifiers", "Materials"};
+                leftItems = new String[]{"Scene Collection", "Collection", "  Camera", "  Cube", "  Light",
+                        "Add Collection", "Filter Objects", "Hide / Show Objects"};
+                rightTitle = "Properties Editor";
+                rightItems = new String[]{"Tool", "Render", "Output", "View Layer", "Scene", "World",
+                        "Collection", "Object", "Modifiers", "Particles", "Physics", "Constraints",
+                        "Object Data", "Material"};
                 bottomTitle = "Timeline";
-                bottomItems = new String[]{"Current Frame: 1", "Start: 1", "End: 250", "Playback Controls"};
+                bottomItems = new String[]{"Current Frame: 1", "Playback Controls", "Start Frame: 1",
+                        "End Frame: 250", "Keyframes"};
                 break;
             case 1:
                 tools = new String[]{"Vertex Select", "Edge Select", "Face Select", "Extrude", "Inset", "Bevel", "Loop Cut", "Subdivide"};
