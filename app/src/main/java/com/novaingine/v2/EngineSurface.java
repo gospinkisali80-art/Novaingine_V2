@@ -438,6 +438,14 @@ public final class EngineSurface extends GLSurfaceView
         });
     }
 
+    public void createLandscapeCave(float[] pathPoints, float radius, java.util.function.Consumer<Boolean> callback) {
+        float[] copy = pathPoints.clone();
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeCreateLandscapeCave(copy, radius);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
+    }
+
     public void setLandscapeChunkSize(int size, java.util.function.Consumer<Boolean> callback) {
         queueEvent(() -> {
             boolean ok = NativeBridge.nativeSetLandscapeChunkSize(size);
