@@ -104,816 +104,135 @@ public final class ManualSculptWorkspace extends FrameLayout {
         float availableHeightDp = getResources().getDisplayMetrics().heightPixels / density;
         uiScale = Math.max(0.55f, Math.min(1.0f, availableHeightDp / 260.0f));
         setBackgroundColor(Color.TRANSPARENT);
+        setClickable(false);
 
-        SculptTouchSurface touch = new SculptTouchSurface();
+        // Meshy3D is being rebuilt from the Blender reference one section at a time.
+        // This pass contains ONLY the complete top header; the native viewport remains below.
+        LinearLayout topStack = new LinearLayout(activity);
+        topStack.setOrientation(LinearLayout.VERTICAL);
+        topStack.setBackgroundColor(0xFF202020);
+        FrameLayout.LayoutParams stackParams = new FrameLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.TOP);
+        addView(topStack, stackParams);
 
-        // Reference-matched editor: fixed top bar, left brush workspace, open viewport,
-        // right tool rail and bottom shortcut shelf. The GL surface remains visible below.
-        LinearLayout root = new LinearLayout(activity);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.TRANSPARENT);
-        FrameLayout.LayoutParams rootParams = new FrameLayout.LayoutParams(
-                LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT);
-        addView(root, rootParams);
+        // Window title row.
+        LinearLayout titleRow = new LinearLayout(activity);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        titleRow.setPadding(dp(7), 0, dp(9), 0);
+        titleRow.setBackgroundColor(0xFF171717);
+        topStack.addView(titleRow, new LinearLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, dp(25)));
+        TextView appMark = new TextView(activity);
+        appMark.setText("◉");
+        appMark.setTextColor(0xFFFF8A32);
+        appMark.setTextSize(15);
+        appMark.setGravity(Gravity.CENTER);
+        titleRow.addView(appMark, new LinearLayout.LayoutParams(dp(23), LayoutParams.MATCH_PARENT));
+        TextView windowTitle = new TextView(activity);
+        windowTitle.setText("(Unsaved) - Meshy3D");
+        windowTitle.setTextColor(0xFFE1E1E1);
+        windowTitle.setTextSize(11);
+        windowTitle.setGravity(Gravity.CENTER_VERTICAL);
+        titleRow.addView(windowTitle, new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f));
+        TextView windowVersion = new TextView(activity);
+        windowVersion.setText("Meshy3D Editor");
+        windowVersion.setTextColor(0xFF929292);
+        windowVersion.setTextSize(10);
+        windowVersion.setGravity(Gravity.CENTER_VERTICAL);
+        titleRow.addView(windowVersion);
 
-        LinearLayout top = new LinearLayout(activity);
-        top.setGravity(Gravity.CENTER_VERTICAL);
-        top.setPadding(dp(9), dp(3), dp(9), dp(3));
-        top.setBackgroundColor(0xF21B1B1B);
-        root.addView(top, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(43)));
-
-        TextView home = button("⌂");
-        top.addView(home, new LinearLayout.LayoutParams(dp(42), LayoutParams.MATCH_PARENT));
-        home.setOnClickListener(v -> this.onExit.run());
-        TextView save = button("▣");
-        top.addView(save, new LinearLayout.LayoutParams(dp(42), LayoutParams.MATCH_PARENT));
-        save.setOnClickListener(v -> {
-            File folder = activity.getExternalFilesDir(null);
-            if (folder == null) { Toast.makeText(activity, "Save folder unavailable.", Toast.LENGTH_LONG).show(); return; }
-            File file = new File(folder, "Meshy3D_Scene.nova");
-            engine.saveSceneAsync(file.getAbsolutePath(), ok -> Toast.makeText(activity,
-                    ok ? "Scene saved: " + file.getAbsolutePath() : "Scene save failed.",
-                    Toast.LENGTH_LONG).show());
-        });
-        TextView importButton = button("⇧");
-        top.addView(importButton, new LinearLayout.LayoutParams(dp(42), LayoutParams.MATCH_PARENT));
-        importButton.setOnClickListener(v -> {
-            if (activity instanceof MainActivity) ((MainActivity) activity).openSculptAssetPicker();
-            else Toast.makeText(activity, "Import picker unavailable.", Toast.LENGTH_SHORT).show();
-        });
-        TextView refine = button("REFINE");
-        top.addView(refine, new LinearLayout.LayoutParams(dp(58), LayoutParams.MATCH_PARENT));
-        refine.setOnClickListener(v -> {
-            new android.app.AlertDialog.Builder(activity)
-                    .setTitle("Refine sculpt topology")
-                    .setMessage("Split each triangle into four and interpolate the existing mask. This increases mesh density without changing the overall silhouette. Mobile limits apply.")
-                    .setNegativeButton("CANCEL", null)
-                    .setPositiveButton("REFINE", (dialog, which) -> engine.refineSculptMesh(result -> {
-                        String message = result == 1 ? "Sculpt mesh refined."
-                                : result == -2 ? "Finish the current stroke, then try again."
-                                : result == -3 ? "Mesh is already at the mobile topology limit."
-                                : result == -1 ? "Enter Sculpt Mode and select its sculpt mesh first."
-                                : "Refinement failed (" + result + ").";
-                        Toast.makeText(activity, message, Toast.LENGTH_LONG).show();
-                    })).show();
-        });
-        TextView project = label("MESHY3D  •  3D EDITOR", 11, Color.WHITE, true);
-        project.setGravity(Gravity.CENTER);
-        top.addView(project, new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1));
-        TextView undo = button("↶");
-        top.addView(undo, new LinearLayout.LayoutParams(dp(42), LayoutParams.MATCH_PARENT));
-        undo.setOnClickListener(v -> engine.undoScene());
-        TextView redo = button("↷");
-        top.addView(redo, new LinearLayout.LayoutParams(dp(42), LayoutParams.MATCH_PARENT));
-        redo.setOnClickListener(v -> engine.redoScene());
-        TextView help = button("?");
-        top.addView(help, new LinearLayout.LayoutParams(dp(36), LayoutParams.MATCH_PARENT));
-        help.setOnClickListener(v -> new android.app.AlertDialog.Builder(activity)
-                .setTitle("Sculpt workspace")
-                .setMessage("Choose a brush, adjust its controls, then drag on the model. Use two fingers to orbit/pan/zoom. Select a transform mode to edit the selected mesh.")
-                .setPositiveButton("OK", null).show());
-        TextView leftDockToggle = button("◧");
-        top.addView(leftDockToggle, new LinearLayout.LayoutParams(dp(38), LayoutParams.MATCH_PARENT));
-        leftDockToggle.setOnClickListener(v -> {
-            if (brushDock != null) {
-                boolean show = brushDock.getVisibility() != View.VISIBLE;
-                brushDock.setVisibility(show ? View.VISIBLE : View.GONE);
-                if (leftResizeHandle != null) leftResizeHandle.setVisibility(show ? View.VISIBLE : View.GONE);
-            }
-        });
-        TextView bottomDockToggle = button("▤");
-        top.addView(bottomDockToggle, new LinearLayout.LayoutParams(dp(38), LayoutParams.MATCH_PARENT));
-        bottomDockToggle.setOnClickListener(v -> toggleBottomDock());
-        TextView rightDockToggle = button("◨");
-        top.addView(rightDockToggle, new LinearLayout.LayoutParams(dp(38), LayoutParams.MATCH_PARENT));
-        rightDockToggle.setOnClickListener(v -> {
-            if (rightDock != null) {
-                boolean show = rightDock.getVisibility() != View.VISIBLE;
-                rightDock.setVisibility(show ? View.VISIBLE : View.GONE);
-                if (rightResizeHandle != null) rightResizeHandle.setVisibility(show ? View.VISIBLE : View.GONE);
-            }
-        });
-
-        LinearLayout workArea = new LinearLayout(activity);
-        workArea.setOrientation(LinearLayout.HORIZONTAL);
-        root.addView(workArea, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1));
-
-        // Left quick-control rail (matching the reference's narrow strip).
-        LinearLayout leftRail = new LinearLayout(activity);
-        leftRail.setOrientation(LinearLayout.VERTICAL);
-        leftRail.setGravity(Gravity.CENTER_HORIZONTAL);
-        leftRail.setPadding(dp(3), dp(5), dp(3), dp(5));
-        leftRail.setBackgroundColor(0xE9161719);
-        workArea.addView(leftRail, new LinearLayout.LayoutParams(dp(42), LayoutParams.MATCH_PARENT));
-        TextView activeBrush = button("●");
-        leftRail.addView(activeBrush, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
-        activeBrush.setOnClickListener(v -> showBrushPicker());
-        TextView symmetry = button("X");
-        leftRail.addView(symmetry, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
-        symmetry.setOnClickListener(v -> {
-            symmetryAxis = symmetryAxis == 0 ? 1 : symmetryAxis == 1 ? 2 : symmetryAxis == 2 ? -1 : 0;
-            symmetry.setText(symmetryAxis < 0 ? "Ø" : symmetryAxis == 0 ? "X" : symmetryAxis == 1 ? "Y" : "Z");
-            symmetry.setTextColor(symmetryAxis < 0 ? Color.WHITE : ACCENT);
-            applyOptions();
-        });
-        TextView subtractQuick = button("±");
-        leftRail.addView(subtractQuick, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
-        subtractQuick.setOnClickListener(v -> {
-            subtract = !subtract;
-            subtractQuick.setText(subtract ? "−" : "+");
-            subtractQuick.setTextColor(subtract ? ACCENT : Color.WHITE);
-            applyOptions();
-        });
-        TextView smoothQuick = button("S");
-        leftRail.addView(smoothQuick, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
-        smoothQuick.setOnClickListener(v -> selectBrush(1));
-        TextView maskQuick = button("M");
-        leftRail.addView(maskQuick, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
-        maskQuick.setOnClickListener(v -> selectBrush(7));
-        TextView undoQuick = button("↶");
-        leftRail.addView(undoQuick, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
-        undoQuick.setOnClickListener(v -> engine.undoScene());
-        TextView redoQuick = button("↷");
-        leftRail.addView(redoQuick, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
-        redoQuick.setOnClickListener(v -> engine.redoScene());
-
-        // Brush browser panel: categories and a three-column, scrollable brush grid.
-        LinearLayout browser = new LinearLayout(activity);
-        browser.setOrientation(LinearLayout.VERTICAL);
-        browser.setPadding(dp(7), dp(6), dp(7), dp(5));
-        browser.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                new int[]{0xF52B2B2B, 0xF51C1C1C}));
-        LinearLayout.LayoutParams browserParams = new LinearLayout.LayoutParams(dp(292), LayoutParams.MATCH_PARENT);
-        browserParams.setMargins(dp(4), dp(4), dp(4), dp(4));
-        workArea.addView(browser, browserParams);
-        brushDock = browser;
-        leftResizeHandle = createResizeHandle(true, browser);
-        workArea.addView(leftResizeHandle, new LinearLayout.LayoutParams(dp(6), LayoutParams.MATCH_PARENT));
-
-        LinearLayout browserHeader = new LinearLayout(activity);
-        browserHeader.setGravity(Gravity.CENTER_VERTICAL);
-        browser.addView(browserHeader, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
-        TextView browserTitle = label("Brushes", 17, Color.WHITE, true);
-        browserTitle.setGravity(Gravity.CENTER);
-        browserHeader.addView(browserTitle, new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1));
-        TextView filter = button("☷");
-        browserHeader.addView(filter, new LinearLayout.LayoutParams(dp(38), LayoutParams.MATCH_PARENT));
-        filter.setOnClickListener(v -> showBrushPicker());
-        TextView more = button("⋯");
-        browserHeader.addView(more, new LinearLayout.LayoutParams(dp(34), LayoutParams.MATCH_PARENT));
-        more.setOnClickListener(v -> new android.app.AlertDialog.Builder(activity)
-                .setTitle("Brush options")
-                .setItems(new String[]{"All brushes", "Recent", "Favorites", "Brush settings"}, (d, which) -> {
-                    if (which == 3) showBrushSettings();
-                }).show());
-
-        TextView featured = label("  SELECTED  •  " + BRUSHES[selectedBrush].toUpperCase(), 10, ACCENT, true);
-        featured.setGravity(Gravity.CENTER_VERTICAL);
-        browser.addView(featured, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(27)));
-
-        HorizontalScrollView categoriesScroll = new HorizontalScrollView(activity);
-        categoriesScroll.setHorizontalScrollBarEnabled(false);
-        LinearLayout categories = new LinearLayout(activity);
-        categories.setGravity(Gravity.CENTER_VERTICAL);
-        categoriesScroll.addView(categories);
-        browser.addView(categoriesScroll, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(34)));
-        String[] categoryNames = {"Recent", "Favorites", "All", "Clay", "Move", "Crease", "Mask", "Flatten", "Special"};
-        for (String category : categoryNames) {
-            TextView cat = button(category);
-            categories.addView(cat, new LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, dp(30)));
-            cat.setOnClickListener(v -> {
-                // Categories are quick filters; all brushes remain available in All.
-                String key = category.equals("Move") ? "Grab" : category.equals("Crease") ? "Crease" : category;
-                if (category.equals("All") || category.equals("Recent") || category.equals("Favorites")) {
-                    for (TextView b : brushButtons) if (b != null) b.setVisibility(View.VISIBLE);
-                } else {
-                    for (int i = 0; i < brushButtons.length; i++) {
-                        String n = BRUSHES[i].toLowerCase(java.util.Locale.US);
-                        boolean show = category.equals("Clay") ? n.contains("clay") || n.equals("blob")
-                                : category.equals("Mask") ? n.contains("mask")
-                                : category.equals("Flatten") ? n.contains("flatten") || n.contains("scrape")
-                                : category.equals("Special") ? i >= 12
-                                : n.contains(key.toLowerCase(java.util.Locale.US));
-                        brushButtons[i].setVisibility(show ? View.VISIBLE : View.GONE);
-                    }
-                }
-            });
-        }
-
-        ScrollView brushScroll = new ScrollView(activity);
-        brushScroll.setFillViewport(false);
-        brushScroll.setVerticalScrollBarEnabled(true);
-        LinearLayout brushGrid = new LinearLayout(activity);
-        brushGrid.setOrientation(LinearLayout.VERTICAL);
-        brushScroll.addView(brushGrid);
-        browser.addView(brushScroll, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1));
-
-        for (int row = 0; row < (BRUSHES.length + 2) / 3; row++) {
-            LinearLayout line = new LinearLayout(activity);
-            line.setOrientation(LinearLayout.HORIZONTAL);
-            brushGrid.addView(line, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(88)));
-            for (int col = 0; col < 3; col++) {
-                final int index = row * 3 + col;
-                if (index >= BRUSHES.length) break;
-                LinearLayout tile = new LinearLayout(activity);
-                tile.setOrientation(LinearLayout.VERTICAL);
-                tile.setGravity(Gravity.CENTER);
-                tile.setPadding(dp(2), dp(4), dp(2), dp(3));
-                tile.setBackground(background(index == selectedBrush ? 0xFF51402B : 0xFF292929));
-                TextView icon = label("◉", 22, index == selectedBrush ? ACCENT : 0xFFD7D7D7, true);
-                icon.setGravity(Gravity.CENTER);
-                tile.addView(icon, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)));
-                TextView name = label(BRUSHES[index], 9, Color.WHITE, true);
-                name.setGravity(Gravity.CENTER);
-                tile.addView(name, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(30)));
-                LinearLayout.LayoutParams tileParams = new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1);
-                tileParams.setMargins(dp(2), dp(2), dp(2), dp(2));
-                line.addView(tile, tileParams);
-                brushButtons[index] = name;
-                tile.setOnClickListener(v -> {
-                    selectBrush(index);
-                    featured.setText("  SELECTED  •  " + BRUSHES[index].toUpperCase());
-                    for (int i = 0; i < brushButtons.length; i++) {
-                        if (brushButtons[i] != null) {
-                            brushButtons[i].setTextColor(i == index ? ACCENT : Color.WHITE);
-                            View parent = (View) brushButtons[i].getParent();
-                            if (parent != null) parent.setBackground(background(i == index ? 0xFF51402B : 0xFF292929));
-                        }
-                    }
-                });
-            }
-        }
-
-        status = label("Drag on the model to sculpt.", 9, 0xFFB8C4D1, false);
-        status.setGravity(Gravity.CENTER_VERTICAL);
-        browser.addView(status, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(23)));
-
-        brushControls = new LinearLayout(activity);
-        brushControls.setOrientation(LinearLayout.VERTICAL);
-        brushControls.setPadding(dp(2), 0, dp(2), 0);
-        browser.addView(brushControls, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(112)));
-        addSlider(brushControls, "SIZE", 1, 300, 7, value -> {
-            radius = 0.02f + ((value - 1) / 299.0f) * 7.98f; applyOptions();
-        });
-        addSlider(brushControls, "STRENGTH", 0, 100, 40, value -> {
-            strength = value / 100.0f; applyOptions();
-        });
-        addSlider(brushControls, "HARDNESS", 0, 100, 50, value -> {
-            falloff = value / 100.0f; applyOptions();
-        });
-        addSlider(brushControls, "PRESSURE", 5, 100, 100, value -> {
-            pressure = value / 100.0f; applyOptions();
-        });
-
-        // The center remains an unobstructed 3D viewport.
-        // Sculpt input is confined to the viewport gap so it cannot intercept editor controls.
-        View viewportSpacer = touch;
-        viewportSpacer.setBackgroundColor(Color.TRANSPARENT);
-        workArea.addView(viewportSpacer, new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1));
-
-        // Blender-style right editor: scene hierarchy above, editable properties below.
-        LinearLayout rightEditor = new LinearLayout(activity);
-        rightEditor.setOrientation(LinearLayout.VERTICAL);
-        rightEditor.setPadding(dp(5), dp(5), dp(5), dp(5));
-        rightEditor.setBackgroundColor(0xF01B2027);
-        rightResizeHandle = createResizeHandle(false, rightEditor);
-        workArea.addView(rightResizeHandle, new LinearLayout.LayoutParams(dp(6), LayoutParams.MATCH_PARENT));
-        workArea.addView(rightEditor, new LinearLayout.LayoutParams(dp(226), LayoutParams.MATCH_PARENT));
-        rightDock = rightEditor;
-        LinearLayout sceneTabs = new LinearLayout(activity);
-        sceneTabs.setGravity(Gravity.CENTER_VERTICAL);
-        rightEditor.addView(sceneTabs, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(36)));
-        FrameLayout rightContent = new FrameLayout(activity);
-        rightEditor.addView(rightContent, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1));
-        TextView outlinerTab = button("OUTLINER");
-        sceneTabs.addView(outlinerTab, new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1));
-        outlinerTab.setOnClickListener(v -> showDockPanel("Objects", rightContent, touch));
-        TextView propertiesTab = button("PROPERTIES");
-        sceneTabs.addView(propertiesTab, new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1));
-        propertiesTab.setOnClickListener(v -> showDockPanel("Properties", rightContent, touch));
-        TextView shapes = button("+ SHAPE");
-        rightEditor.addView(shapes, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
-        shapes.setOnClickListener(v -> showShapes());
-        TextView color = button("MATERIAL COLOR");
-        rightEditor.addView(color, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
-        color.setOnClickListener(v -> showMaterialColorPicker());
-        TextView transform = button("XYZ TRANSFORM");
-        rightEditor.addView(transform, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
-        transform.setOnClickListener(v -> showTransformEditor(touch));
-        showDockPanel("Objects", rightContent, touch);
-
-        bottomDock = new LinearLayout(activity);
-        bottomDock.setOrientation(LinearLayout.VERTICAL);
-        bottomDock.setBackgroundColor(0xF01B2027);
-        bottomDock.setVisibility(View.VISIBLE);
-        root.addView(bottomDock, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(126)));
-        View dockGrip = new View(activity);
-        dockGrip.setBackgroundColor(ACCENT);
-        bottomDock.addView(dockGrip, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(6)));
-        final float[] dockY = new float[1];
-        final int[] dockHeight = new int[1];
-        dockGrip.setOnTouchListener((v, event) -> {
-            LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) bottomDock.getLayoutParams();
-            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) { dockY[0] = event.getRawY(); dockHeight[0] = lp.height; return true; }
-            if (event.getActionMasked() == MotionEvent.ACTION_MOVE) { lp.height = Math.max(dp(90), Math.min(dp(320), dockHeight[0] + Math.round(dockY[0] - event.getRawY()))); bottomDock.setLayoutParams(lp); return true; }
-            return event.getActionMasked() == MotionEvent.ACTION_UP;
-        });
-        LinearLayout dockTabs = new LinearLayout(activity);
-        dockTabs.setGravity(Gravity.CENTER_VERTICAL);
-        bottomDock.addView(dockTabs, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(34)));
-        FrameLayout dockBody = new FrameLayout(activity);
-        bottomDock.addView(dockBody, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1));
-        String[] dockNames = {"Console", "Objects", "Properties", "Timeline", "Assets"};
-        for (String dockName : dockNames) {
-            TextView tab = button(dockName);
-            dockTabs.addView(tab, new LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
-            tab.setOnClickListener(v -> showDockPanel(dockName, dockBody, touch));
-        }
-        showDockPanel("Timeline", dockBody, touch);
-
-        // Bottom brush shelf: persistent shortcuts, not a close/drawer control.
-        HorizontalScrollView shelfScroll = new HorizontalScrollView(activity);
-        shelfScroll.setHorizontalScrollBarEnabled(false);
-        shelfScroll.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{0xF52A2A2A, 0xF51B1B1B}));
-        LinearLayout shelf = new LinearLayout(activity);
-        shelf.setGravity(Gravity.CENTER_VERTICAL);
-        shelf.setPadding(dp(7), dp(3), dp(7), dp(3));
-        shelfScroll.addView(shelf);
-        root.addView(shelfScroll, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(52)));
-        int[] favorites = {1, 8, 0, 3, 4, 5, 6, 9, 10, 12, 13, 14, 15, 7, 11};
-        for (int brush : favorites) {
-            final int index = brush;
-            TextView shortcut = button(BRUSHES[index].equals("Clay Strips") ? "▧" : "●");
-            shortcut.setTextSize(16);
-            LinearLayout.LayoutParams shortcutParams = new LinearLayout.LayoutParams(dp(42), LayoutParams.MATCH_PARENT);
-            shortcutParams.setMargins(dp(2), 0, dp(2), 0);
-            shelf.addView(shortcut, shortcutParams);
-            shortcut.setOnClickListener(v -> {
-                selectBrush(index);
-                featured.setText("  SELECTED  •  " + BRUSHES[index].toUpperCase());
-                for (int i = 0; i < brushButtons.length; i++) {
-                    if (brushButtons[i] != null) {
-                        brushButtons[i].setTextColor(i == index ? ACCENT : Color.WHITE);
-                        View parent = (View) brushButtons[i].getParent();
-                        if (parent != null) parent.setBackground(background(i == index ? 0xFF51402B : 0xFF292929));
-                    }
-                }
-            });
-        }
-        TextView shapeShelf = button("SHAPES");
-        shelf.addView(shapeShelf, new LinearLayout.LayoutParams(dp(76), LayoutParams.MATCH_PARENT));
-        shapeShelf.setOnClickListener(v -> showShapes());
-        TextView moveShelf = button("MOVE");
-        shelf.addView(moveShelf, new LinearLayout.LayoutParams(dp(64), LayoutParams.MATCH_PARENT));
-        moveShelf.setOnClickListener(v -> setTransformMode(0, touch));
-        TextView rotateShelf = button("ROT");
-        shelf.addView(rotateShelf, new LinearLayout.LayoutParams(dp(54), LayoutParams.MATCH_PARENT));
-        rotateShelf.setOnClickListener(v -> setTransformMode(1, touch));
-        TextView scaleShelf = button("SCALE");
-        shelf.addView(scaleShelf, new LinearLayout.LayoutParams(dp(64), LayoutParams.MATCH_PARENT));
-        scaleShelf.setOnClickListener(v -> setTransformMode(2, touch));
-
-        updateBrushButtons();
-        applyOptions();
-    }
-
-    private View createResizeHandle(boolean leftPanel, View panel) {
-        View handle = new View(activity);
-        handle.setBackgroundColor(0xFF596675);
-        handle.setOnTouchListener((view, event) -> {
-            LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) panel.getLayoutParams();
-            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
-                view.setTag(new float[]{event.getRawX(), params.width});
-                return true;
-            }
-            if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
-                float[] start = (float[]) view.getTag();
-                if (start == null) return true;
-                float delta = event.getRawX() - start[0];
-                float next = start[1] + (leftPanel ? delta : -delta);
-                params.width = (int) Math.max(dp(leftPanel ? 190 : 43), Math.min(dp(leftPanel ? 430 : 220), next));
-                panel.setLayoutParams(params);
-                return true;
-            }
-            return event.getActionMasked() == MotionEvent.ACTION_UP
-                    || event.getActionMasked() == MotionEvent.ACTION_CANCEL;
-        });
-        return handle;
-    }
-
-    private void showDockPanel(String name, FrameLayout host, View touch) {
-        host.removeAllViews();
-        LinearLayout panel = new LinearLayout(activity);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(10), dp(5), dp(10), dp(5));
-        ScrollView scroll = new ScrollView(activity);
-        scroll.addView(panel);
-        host.addView(scroll, new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
-        if ("Console".equals(name)) {
-            panel.addView(label("MESHY3D CONSOLE", 11, ACCENT, true));
-            String[] objects = engine.getSceneObjects();
-            float[] transform = engine.getSelectedTransform();
-            panel.addView(label("Renderer FPS: " + engine.getFps(), 10, Color.WHITE, false));
-            panel.addView(label("Scene objects: " + (objects == null ? 0 : objects.length), 10, Color.WHITE, false));
-            panel.addView(label("Selected object: " + (transform == null ? "None" : "Available"), 10, Color.WHITE, false));
-            TextView refresh = button("REFRESH");
-            panel.addView(refresh);
-            refresh.setOnClickListener(v -> showDockPanel("Console", host, touch));
-        } else if ("Objects".equals(name)) {
-            panel.addView(label("OUTLINER  •  SCENE COLLECTION", 11, ACCENT, true));
-            String[] objects = engine.getSceneObjects();
-            if (objects == null || objects.length == 0) {
-                panel.addView(label("No objects in the scene. Use SHAPES to create one.", 10, Color.WHITE, false));
-            } else {
-                for (String row : objects) {
-                    String value = row == null ? "" : row;
-                    int split = value.indexOf('|');
-                    int id = 0;
-                    try { id = Integer.parseInt(split < 0 ? value : value.substring(0, split)); } catch (NumberFormatException ignored) {}
-                    String objectName = split < 0 ? value : value.substring(split + 1);
-                    final int objectId = id;
-                    TextView item = button(objectName);
-                    panel.addView(item, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(36)));
-                    item.setOnClickListener(v -> {
-                        if (objectId != 0) {
-                            engine.selectObjectById(objectId);
-                            status.setText("Selected: " + objectName);
-                        }
-                    });
-                }
-            }
-            TextView refresh = button("REFRESH HIERARCHY");
-            panel.addView(refresh);
-            refresh.setOnClickListener(v -> showDockPanel("Objects", host, touch));
-        } else if ("Properties".equals(name)) {
-            panel.addView(label("OBJECT PROPERTIES  •  TRANSFORM", 11, ACCENT, true));
-            float[] values = engine.getSelectedTransform();
-            if (values == null || values.length < 9) {
-                panel.addView(label("Select an object in the viewport or Objects tab.", 10, Color.WHITE, false));
-            } else {
-                String[] names = {"Position", "Rotation", "Scale"};
-                for (int c = 0; c < 3; c++) {
-                    panel.addView(label(names[c] + "   X " + values[c*3] + "   Y " + values[c*3+1] + "   Z " + values[c*3+2], 10, Color.WHITE, false));
-                }
-                TextView edit = button("EDIT XYZ");
-                panel.addView(edit);
-                edit.setOnClickListener(v -> showTransformEditor(touch));
-            }
-        } else if ("Timeline".equals(name)) {
-            panel.addView(label("TIMELINE  •  KEYFRAMES", 11, ACCENT, true));
-            TextView info = label("Keyframes: " + transformKeyframes.size() + "  •  1.2 seconds between keys", 10, Color.WHITE, false);
-            panel.addView(info);
-            TextView addKey = button("ADD KEYFRAME FROM SELECTED OBJECT");
-            panel.addView(addKey);
-            addKey.setOnClickListener(v -> {
-                float[] transform = engine.getSelectedTransform();
-                if (transform == null || transform.length < 9) {
-                    Toast.makeText(activity, "Select an object before recording a keyframe.", Toast.LENGTH_SHORT).show();
-                    return;
-                }
-                transformKeyframes.add(transform.clone());
-                info.setText("Keyframes: " + transformKeyframes.size() + "  •  1.2 seconds between keys");
-                status.setText("Timeline keyframe " + transformKeyframes.size() + " recorded.");
-            });
-            TextView play = button("PLAY TIMELINE");
-            panel.addView(play);
-            play.setOnClickListener(v -> startTimelinePlayback());
-            TextView stop = button("STOP");
-            panel.addView(stop);
-            stop.setOnClickListener(v -> stopTimelinePlayback());
-            TextView clear = button("CLEAR KEYFRAMES");
-            panel.addView(clear);
-            clear.setOnClickListener(v -> {
-                stopTimelinePlayback();
-                transformKeyframes.clear();
-                info.setText("Keyframes: 0  •  1.2 seconds between keys");
-                status.setText("Timeline cleared.");
-            });
-            panel.addView(label("Keyframes are held in memory for this sculpt session; they are not yet saved into project files.", 9, 0xFFFFC56B, false));
-        } else if ("Assets".equals(name)) {
-            panel.addView(label("PROJECT ASSETS", 11, ACCENT, true));
-            panel.addView(label("Import a glTF binary model (.glb) or export the selected sculpt mesh as OBJ.", 10, Color.WHITE, false));
-            TextView importAsset = button("IMPORT .GLB");
-            panel.addView(importAsset);
-            importAsset.setOnClickListener(v -> {
-                if (activity instanceof MainActivity) ((MainActivity) activity).openSculptAssetPicker();
-            });
-            TextView exportAsset = button("EXPORT SELECTED OBJ");
-            panel.addView(exportAsset);
-            exportAsset.setOnClickListener(v -> exportMesh());
-        }
-    }
-
-    private void startTimelinePlayback() {
-        if (transformKeyframes.size() < 2) {
-            Toast.makeText(activity, "Record at least two keyframes first.", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        timelineHandler.removeCallbacks(timelineTick);
-        timelinePlaying = true;
-        timelineStartMs = SystemClock.uptimeMillis();
-        timelineHandler.post(timelineTick);
-        status.setText("Timeline playback started.");
-    }
-
-    private void stopTimelinePlayback() {
-        timelinePlaying = false;
-        timelineHandler.removeCallbacks(timelineTick);
-        status.setText("Timeline playback stopped.");
-    }
-
-    private void advanceTimeline() {
-        if (!timelinePlaying || transformKeyframes.size() < 2) return;
-        long elapsed = SystemClock.uptimeMillis() - timelineStartMs;
-        final long segmentDuration = 1200L;
-        int segment = (int) (elapsed / segmentDuration);
-        if (segment >= transformKeyframes.size() - 1) {
-            engine.setSelectedTransform(transformKeyframes.get(transformKeyframes.size() - 1));
-            stopTimelinePlayback();
-            return;
-        }
-        float t = (elapsed % segmentDuration) / (float) segmentDuration;
-        float[] from = transformKeyframes.get(segment);
-        float[] to = transformKeyframes.get(segment + 1);
-        float[] current = new float[9];
-        for (int i = 0; i < current.length; i++) current[i] = from[i] + (to[i] - from[i]) * t;
-        engine.setSelectedTransform(current);
-        timelineHandler.postDelayed(timelineTick, 16L);
-    }
-
-    @Override protected void onDetachedFromWindow() {
-        stopTimelinePlayback();
-        timelineHandler.removeCallbacksAndMessages(null);
-        super.onDetachedFromWindow();
-    }
-
-    private void toggleBottomDock() {
-        if (bottomDock == null) return;
-        boolean show = bottomDock.getVisibility() != View.VISIBLE;
-        bottomDock.setVisibility(show ? View.VISIBLE : View.GONE);
-        LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) bottomDock.getLayoutParams();
-        lp.height = show ? dp(126) : 0;
-        bottomDock.setLayoutParams(lp);
-    }
-
-    private void selectBrush(int index) {
-        selectedBrush = Math.max(0, Math.min(BRUSHES.length - 1, index));
-        activeTransformMode = -1;
-        orbitMode = false;
-        sculptEnabled = true;
-        applyOptions();
-        updateBrushButtons();
-        status.setText(BRUSH_DESCRIPTIONS[selectedBrush]);
-    }
-
-    private void showBrushPicker() {
-        new android.app.AlertDialog.Builder(activity).setTitle("Brushes")
-                .setItems(BRUSHES, (dialog, which) -> selectBrush(which)).show();
-    }
-
-    private void showBrushSettings() {
-        new android.app.AlertDialog.Builder(activity).setTitle("Brush settings")
-                .setMessage("Size, strength, hardness and pressure are available in the Brushes panel.")
-                .setPositiveButton("OK", null).show();
-    }
-
-    private void showMaterialColorPicker() {
-        final int[] palette = {
-                0xFFF2F2F2, 0xFF222222, 0xFFE53935, 0xFFFF8F00,
-                0xFFFFD600, 0xFF43A047, 0xFF00ACC1, 0xFF1E88E5,
-                0xFF3949AB, 0xFF8E24AA, 0xFFD81B60, 0xFF795548
-        };
-        LinearLayout content = new LinearLayout(activity);
-        content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(12), dp(8), dp(12), dp(8));
-        TextView hint = label("Apply a material color to the selected object", 11, Color.WHITE, false);
-        content.addView(hint, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(30)));
-        for (int row = 0; row < 3; row++) {
-            LinearLayout line = new LinearLayout(activity);
-            line.setGravity(Gravity.CENTER_VERTICAL);
-            content.addView(line, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(48)));
-            for (int col = 0; col < 4; col++) {
-                final int value = palette[row * 4 + col];
-                TextView swatch = label("●", 25, value, true);
-                swatch.setGravity(Gravity.CENTER);
-                swatch.setBackground(background(0xFF30343B));
-                LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, dp(42), 1);
-                p.setMargins(dp(3), dp(2), dp(3), dp(2));
-                line.addView(swatch, p);
-                swatch.setOnClickListener(v -> {
-                    engine.setSelectedMaterialColor(Color.red(value) / 255.0f,
-                            Color.green(value) / 255.0f, Color.blue(value) / 255.0f);
-                    status.setText("Material color applied to selected object.");
-                });
-            }
-        }
-        EditText hex = new EditText(activity);
-        hex.setSingleLine(true);
-        hex.setTextColor(Color.WHITE);
-        hex.setHintTextColor(0xFF9BA7B5);
-        hex.setHint("Custom HEX color, e.g. #40A0FF");
-        content.addView(hex, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(46)));
-        new android.app.AlertDialog.Builder(activity)
-                .setTitle("Material Color")
-                .setView(content)
-                .setPositiveButton("APPLY HEX", (dialog, which) -> {
-                    try {
-                        int value = Color.parseColor(hex.getText().toString().trim());
-                        engine.setSelectedMaterialColor(Color.red(value) / 255.0f,
-                                Color.green(value) / 255.0f, Color.blue(value) / 255.0f);
-                        status.setText("Custom material color applied.");
-                    } catch (IllegalArgumentException error) {
-                        Toast.makeText(activity, "Enter a valid HEX color such as #40A0FF.", Toast.LENGTH_SHORT).show();
-                    }
-                })
-                .setNegativeButton("CLOSE", null)
-                .show();
-    }
-
-    private void showShapes() {
-        String[] names = {"Sphere", "Plane", "Cube", "Cylinder", "Cone", "Torus", "Capsule", "Wedge", "Round Sphere"};
-        int[] densities = {64, 128, 32, 48, 48, 48, 48, 32, 64};
-        new android.app.AlertDialog.Builder(activity).setTitle("Shapes")
-                .setItems(names, (dialog, which) -> createMesh(which, densities[which])).show();
-    }
-
-    private void setTransformMode(int mode, View touch) {
-        engine.setTransformMode(mode);
-        activeTransformMode = mode;
-        transformComponent = mode;
-        sculptEnabled = false;
-        orbitMode = false;
-        transformDragState = engine.getSelectedTransform();
-        applyOptions();
-        touch.invalidate();
-        status.setText(mode == 0 ? "Move: drag an XYZ gizmo axis or set coordinates."
-                : mode == 1 ? "Rotate selected mesh." : "Scale selected mesh.");
-    }
-
-    private void showTransformEditor(View touch) {
-        float[] values = engine.getSelectedTransform();
-        if (values == null || values.length < 9) {
-            Toast.makeText(activity, "Select an object first.", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        LinearLayout content = new LinearLayout(activity);
-        content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(12), dp(6), dp(12), dp(6));
-        EditText[][] fields = new EditText[3][3];
-        String[] names = {"POSITION", "ROTATION", "SCALE"};
-        for (int component = 0; component < 3; component++) {
-            TextView heading = label(names[component], 11, ACCENT, true);
-            content.addView(heading);
-            LinearLayout row = new LinearLayout(activity);
-            content.addView(row);
-            for (int axis = 0; axis < 3; axis++) {
-                EditText input = new EditText(activity);
-                input.setSingleLine(true);
-                input.setTextSize(11);
-                input.setHint(axis == 0 ? "X" : axis == 1 ? "Y" : "Z");
-                input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER
-                        | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
-                        | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
-                input.setText(String.valueOf(values[component * 3 + axis]));
-                row.addView(input, new LinearLayout.LayoutParams(0, dp(40), 1));
-                fields[component][axis] = input;
-            }
-        }
-        new android.app.AlertDialog.Builder(activity).setTitle("XYZ Transform")
-                .setView(content).setPositiveButton("APPLY", (dialog, which) -> {
-                    float[] next = values.clone();
-                    try {
-                        for (int c = 0; c < 3; c++) for (int a = 0; a < 3; a++)
-                            next[c * 3 + a] = Float.parseFloat(fields[c][a].getText().toString());
-                        engine.setSelectedTransform(next);
-                        positionInputs = fields[transformComponent];
-                        touch.invalidate();
-                        status.setText("Position, rotation and scale updated.");
-                    } catch (NumberFormatException error) {
-                        status.setText("Invalid XYZ value.");
-                    }
-                }).setNegativeButton("CANCEL", null).show();
-    }
-
-    private void showSceneObjects() {
-        String[] objects = engine.getSceneObjects();
-        if (objects == null || objects.length == 0) {
-            new android.app.AlertDialog.Builder(activity).setTitle("Scene").setMessage("No objects in the scene.")
-                    .setPositiveButton("OK", null).show();
-            return;
-        }
-        String[] labels = new String[objects.length];
-        int[] ids = new int[objects.length];
-        for (int i = 0; i < objects.length; i++) {
-            String row = objects[i] == null ? "" : objects[i];
-            int split = row.indexOf('|');
-            try { ids[i] = Integer.parseInt(split < 0 ? row : row.substring(0, split)); }
-            catch (NumberFormatException ignored) { ids[i] = 0; }
-            labels[i] = split < 0 ? row : row.substring(split + 1);
-        }
-        new android.app.AlertDialog.Builder(activity).setTitle("Scene objects")
-                .setItems(labels, (dialog, which) -> { if (ids[which] != 0) engine.selectObjectById(ids[which]); })
-                .setNegativeButton("CLOSE", null).show();
-    }
-
-    private void createMesh(int shape, int density) {
-        engine.createSculptMesh(shape, density, id -> {
-            if (id > 0) {
-                String[] names = {"sphere", "plane", "cube", "cylinder", "cone",
-                        "torus", "capsule", "wedge", "rounded sphere"};
-                status.setText("Sculpt " + names[Math.max(0, Math.min(8, shape))]
-                        + " created and selected. Drag to sculpt.");
-                float[] transform = engine.getSelectedTransform();
-                if (transform != null && transform.length >= 9) {
-                    for (int axis = 0; axis < 3; axis++) {
-                        if (positionInputs[axis] != null) positionInputs[axis].setText(String.valueOf(transform[axis + transformComponent * 3]));
-                    }
-                }
-            } else {
-                status.setText("Could not create mesh. Try again.");
-            }
-        });
-    }
-
-    private void exportMesh() {
-        File folder = activity.getExternalFilesDir(null);
-        if (folder == null) {
-            Toast.makeText(activity, "Export folder unavailable", Toast.LENGTH_LONG).show();
-            return;
-        }
-        File file = new File(folder, "Novaingine_Sculpt.obj");
-        engine.exportSelectedObj(file.getAbsolutePath(), ok ->
-                Toast.makeText(activity, ok ? "OBJ exported to app storage" :
-                        "Select a sculptable mesh first", Toast.LENGTH_LONG).show());
-    }
-
-    private interface SliderChange { void onChanged(int value); }
-
-    private void addSlider(LinearLayout parent, String name, int min, int max,
-                           int initial, SliderChange change) {
-        LinearLayout row = new LinearLayout(activity);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = label(name, 9, 0xFFD3DCE5, true);
-        row.addView(title, new LinearLayout.LayoutParams(dp(66), dp(28)));
-        SeekBar seek = new SeekBar(activity);
-        seek.setMax(max - min);
-        seek.setProgress(initial - min);
-        row.addView(seek, new LinearLayout.LayoutParams(0, dp(30), 1));
-        parent.addView(row, new LinearLayout.LayoutParams(
+        // Blender-style application menus and workspace tabs.
+        LinearLayout menuWorkspaceRow = new LinearLayout(activity);
+        menuWorkspaceRow.setGravity(Gravity.CENTER_VERTICAL);
+        menuWorkspaceRow.setBackgroundColor(0xFF242424);
+        topStack.addView(menuWorkspaceRow, new LinearLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT, dp(31)));
-        seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
-                change.onChanged(progress + min);
-            }
-            @Override public void onStartTrackingTouch(SeekBar bar) {}
-            @Override public void onStopTrackingTouch(SeekBar bar) {}
-        });
-    }
 
-    private void applyOptions() {
-        engine.setSculptOptions(sculptEnabled, selectedBrush, radius, strength,
-                falloff, symmetryAxis, subtract, pressure);
-    }
-
-    private void updateBrushButtons() {
-        for (int i = 0; i < brushButtons.length; i++) {
-            if (brushButtons[i] == null) continue;
-            brushButtons[i].setText(BRUSHES[i] + (i == selectedBrush ? "  • SELECTED" : ""));
-            brushButtons[i].setTextColor(i == selectedBrush ? ACCENT : Color.WHITE);
+        LinearLayout menus = new LinearLayout(activity);
+        menus.setGravity(Gravity.CENTER_VERTICAL);
+        menuWorkspaceRow.addView(menus, new LinearLayout.LayoutParams(
+                LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
+        String[] menuNames = {"File", "Edit", "Render", "Window", "Help"};
+        for (String menuName : menuNames) {
+            TextView menu = new TextView(activity);
+            menu.setText(menuName);
+            menu.setTextColor(0xFFE0E0E0);
+            menu.setTextSize(11);
+            menu.setGravity(Gravity.CENTER);
+            menu.setPadding(dp(8), 0, dp(8), 0);
+            menus.addView(menu, new LinearLayout.LayoutParams(
+                    LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
         }
-    }
 
-    private TextView button(String text) {
-        TextView view = label(text, 10, Color.WHITE, true);
-        view.setGravity(Gravity.CENTER);
-        view.setPadding(dp(9), dp(6), dp(9), dp(6));
-        view.setBackground(background(0xFF303B48));
-        view.setClickable(true);
-        view.setFocusable(true);
-        return view;
-    }
+        HorizontalScrollView workspaceScroll = new HorizontalScrollView(activity);
+        workspaceScroll.setHorizontalScrollBarEnabled(false);
+        workspaceScroll.setFillViewport(false);
+        menuWorkspaceRow.addView(workspaceScroll, new LinearLayout.LayoutParams(
+                0, LayoutParams.MATCH_PARENT, 1f));
+        LinearLayout workspaces = new LinearLayout(activity);
+        workspaces.setGravity(Gravity.CENTER_VERTICAL);
+        workspaceScroll.addView(workspaces, new HorizontalScrollView.LayoutParams(
+                LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
+        String[] workspaceNames = {
+                "Layout", "Modeling", "Sculpting", "UV Editing", "Texture Paint",
+                "Shading", "Animation", "Rendering", "Compositing", "Geometry Nodes"
+        };
+        for (int i = 0; i < workspaceNames.length; i++) {
+            TextView tab = new TextView(activity);
+            tab.setText(workspaceNames[i]);
+            tab.setTextColor(i == 0 ? Color.WHITE : 0xFFB7B7B7);
+            tab.setTextSize(10);
+            tab.setGravity(Gravity.CENTER);
+            tab.setPadding(dp(9), 0, dp(9), 0);
+            if (i == 0) {
+                GradientDrawable selected = new GradientDrawable();
+                selected.setColor(0xFF3A3A3A);
+                selected.setCornerRadius(dp(2));
+                tab.setBackground(selected);
+            }
+            workspaces.addView(tab, new LinearLayout.LayoutParams(
+                    LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
+        }
 
-    private TextView label(String text, float size, int color, boolean bold) {
-        TextView view = new TextView(activity);
-        view.setText(text);
-        view.setTextSize(size);
-        view.setTextColor(color);
-        if (bold) view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        return view;
-    }
+        // 3D Viewport editor header, matching the controls visible beneath Blender's top bar.
+        HorizontalScrollView viewportHeaderScroll = new HorizontalScrollView(activity);
+        viewportHeaderScroll.setHorizontalScrollBarEnabled(false);
+        viewportHeaderScroll.setFillViewport(true);
+        viewportHeaderScroll.setBackgroundColor(0xFF303030);
+        topStack.addView(viewportHeaderScroll, new LinearLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, dp(30)));
+        LinearLayout viewportHeader = new LinearLayout(activity);
+        viewportHeader.setGravity(Gravity.CENTER_VERTICAL);
+        viewportHeader.setPadding(dp(7), 0, dp(8), 0);
+        viewportHeaderScroll.addView(viewportHeader, new HorizontalScrollView.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
-    private GradientDrawable background(int color) {
-        GradientDrawable d = new GradientDrawable();
-        d.setColor(color);
-        d.setCornerRadius(dp(6));
-        d.setStroke(dp(1), 0xFF465464);
-        return d;
-    }
+        String[] leftHeaderItems = {"▣", "Object Mode", "View", "Select", "Add", "Object"};
+        for (int i = 0; i < leftHeaderItems.length; i++) {
+            TextView item = new TextView(activity);
+            item.setText(leftHeaderItems[i]);
+            item.setTextColor(0xFFE0E0E0);
+            item.setTextSize(i == 0 ? 13 : 10);
+            item.setGravity(Gravity.CENTER);
+            item.setPadding(dp(6), 0, dp(6), 0);
+            viewportHeader.addView(item, new LinearLayout.LayoutParams(
+                    LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
+        }
+        View headerSpacer = new View(activity);
+        viewportHeader.addView(headerSpacer, new LinearLayout.LayoutParams(0, 1, 1f));
+        String[] rightHeaderItems = {"↔  Global", "◇", "⌖", "▦", "◉", "⌄"};
+        for (String value : rightHeaderItems) {
+            TextView item = new TextView(activity);
+            item.setText(value);
+            item.setTextColor(0xFFD0D0D0);
+            item.setTextSize(10);
+            item.setGravity(Gravity.CENTER);
+            item.setPadding(dp(7), 0, dp(7), 0);
+            viewportHeader.addView(item, new LinearLayout.LayoutParams(
+                    LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
+        }
 
-    private LinearLayout.LayoutParams weighted(int height, float weight) {
-        return new LinearLayout.LayoutParams(0,
-                height == 0 ? LayoutParams.MATCH_PARENT : dp(height), weight);
+        status = label("Meshy3D", 9, 0xFFB8C4D1, false);
     }
 
     private int dp(float value) {
