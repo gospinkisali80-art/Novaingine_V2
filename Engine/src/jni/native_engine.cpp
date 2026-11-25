@@ -3477,13 +3477,39 @@ Java_com_novaingine_v2_NativeBridge_nativeAddLandscapeSpline(
     std::lock_guard<std::mutex> lock(engineMutex);
     if(!gInitialized||(!gLandscape.valid()&&gLandscapeWorldTiles.empty())||!pointArray)return JNI_FALSE;
     const jsize count=env->GetArrayLength(pointArray);
-    if(count<6||count%3!=0||count>12288)return JNI_FALSE;
+    if(count<9||count%3!=0||count>1536)return JNI_FALSE;
     std::vector<jfloat> values(static_cast<size_t>(count));
     env->GetFloatArrayRegion(pointArray,0,count,values.data());
     if(env->ExceptionCheck()){env->ExceptionClear();return JNI_FALSE;}
+    std::vector<nova::LandscapeSystem::SplinePoint> controls;
+    controls.reserve(static_cast<size_t>(count/3));
+    for(jsize i=0;i<count;i+=3) {
+        if(!std::isfinite(values[i])||!std::isfinite(values[i+1])||!std::isfinite(values[i+2]))
+            return JNI_FALSE;
+        controls.push_back({values[i],values[i+1],std::clamp(values[i+2],0.5f,32.0f)});
+    }
+    // Catmull-Rom sampling converts editable control points into a smooth terrain-conforming road path.
     std::vector<nova::LandscapeSystem::SplinePoint> points;
-    points.reserve(static_cast<size_t>(count/3));
-    for(jsize i=0;i<count;i+=3)points.push_back({values[i],values[i+1],std::clamp(values[i+2],0.5f,32.0f)});
+    constexpr int samplesPerSegment = 8;
+    points.reserve((controls.size()-1)*samplesPerSegment+1);
+    for(size_t segment=0;segment+1<controls.size();++segment) {
+        const auto& p0=controls[segment==0?segment:segment-1];
+        const auto& p1=controls[segment];
+        const auto& p2=controls[segment+1];
+        const auto& p3=controls[std::min(segment+2,controls.size()-1)];
+        for(int sample=0;sample<samplesPerSegment;++sample) {
+            const float t=static_cast<float>(sample)/samplesPerSegment;
+            const float t2=t*t,t3=t2*t;
+            auto curve=[&](float a,float b,float c,float d) {
+                return 0.5f*((2.0f*b)+(-a+c)*t+(2.0f*a-5.0f*b+4.0f*c-d)*t2+
+                             (-a+3.0f*b-3.0f*c+d)*t3);
+            };
+            points.push_back({curve(p0.x,p1.x,p2.x,p3.x),
+                              curve(p0.z,p1.z,p2.z,p3.z),
+                              std::clamp(curve(p0.width,p1.width,p2.width,p3.width),0.5f,32.0f)});
+        }
+    }
+    points.push_back(controls.back());
     nova::LandscapeSystem* target = landscapeAtWorld(points.front().x, points.front().z);
     if (!target) return JNI_FALSE;
     for (const auto& point : points) {
