@@ -936,10 +936,17 @@ public final class MainActivity extends Activity
         lockModes.setChecked(getSharedPreferences("meshy3d_editor", MODE_PRIVATE).getBoolean("lock_object_modes", false));
         panel.addView(lockModes);
         new AlertDialog.Builder(this).setTitle("Meshy3D Preferences").setView(panel)
-                .setPositiveButton("Save", (d, w) -> getSharedPreferences("meshy3d_editor", MODE_PRIVATE)
-                        .edit().putBoolean("confirm_ops", confirm.isChecked())
-                        .putBoolean("persist_history", history.isChecked())
-                        .putBoolean("lock_object_modes", lockModes.isChecked()).apply())
+                .setPositiveButton("Save", (d, w) -> {
+                    getSharedPreferences("meshy3d_editor", MODE_PRIVATE).edit()
+                            .putBoolean("confirm_ops", confirm.isChecked())
+                            .putBoolean("persist_history", history.isChecked())
+                            .putBoolean("lock_object_modes", lockModes.isChecked()).apply();
+                    meshyObjectModesLocked = lockModes.isChecked();
+                    if (manualSculptWorkspace != null) manualSculptWorkspace.setObjectModesLocked(meshyObjectModesLocked);
+                    if (history.isChecked()) persistMeshyHistory();
+                    else getSharedPreferences("meshy3d_editor", MODE_PRIVATE).edit()
+                            .remove("undo_files").remove("redo_files").remove("repeat_files").apply();
+                })
                 .setNegativeButton("Cancel", null).show();
     }
 
@@ -1443,6 +1450,7 @@ public final class MainActivity extends Activity
         engineSurface.setManualSculptWorkspace(true);
         manualSculptWorkspace = new ManualSculptWorkspace(
                 this, engineSurface, this::closeManualSculpting);
+        manualSculptWorkspace.setObjectModesLocked(meshyObjectModesLocked);
         rootLayout.addView(manualSculptWorkspace, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
