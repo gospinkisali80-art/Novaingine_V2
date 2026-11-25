@@ -18,12 +18,14 @@ struct Vertex {
 
     float u;
     float v;
+    float layerWeights[4];
 
     Vertex()
         : position(),
           normal(0.0f, 1.0f, 0.0f),
           u(0.0f),
-          v(0.0f) {}
+          v(0.0f),
+          layerWeights{0.0f, 0.0f, 0.0f, 0.0f} {}
 
     Vertex(
         const Vec3& positionValue,
@@ -33,7 +35,8 @@ struct Vertex {
         : position(positionValue),
           normal(normalValue),
           u(textureU),
-          v(textureV) {}
+          v(textureV),
+          layerWeights{0.0f, 0.0f, 0.0f, 0.0f} {}
 };
 
 struct Bounds {
