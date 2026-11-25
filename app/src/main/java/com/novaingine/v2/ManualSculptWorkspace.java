@@ -657,7 +657,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     :graph==1?new String[]{"Image Texture","Base Color","Principled BSDF","Metallic","Roughness","Material Output"}
                     :new String[]{"Grayscale","Brightness","Contrast","Blur","Invert","Alpha Over","Color Balance","Composite"};
             new android.app.AlertDialog.Builder(activity).setTitle("Add "+title+" Node").setItems(choices,(d,w)->{
-                String type=choices[w];float value=graph==0?.15f:graph==1?(type.equals("Metallic")?.5f:type.equals("Roughness")?.65f:0f):type.equals("Blur")?2f:20f;
+                String type=choices[w];float value=graph==0?.15f:graph==1
+                        ?(type.equals("Metallic")?.5f:type.equals("Roughness")?.65f:type.equals("Base Color")?(float)(core.getBaseColor()&0xFFFFFF):0f)
+                        :type.equals("Blur")?2f:20f;
                 if(graph==0)core.addGeometryNode(type,type.equals("Instance on Points")?2f:0f,0f,0f,value);
                 else core.addNodeToGraph(graph,type,value);
                 graphView.setNodes(core.getGraphNodeLabels(graph));
