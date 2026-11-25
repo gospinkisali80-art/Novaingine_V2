@@ -93,6 +93,12 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private View rightResizeHandle;
     private LinearLayout bottomDock;
     private final ArrayList<float[]> transformKeyframes = new ArrayList<>();
+    private static final String[] WORKSPACE_NAMES = {
+            "Layout", "Modeling", "Sculpting", "UV Editing", "Texture Paint",
+            "Shading", "Animation", "Rendering", "Compositing", "Geometry Nodes"
+    };
+    private final ArrayList<TextView> workspaceTabs = new ArrayList<>();
+    private int activeWorkspaceIndex;
     private final Handler timelineHandler = new Handler(Looper.getMainLooper());
     private boolean timelinePlaying;
     private long timelineStartMs;
@@ -167,11 +173,12 @@ public final class ManualSculptWorkspace extends FrameLayout {
             menu.setPadding(dp(8), 0, dp(8), 0);
             menu.setOnClickListener(view -> {
                 if (activity instanceof MainActivity) {
-                    if ("File".equals(menuName)) {
-                        ((MainActivity) activity).showMeshyFileMenu(view);
-                    } else if ("Edit".equals(menuName)) {
-                        ((MainActivity) activity).showMeshyEditMenu(view);
-                    }
+                    MainActivity host = (MainActivity) activity;
+                    if ("File".equals(menuName)) host.showMeshyFileMenu(view);
+                    else if ("Edit".equals(menuName)) host.showMeshyEditMenu(view);
+                    else if ("Window".equals(menuName)) host.showMeshyWindowMenu(view);
+                    else if ("Help".equals(menuName)) host.showMeshyHelpMenu(view);
+                    else if ("Render".equals(menuName)) host.showMeshyRenderMenu(view);
                 }
             });
             menus.addView(menu, new LinearLayout.LayoutParams(
@@ -187,26 +194,20 @@ public final class ManualSculptWorkspace extends FrameLayout {
         workspaces.setGravity(Gravity.CENTER_VERTICAL);
         workspaceScroll.addView(workspaces, new HorizontalScrollView.LayoutParams(
                 LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
-        String[] workspaceNames = {
-                "Layout", "Modeling", "Sculpting", "UV Editing", "Texture Paint",
-                "Shading", "Animation", "Rendering", "Compositing", "Geometry Nodes"
-        };
-        for (int i = 0; i < workspaceNames.length; i++) {
+        for (int i = 0; i < WORKSPACE_NAMES.length; i++) {
+            final int workspaceIndex = i;
             TextView tab = new TextView(activity);
-            tab.setText(workspaceNames[i]);
-            tab.setTextColor(i == 0 ? Color.WHITE : 0xFFB7B7B7);
+            tab.setText(WORKSPACE_NAMES[i]);
+            tab.setTextColor(0xFFB7B7B7);
             tab.setTextSize(10);
             tab.setGravity(Gravity.CENTER);
             tab.setPadding(dp(9), 0, dp(9), 0);
-            if (i == 0) {
-                GradientDrawable selected = new GradientDrawable();
-                selected.setColor(0xFF3A3A3A);
-                selected.setCornerRadius(dp(2));
-                tab.setBackground(selected);
-            }
+            tab.setOnClickListener(v -> setActiveWorkspaceIndex(workspaceIndex));
+            workspaceTabs.add(tab);
             workspaces.addView(tab, new LinearLayout.LayoutParams(
                     LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
         }
+        setActiveWorkspaceIndex(0);
 
         // 3D Viewport editor header, matching the controls visible beneath Blender's top bar.
         HorizontalScrollView viewportHeaderScroll = new HorizontalScrollView(activity);
@@ -254,6 +255,38 @@ public final class ManualSculptWorkspace extends FrameLayout {
         status.setText("Meshy3D");
         status.setTextColor(0xFFB8C4D1);
         status.setTextSize(9);
+    }
+
+    public void setActiveWorkspaceIndex(int index) {
+        if (index < 0 || index >= WORKSPACE_NAMES.length) return;
+        activeWorkspaceIndex = index;
+        for (int i = 0; i < workspaceTabs.size(); i++) {
+            TextView tab = workspaceTabs.get(i);
+            boolean selected = i == index;
+            tab.setTextColor(selected ? Color.WHITE : 0xFFB7B7B7);
+            if (selected) {
+                GradientDrawable background = new GradientDrawable();
+                background.setColor(0xFF3A3A3A);
+                background.setCornerRadius(dp(2));
+                tab.setBackground(background);
+            } else {
+                tab.setBackgroundColor(Color.TRANSPARENT);
+            }
+        }
+        if (status != null) status.setText("Meshy3D  |  " + WORKSPACE_NAMES[index]);
+    }
+
+    public int getActiveWorkspaceIndex() { return activeWorkspaceIndex; }
+
+    public void showWorkspaceChooser() {
+        new android.app.AlertDialog.Builder(activity)
+                .setTitle("Meshy3D Workspaces")
+                .setSingleChoiceItems(WORKSPACE_NAMES, activeWorkspaceIndex,
+                        (dialog, which) -> {
+                            setActiveWorkspaceIndex(which);
+                            dialog.dismiss();
+                        })
+                .setNegativeButton("Cancel", null).show();
     }
 
     public void setObjectModesLocked(boolean locked) {
