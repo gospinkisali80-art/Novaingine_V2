@@ -813,24 +813,66 @@ void stepLandscapeRigidBodies(float dt) {
             const float otherHalfX = std::max(0.05f, std::fabs(other->transform.scale.x) * 0.5f);
             const float otherHalfY = std::max(0.05f, std::fabs(other->transform.scale.y) * 0.5f);
             const float otherHalfZ = std::max(0.05f, std::fabs(other->transform.scale.z) * 0.5f);
-            const float dx = object->transform.position.x - other->transform.position.x;
-            const float dz = object->transform.position.z - other->transform.position.z;
-            const float overlapX = halfX + otherHalfX - std::fabs(dx);
-            const float overlapZ = halfZ + otherHalfZ - std::fabs(dz);
-            const float bottomA = object->transform.position.y - halfY;
-            const float bottomB = other->transform.position.y - otherHalfY;
-            const float overlapY = halfY + otherHalfY -
-                std::fabs(object->transform.position.y - other->transform.position.y);
-            if (overlapX <= 0.0f || overlapZ <= 0.0f || overlapY <= 0.0f) continue;
-            if (previousBottom >= other->transform.position.y - otherHalfY - 0.12f &&
-                bottomA < other->transform.position.y + otherHalfY) {
-                object->transform.position.y = other->transform.position.y + otherHalfY + halfY;
-                if (body.velocity.y < 0.0f)
-                    body.velocity.y = -body.velocity.y * std::min(body.restitution, otherBody.second.restitution);
-                if (std::fabs(body.velocity.y) < 0.35f) body.velocity.y = 0.0f;
-            } else if (bottomB >= object->transform.position.y - halfY - 0.12f &&
-                       bottomB < object->transform.position.y + halfY) {
-                other->transform.position.y = object->transform.position.y + halfY + otherHalfY;
+            const nova::Vec3 delta = object->transform.position - other->transform.position;
+            const float overlapX = halfX + otherHalfX - std::fabs(delta.x);
+            const float overlapY = halfY + otherHalfY - std::fabs(delta.y);
+            const float overlapZ = halfZ + otherHalfZ - std::fabs(delta.z);
+            if (overlapX <= 0.0f || overlapY <= 0.0f || overlapZ <= 0.0f) continue;
+
+            // Resolve along the shallowest separating axis, not only the vertical axis.
+            nova::Vec3 normal(0.0f, 0.0f, 0.0f);
+            float penetration = overlapX;
+            normal.x = delta.x >= 0.0f ? 1.0f : -1.0f;
+            if (overlapY < penetration) {
+                penetration = overlapY;
+                normal = nova::Vec3(0.0f, delta.y >= 0.0f ? 1.0f : -1.0f, 0.0f);
+            }
+            if (overlapZ < penetration) {
+                penetration = overlapZ;
+                normal = nova::Vec3(0.0f, 0.0f, delta.z >= 0.0f ? 1.0f : -1.0f);
+            }
+
+            LandscapeRigidBody& otherState = gLandscapeRigidBodies[otherBody.first];
+            const float inverseMassA = 1.0f / std::max(0.01f, body.mass);
+            const float inverseMassB = 1.0f / std::max(0.01f, otherState.mass);
+            const float inverseMassSum = inverseMassA + inverseMassB;
+            const float correction = std::max(0.0f, penetration - 0.002f) * 0.82f / inverseMassSum;
+            object->transform.position = object->transform.position + normal * (correction * inverseMassA);
+            other->transform.position = other->transform.position - normal * (correction * inverseMassB);
+
+            const float relativeX = body.velocity.x - otherState.velocity.x;
+            const float relativeY = body.velocity.y - otherState.velocity.y;
+            const float relativeZ = body.velocity.z - otherState.velocity.z;
+            const float normalVelocity = relativeX * normal.x +
+                                        relativeY * normal.y +
+                                        relativeZ * normal.z;
+            if (normalVelocity < 0.0f) {
+                const float restitution = std::min(body.restitution, otherState.restitution);
+                const float impulseMagnitude = -(1.0f + restitution) * normalVelocity / inverseMassSum;
+                const nova::Vec3 impulse = normal * impulseMagnitude;
+                body.velocity = body.velocity + impulse * inverseMassA;
+                otherState.velocity = otherState.velocity - impulse * inverseMassB;
+
+                const float rvx = body.velocity.x - otherState.velocity.x;
+                const float rvy = body.velocity.y - otherState.velocity.y;
+                const float rvz = body.velocity.z - otherState.velocity.z;
+                const float normalAfter = rvx * normal.x + rvy * normal.y + rvz * normal.z;
+                nova::Vec3 tangent(rvx - normal.x * normalAfter,
+                                   rvy - normal.y * normalAfter,
+                                   rvz - normal.z * normalAfter);
+                const float tangentLength = std::sqrt(tangent.x*tangent.x +
+                                                      tangent.y*tangent.y + tangent.z*tangent.z);
+                if (tangentLength > 1e-5f) {
+                    tangent = tangent * (1.0f / tangentLength);
+                    const float frictionImpulse = -(rvx*tangent.x + rvy*tangent.y + rvz*tangent.z) /
+                                                  inverseMassSum;
+                    const float friction = std::sqrt(std::max(0.0f, body.friction * otherState.friction));
+                    const float maxFriction = impulseMagnitude * friction;
+                    const float clampedFriction = std::clamp(frictionImpulse, -maxFriction, maxFriction);
+                    const nova::Vec3 frictionVector = tangent * clampedFriction;
+                    body.velocity = body.velocity + frictionVector * inverseMassA;
+                    otherState.velocity = otherState.velocity - frictionVector * inverseMassB;
+                }
             }
         }
         ++it;
