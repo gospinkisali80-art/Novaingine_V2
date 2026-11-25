@@ -48,8 +48,6 @@ public final class Meshy3DViewport extends View {
                     result[index][fixedAxis] = (s % 2 == 0) ? 1f : -1f;
                     result[index][uAxis] = fu;
                     result[index][vAxis] = fv;
-                    // Reverse one parameter when required to keep the side winding outward.
-                    if (sign < 0) result[index][uAxis] = -fu;
                     index++;
                 }
             }
