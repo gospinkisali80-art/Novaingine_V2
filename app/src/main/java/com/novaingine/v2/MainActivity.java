@@ -1487,7 +1487,7 @@ public final class MainActivity extends Activity
                     .setItems(names, (d, which) -> {
                         engineSurface.selectLandscapeLayer(which, ok -> {
                             if (!ok) return;
-                            String[] actions = {"Toggle visibility", "Toggle lock", "Move layer up", "Delete layer"};
+                            String[] actions = {"Toggle visibility", "Toggle lock", "Move layer up", "Move layer down", "Edit layer blend", "Delete layer"};
                             new AlertDialog.Builder(this).setTitle(names[which])
                                     .setItems(actions, (ad, action) -> engineSurface.getLandscapeLayerState(which, state -> {
                                         if (state == null || state.length < 4) return;
@@ -1498,8 +1498,26 @@ public final class MainActivity extends Activity
                                                 state[0] > 0.5f, state[1] < 0.5f, state[2], state[3], result ->
                                                 android.widget.Toast.makeText(this, result ? "Layer lock updated" : "Layer update failed", android.widget.Toast.LENGTH_SHORT).show());
                                         else if (action == 2) engineSurface.moveLandscapeLayer(which, Math.max(0, which - 1), result ->
-                                                android.widget.Toast.makeText(this, result ? "Layer order updated" : "Layer move failed", android.widget.Toast.LENGTH_SHORT).show());
-                                        else engineSurface.deleteLandscapeLayer(which, result ->
+                                                android.widget.Toast.makeText(this, result ? "Layer moved up" : "Layer move failed", android.widget.Toast.LENGTH_SHORT).show());
+                                        else if (action == 3) engineSurface.moveLandscapeLayer(which, Math.min(names.length - 1, which + 1), result ->
+                                                android.widget.Toast.makeText(this, result ? "Layer moved down" : "Layer move failed", android.widget.Toast.LENGTH_SHORT).show());
+                                        else if (action == 4) {
+                                            LinearLayout blend = new LinearLayout(this);
+                                            blend.setOrientation(LinearLayout.VERTICAL);
+                                            blend.setPadding(dp(18), dp(8), dp(18), dp(8));
+                                            TextView hLabel = new TextView(this); hLabel.setText("Height blend alpha"); hLabel.setTextColor(Color.DKGRAY);
+                                            android.widget.SeekBar hAlpha = new android.widget.SeekBar(this); hAlpha.setMax(100); hAlpha.setProgress(Math.round(state[2] * 100));
+                                            TextView pLabel = new TextView(this); pLabel.setText("Paint blend alpha"); pLabel.setTextColor(Color.DKGRAY);
+                                            android.widget.SeekBar pAlpha = new android.widget.SeekBar(this); pAlpha.setMax(100); pAlpha.setProgress(Math.round(state[3] * 100));
+                                            blend.addView(hLabel); blend.addView(hAlpha); blend.addView(pLabel); blend.addView(pAlpha);
+                                            new AlertDialog.Builder(this).setTitle("Layer Blend • " + names[which]).setView(blend)
+                                                    .setNegativeButton("Cancel", null)
+                                                    .setPositiveButton("Apply", (bd, bw) -> engineSurface.setLandscapeLayerState(
+                                                            which, state[0] > 0.5f, state[1] > 0.5f,
+                                                            hAlpha.getProgress() / 100.0f, pAlpha.getProgress() / 100.0f,
+                                                            result -> android.widget.Toast.makeText(this, result ? "Layer blend updated" : "Layer blend failed", android.widget.Toast.LENGTH_SHORT).show()))
+                                                    .show();
+                                        } else engineSurface.deleteLandscapeLayer(which, result ->
                                                 android.widget.Toast.makeText(this, result ? "Layer deleted" : "The last remaining layer cannot be deleted", android.widget.Toast.LENGTH_SHORT).show());
                                     })).setNegativeButton("Close", null).show();
                         });
