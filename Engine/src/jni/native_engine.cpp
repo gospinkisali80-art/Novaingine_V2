@@ -27,6 +27,7 @@
 #include "../Physics/PhysicsWorld.h"
 #include "../Geometry/Mesh.h"
 #include "../Geometry/LandscapeSystem.h"
+#include "../Geometry/VoxelCaveSystem.h"
 #include "../Geometry/PrimitiveBuilder.h"
 #include "../Geometry/MeshSculptor.h"
 #include "../Geometry/MeshModeling.h"
@@ -54,6 +55,8 @@ struct LandscapeWorldTile {
     nova::Mesh fullMesh;
 };
 std::unordered_map<uint64_t, LandscapeWorldTile> gLandscapeWorldTiles;
+struct VoxelCaveRecord { uint32_t objectId = 0; nova::VoxelCaveSystem volume; };
+std::vector<VoxelCaveRecord> gVoxelCaves;
 uint64_t landscapeTileKey(int x, int z) {
     return (static_cast<uint64_t>(static_cast<uint32_t>(x)) << 32) |
            static_cast<uint32_t>(z);
@@ -168,6 +171,7 @@ struct SceneSnapshot {
     bool includesLandscape = false;
     nova::LandscapeSystem landscape;
     std::unordered_map<uint64_t, LandscapeWorldTile> worldTiles;
+    std::vector<VoxelCaveRecord> voxelCaves;
     uint32_t selectedId = 0;
 };
 
@@ -180,7 +184,7 @@ SceneSnapshot captureScene(bool includeCustomMeshes = false) {
     snapshot.objects = gScene.getObjects();
     snapshot.includesCustomMeshes = includeCustomMeshes;
     snapshot.includesLandscape = includeCustomMeshes;
-    if (includeCustomMeshes) { snapshot.landscape = gLandscape; snapshot.worldTiles = gLandscapeWorldTiles; }
+    if (includeCustomMeshes) { snapshot.landscape = gLandscape; snapshot.worldTiles = gLandscapeWorldTiles; snapshot.voxelCaves = gVoxelCaves; }
     if (includeCustomMeshes) { snapshot.customMeshes = gCustomMeshes; snapshot.sculptMasks = gSculptMasks; }
     snapshot.selectedId = gScene.selectedId();
     return snapshot;
@@ -197,7 +201,7 @@ void recordUndo(bool includeCustomMeshes = false) {
 void restoreScene(const SceneSnapshot& snapshot) {
     gScene.clear();
     if (snapshot.includesCustomMeshes) { gCustomMeshes = snapshot.customMeshes; gSculptMasks = snapshot.sculptMasks; }
-    if (snapshot.includesLandscape) { gLandscape = snapshot.landscape; gLandscapeWorldTiles = snapshot.worldTiles; }
+    if (snapshot.includesLandscape) { gLandscape = snapshot.landscape; gLandscapeWorldTiles = snapshot.worldTiles; gVoxelCaves = snapshot.voxelCaves; }
     for (const nova::SceneObject& object : snapshot.objects) {
         gScene.addObject(object);
     }
@@ -738,6 +742,19 @@ void updateTerrainLod() {
     gTerrainChunksDirty=false;
 }
 
+bool insideVoxelCave(const nova::Vec3& position) {
+    for (const VoxelCaveRecord& cave : gVoxelCaves)
+        if (cave.volume.containsAir(position)) return true;
+    return false;
+}
+
+bool resolveVoxelCaveCollision(nova::Vec3& position, float radius) {
+    bool resolved = false;
+    for (const VoxelCaveRecord& cave : gVoxelCaves)
+        resolved = cave.volume.resolveSphereInsideCave(position, radius) || resolved;
+    return resolved;
+}
+
 void stepLandscapeRigidBodies(float dt) {
     dt = std::clamp(dt, 0.0f, 0.05f);
     if (dt <= 0.0f || gLandscapeRigidBodies.empty()) return;
@@ -758,10 +775,12 @@ void stepLandscapeRigidBodies(float dt) {
         body.velocity.y -= 9.81f * dt;
         object->transform.position = object->transform.position + body.velocity * dt;
 
+        const bool inCaveAir = insideVoxelCave(object->transform.position);
+        if (inCaveAir) resolveVoxelCaveCollision(object->transform.position, std::min(halfX, std::min(halfY, halfZ)));
         bool foundGround = false;
-        const float ground = terrainHeightAt(object->transform.position.x,
+        const float ground = inCaveAir ? 0.0f : terrainHeightAt(object->transform.position.x,
                                              object->transform.position.z, foundGround);
-        if (foundGround && object->transform.position.y - halfY < ground) {
+        if (!inCaveAir && foundGround && object->transform.position.y - halfY < ground) {
             object->transform.position.y = ground + halfY;
             if (body.velocity.y < 0.0f) body.velocity.y = -body.velocity.y * body.restitution;
             if (std::fabs(body.velocity.y) < 0.35f) body.velocity.y = 0.0f;
