@@ -115,6 +115,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private final Handler timelineHandler = new Handler(Looper.getMainLooper());
     private boolean timelinePlaying;
     private long timelineStartMs;
+    private int currentTimelineFrame=1;
+    private Runnable timelineTick;
 
     public ManualSculptWorkspace(Activity activity, EngineSurface engine, Runnable onExit) {
         super(activity);
@@ -534,10 +536,15 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 break;
             case 6:
                 if ("Insert Keyframe".equals(item) || "Keyframes".equals(item)) {
-                    checkpointMeshEdit(); meshyViewport.storeMeshKeyframe(1); status.setText("Animation | Mesh keyframe stored at frame 1");
+                    checkpointMeshEdit();meshyViewport.storeMeshKeyframe(currentTimelineFrame);
+                    status.setText("Animation | Keyframe stored at frame "+currentTimelineFrame);
                 } else if ("Delete Keyframe".equals(item)) {
-                    checkpointMeshEdit(); meshyViewport.deleteMeshKeyframe(1); status.setText("Animation | Keyframe at frame 1 deleted");
-                } else showWorkspaceActionInfo(item);
+                    checkpointMeshEdit();meshyViewport.deleteMeshKeyframe(currentTimelineFrame);
+                    status.setText("Animation | Keyframe at frame "+currentTimelineFrame+" deleted");
+                } else if ("Timeline".equals(item) || "Playback Controls".equals(item)
+                        || "Current Frame: 1".equals(item) || "Dope Sheet".equals(item)
+                        || "Graph Editor".equals(item)) showAnimationTimeline();
+                else showWorkspaceActionInfo(item);
                 break;
             case 7:
                 if ("Render Image".equals(item) || "Render Viewport".equals(item) || "Last Render".equals(item))
@@ -599,6 +606,39 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 .setView(root).setPositiveButton("Done",(d,w)->status.setText(paintMode
                         ?"Texture Paint | Pixel image updated":"UV Editing | UV island changes applied"))
                 .setNegativeButton("Close",null).show();
+    }
+
+    private void showAnimationTimeline() {
+        LinearLayout panel=new LinearLayout(activity);panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(14),dp(10),dp(14),dp(8));
+        TextView frameLabel=new TextView(activity);frameLabel.setTextColor(Color.WHITE);frameLabel.setText("Frame "+currentTimelineFrame);
+        SeekBar frame=new SeekBar(activity);frame.setMax(249);frame.setProgress(currentTimelineFrame-1);
+        frame.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
+            public void onProgressChanged(SeekBar b,int p,boolean user){currentTimelineFrame=p+1;frameLabel.setText("Frame "+currentTimelineFrame+"  •  "+meshyViewport.getMeshKeyframeCount()+" keyframes");meshyViewport.applyAnimationFrame(currentTimelineFrame);}
+            public void onStartTrackingTouch(SeekBar b){}
+            public void onStopTrackingTouch(SeekBar b){}
+        });
+        panel.addView(frameLabel);panel.addView(frame);
+        HorizontalScrollView actions=new HorizontalScrollView(activity);actions.setHorizontalScrollBarEnabled(false);
+        LinearLayout row=new LinearLayout(activity);row.setOrientation(LinearLayout.HORIZONTAL);
+        TextView insert=dockItem("Insert Keyframe",false),remove=dockItem("Delete Keyframe",false),play=dockItem("Play",false);
+        row.addView(insert);row.addView(remove);row.addView(play);actions.addView(row);panel.addView(actions);
+        insert.setOnClickListener(v->{checkpointMeshEdit();meshyViewport.storeMeshKeyframe(currentTimelineFrame);frameLabel.setText("Frame "+currentTimelineFrame+"  •  "+meshyViewport.getMeshKeyframeCount()+" keyframes");});
+        remove.setOnClickListener(v->{checkpointMeshEdit();meshyViewport.deleteMeshKeyframe(currentTimelineFrame);frameLabel.setText("Frame "+currentTimelineFrame+"  •  "+meshyViewport.getMeshKeyframeCount()+" keyframes");});
+        play.setOnClickListener(v->{
+            timelinePlaying=!timelinePlaying;play.setText(timelinePlaying?"Pause":"Play");
+            if(timelinePlaying){
+                timelineTick=new Runnable(){public void run(){
+                    if(!timelinePlaying)return;currentTimelineFrame=currentTimelineFrame>=250?1:currentTimelineFrame+1;
+                    frame.setProgress(currentTimelineFrame-1);meshyViewport.applyAnimationFrame(currentTimelineFrame);
+                    timelineHandler.postDelayed(this,33L);
+                }};timelineHandler.post(timelineTick);
+            }else if(timelineTick!=null)timelineHandler.removeCallbacks(timelineTick);
+        });
+        android.app.AlertDialog dialog=new android.app.AlertDialog.Builder(activity).setTitle("Animation Timeline")
+                .setView(panel).setPositiveButton("Done",null).setNegativeButton("Close",null).create();
+        dialog.setOnDismissListener(d->{timelinePlaying=false;if(timelineTick!=null)timelineHandler.removeCallbacks(timelineTick);});
+        dialog.show();
     }
 
     private void showNodeGraph(int graph) {
