@@ -254,7 +254,7 @@ public final class Meshy3DViewport extends View {
             path.moveTo(p[face[0]][0],p[face[0]][1]);
             for(int k=1;k<4;k++) path.lineTo(p[face[k]][0],p[face[k]][1]);
             path.close();
-            int side = f / (MESH_SUBDIVISIONS * MESH_SUBDIVISIONS);
+            int side = Math.min(FACE_COLORS.length-1,f / (MESH_SUBDIVISIONS * MESH_SUBDIVISIONS));
             int base = FACE_COLORS[side];
             int shaded = document.isFaceSelected(f) ? 0xFFFFA52B : blendColor(base, meshTint, 0.48f);
             if(activeTexture!=null&&activeUvs!=null&&f<activeUvs.length&&activeUvs[f].length>0){
@@ -361,6 +361,7 @@ public final class Meshy3DViewport extends View {
         float[][] a=meshKeyframes.get(before),b=meshKeyframes.get(after);
         if(a==null||b==null||a.length!=vertices.length||b.length!=vertices.length)return;
         float t=after==before?0f:Math.max(0f,Math.min(1f,(frame-before)/(float)(after-before)));
+        t=t*t*(3f-2f*t);
         for(int i=0;i<vertices.length;i++)for(int axis=0;axis<3;axis++)
             vertices[i][axis]=a[i][axis]+(b[i][axis]-a[i][axis])*t;
         syncCoreFromViewport();invalidate();
