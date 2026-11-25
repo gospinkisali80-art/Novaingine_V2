@@ -100,6 +100,7 @@ public final class NativeBridge {
     public static native void nativeSetPhysicsEnabled(
             boolean enabled
     );
+    public static native boolean nativeSetSelectedRigidBody(boolean enabled, float mass, float restitution, float friction);
 
     public static native void nativeSetPaused(
             boolean paused
