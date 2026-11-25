@@ -29,10 +29,12 @@ target_compile_options(
 
 find_library(log-lib log)
 find_library(gles-lib GLESv3)
+find_library(z-lib z)
 
 target_link_libraries(
     nova_engine
     PRIVATE
     ${log-lib}
     ${gles-lib}
+    ${z-lib}
 )
