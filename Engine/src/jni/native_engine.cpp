@@ -905,6 +905,7 @@ Java_com_novaingine_v2_NativeBridge_nativeFly(
                 gCamera.position.y = minimumCameraY;
                 if (gVerticalVelocity < 0.0f) gVerticalVelocity = 0.0f;
                 gPhysicsGrounded = true;
+                gCamera.target = gCamera.position + gCamera.forward() * 10.0f;
             }
         }
     } else {
