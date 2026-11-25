@@ -108,6 +108,7 @@ public final class NativeBridge {
 
     public static native String[] nativeGetSceneObjects();
     public static native void nativeSelectObjectById(int objectId);
+    public static native boolean nativeRenameSelectedObject(String name);
     public static native float[] nativeGetSelectedTransform();
     public static native float[] nativeProjectSelectedPosition();
     public static native float[] nativeProjectSelectedGizmo();
