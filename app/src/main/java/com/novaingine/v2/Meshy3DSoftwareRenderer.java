@@ -28,8 +28,8 @@ public final class Meshy3DSoftwareRenderer {
         float[] light=normalize(new float[]{-.45f,.82f,.65f});
         float[] view=normalize(new float[]{0,0,1});
         float rough=Math.max(.03f,Math.min(1,roughness)),metal=Math.max(0,Math.min(1,metallic));
-        for(int[] face:faces){
-            if(face.length<3)continue;V a=projected[face[0]],b=projected[face[1]],c=projected[face[2]];
+        for(int fi=0;fi<faces.length;fi++){
+            int[] face=faces[fi];if(face.length<3)continue;V a=projected[face[0]],b=projected[face[1]],c=projected[face[2]];
             float[] n=normalize(cross(new float[]{b.x-a.x,b.y-a.y,b.z-a.z},new float[]{c.x-a.x,c.y-a.y,c.z-a.z}));
             if(dot(n,new float[]{-a.x,-a.y,5.2f-a.z})<=0)continue;
             for(int tri=1;tri<face.length-1;tri++)
