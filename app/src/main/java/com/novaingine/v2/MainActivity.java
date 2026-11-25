@@ -27,6 +27,8 @@ import android.widget.HorizontalScrollView;
 import android.widget.Spinner;
 import android.widget.ArrayAdapter;
 import android.widget.CheckBox;
+import android.content.ClipData;
+import android.provider.OpenableColumns;
 
 public final class MainActivity extends Activity
         implements EditorToolbar.ViewportActions {
@@ -645,6 +647,203 @@ public final class MainActivity extends Activity
     }
 
     private static final int REQUEST_IMPORT_GLB = 7412;
+    private static final int REQUEST_OPEN_NOVA = 7413;
+    private static final int REQUEST_SAVE_NOVA = 7414;
+    private static final int REQUEST_SAVE_COPY_NOVA = 7415;
+    private static final int REQUEST_EXPORT_NOVA = 7416;
+
+    public void showMeshyFileMenu(View anchor) {
+        android.widget.PopupMenu popup = new android.widget.PopupMenu(this, anchor);
+        String[] entries = {
+                "New", "Open", "Open Recent", "Revert", "Recover",
+                "Save", "Save As", "Save Copy", "Save Incremental",
+                "Link", "Append", "Data Previews", "Import", "Export",
+                "External Data", "Clean Up", "Defaults", "Quit"
+        };
+        for (int i = 0; i < entries.length; i++) popup.getMenu().add(0, i, i, entries[i]);
+        popup.setOnMenuItemClickListener(item -> {
+            performMeshyFileAction(item.getTitle().toString());
+            return true;
+        });
+        popup.show();
+    }
+
+    public void performMeshyFileAction(String action) {
+        switch (action) {
+            case "New":
+                createNewProject();
+                break;
+            case "Open":
+                new AlertDialog.Builder(this).setTitle("Open")
+                        .setItems(new String[]{"Open Meshy3D project…", "Open recent project…"}, (d, w) -> {
+                            if (w == 0) openNovaDocumentPicker(); else chooseProject();
+                        }).setNegativeButton("Cancel", null).show();
+                break;
+            case "Open Recent":
+                chooseProject();
+                break;
+            case "Revert":
+                new AlertDialog.Builder(this).setTitle("Revert project?")
+                        .setMessage("Reload the last saved project file and discard unsaved changes?")
+                        .setNegativeButton("Cancel", null)
+                        .setPositiveButton("Revert", (d, w) -> loadCurrentScene())
+                        .show();
+                break;
+            case "Recover":
+                recoverAutosave();
+                break;
+            case "Save":
+                saveCurrentScene();
+                break;
+            case "Save As":
+                saveDocumentPicker(REQUEST_SAVE_NOVA, "Meshy3D_Project.nova");
+                break;
+            case "Save Copy":
+                saveDocumentPicker(REQUEST_SAVE_COPY_NOVA, "Meshy3D_Copy.nova");
+                break;
+            case "Save Incremental":
+                saveIncrementalScene();
+                break;
+            case "Link":
+                android.widget.Toast.makeText(this,
+                        "Meshy3D links supported GLB assets by importing them into the current scene.", android.widget.Toast.LENGTH_LONG).show();
+                openGlbPicker();
+                break;
+            case "Append":
+                openGlbPicker();
+                break;
+            case "Data Previews":
+                showSceneDataPreview();
+                break;
+            case "Import":
+                openGlbPicker();
+                break;
+            case "Export":
+                saveDocumentPicker(REQUEST_EXPORT_NOVA, "Meshy3D_Export.nova");
+                break;
+            case "External Data":
+                new AlertDialog.Builder(this).setTitle("External Data")
+                        .setMessage("Meshy3D stores scene objects and sculpt mesh data inside the .nova project. Imported GLB files are converted into scene meshes; there are no live external .blend links to pack.")
+                        .setPositiveButton("OK", null).show();
+                break;
+            case "Clean Up":
+                cleanMeshyTemporaryFiles();
+                break;
+            case "Defaults":
+                new AlertDialog.Builder(this).setTitle("Restore Defaults?")
+                        .setMessage("Reset the current scene to Meshy3D's default startup scene?")
+                        .setNegativeButton("Cancel", null)
+                        .setPositiveButton("Restore", (d, w) -> {
+                            engineSurface.resetScene();
+                            android.widget.Toast.makeText(this, "Default scene restored.", android.widget.Toast.LENGTH_SHORT).show();
+                        }).show();
+                break;
+            case "Quit":
+                if (manualSculptWorkspace != null) closeManualSculpting();
+                else finish();
+                break;
+        }
+    }
+
+    private void openNovaDocumentPicker() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/octet-stream", "application/x-nova-project"});
+        startActivityForResult(intent, REQUEST_OPEN_NOVA);
+    }
+
+    private void saveDocumentPicker(int requestCode, String filename) {
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/octet-stream");
+        intent.putExtra(Intent.EXTRA_TITLE, filename);
+        startActivityForResult(intent, requestCode);
+    }
+
+    private void recoverAutosave() {
+        File autosave = activeProjectScene == null ? null
+                : new File(activeProjectScene.getParentFile(), "Scene.recovery.nova");
+        if (autosave == null || !autosave.isFile()) {
+            android.widget.Toast.makeText(this, "No recovery file is available yet.", android.widget.Toast.LENGTH_LONG).show();
+            return;
+        }
+        engineSurface.loadSceneAsync(autosave.getAbsolutePath(), ok ->
+                android.widget.Toast.makeText(this, ok ? "Recovered autosaved scene." : "Recovery file could not be opened.",
+                        android.widget.Toast.LENGTH_LONG).show());
+    }
+
+    private void saveIncrementalScene() {
+        File source = sceneFile();
+        File directory = source.getParentFile();
+        if (directory == null) directory = getFilesDir();
+        int version = 1;
+        File target;
+        do {
+            target = new File(directory, String.format(java.util.Locale.US, "Scene_%03d.nova", version++));
+        } while (target.exists() && version < 10000);
+        boolean saved = engineSurface.saveScene(target.getAbsolutePath());
+        android.widget.Toast.makeText(this, saved ? "Saved version: " + target.getName() : "Incremental save failed.",
+                android.widget.Toast.LENGTH_LONG).show();
+    }
+
+    private void showSceneDataPreview() {
+        String[] objects = engineSurface.getSceneObjects();
+        if (objects == null || objects.length == 0) {
+            new AlertDialog.Builder(this).setTitle("Data Previews")
+                    .setMessage("The current scene contains no objects.").setPositiveButton("Close", null).show();
+            return;
+        }
+        new AlertDialog.Builder(this).setTitle("Scene Data Previews (" + objects.length + ")")
+                .setItems(objects, (d, which) -> {
+                    String row = objects[which] == null ? "" : objects[which];
+                    int split = row.indexOf('|');
+                    try { if (split > 0) engineSurface.selectObjectById(Integer.parseInt(row.substring(0, split))); }
+                    catch (NumberFormatException ignored) {}
+                }).setNegativeButton("Close", null).show();
+    }
+
+    private void cleanMeshyTemporaryFiles() {
+        File[] files = getCacheDir().listFiles();
+        int removed = 0;
+        if (files != null) for (File file : files) {
+            String name = file.getName();
+            if ((name.startsWith("nova_import_") || name.startsWith("meshy_export_"))
+                    && file.isFile() && file.delete()) removed++;
+        }
+        android.widget.Toast.makeText(this, "Cleaned " + removed + " temporary import/export file(s).",
+                android.widget.Toast.LENGTH_LONG).show();
+    }
+
+    private File copyUriToPrivateFile(Uri uri, String prefix, String suffix) throws Exception {
+        File directory = new File(getFilesDir(), "ImportedProjects");
+        if (!directory.exists() && !directory.mkdirs()) throw new IllegalStateException("Cannot create project storage.");
+        File target = new File(directory, prefix + System.currentTimeMillis() + suffix);
+        try (InputStream input = getContentResolver().openInputStream(uri);
+             FileOutputStream output = new FileOutputStream(target)) {
+            if (input == null) throw new IllegalStateException("Cannot read selected document.");
+            byte[] buffer = new byte[8192];
+            int count;
+            long total = 0;
+            while ((count = input.read(buffer)) != -1) {
+                total += count;
+                if (total > 300L * 1024L * 1024L) throw new IllegalArgumentException("Project file exceeds 300 MB.");
+                output.write(buffer, 0, count);
+            }
+        }
+        return target;
+    }
+
+    private void copyPrivateFileToUri(File source, Uri uri) throws Exception {
+        try (java.io.OutputStream output = getContentResolver().openOutputStream(uri, "wt");
+             java.io.InputStream input = new java.io.FileInputStream(source)) {
+            if (output == null) throw new IllegalStateException("Cannot write selected document.");
+            byte[] buffer = new byte[8192];
+            int count;
+            while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+            output.flush();
+        }
+    }
 
     public void openSculptAssetPicker() {
         openGlbPicker();
@@ -662,8 +861,59 @@ public final class MainActivity extends Activity
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != REQUEST_IMPORT_GLB || resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
         Uri uri = data.getData();
+        if (requestCode == REQUEST_OPEN_NOVA) {
+            new Thread(() -> {
+                try {
+                    File project = copyUriToPrivateFile(uri, "opened_", ".nova");
+                    runOnUiThread(() -> {
+                        activeProjectDirectory = project.getParentFile();
+                        activeProjectScene = project;
+                        engineSurface.loadSceneAsync(project.getAbsolutePath(), ok -> {
+                            if (ok) enterProject("Opened " + project.getName());
+                            else android.widget.Toast.makeText(this, "Could not open this .nova project.", android.widget.Toast.LENGTH_LONG).show();
+                        });
+                    });
+                } catch (Exception error) {
+                    runOnUiThread(() -> android.widget.Toast.makeText(this, "Open failed: " + error.getMessage(), android.widget.Toast.LENGTH_LONG).show());
+                }
+            }, "Meshy-Open-Project").start();
+            return;
+        }
+        if (requestCode == REQUEST_SAVE_NOVA || requestCode == REQUEST_SAVE_COPY_NOVA || requestCode == REQUEST_EXPORT_NOVA) {
+            File temp = new File(getCacheDir(), "meshy_export_" + System.currentTimeMillis() + ".nova");
+            boolean saved = engineSurface.saveScene(temp.getAbsolutePath());
+            if (!saved) {
+                android.widget.Toast.makeText(this, "Could not serialize the current scene.", android.widget.Toast.LENGTH_LONG).show();
+                return;
+            }
+            new Thread(() -> {
+                try {
+                    copyPrivateFileToUri(temp, uri);
+                    runOnUiThread(() -> {
+                        if (requestCode == REQUEST_SAVE_NOVA) {
+                            File local = new File(new File(getFilesDir(), "ImportedProjects"), "SavedAs_" + System.currentTimeMillis() + ".nova");
+                            try {
+                                java.nio.file.Files.copy(temp.toPath(), local.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                                activeProjectDirectory = local.getParentFile();
+                                activeProjectScene = local;
+                            } catch (Exception ignored) {}
+                        }
+                        android.widget.Toast.makeText(this, requestCode == REQUEST_SAVE_COPY_NOVA
+                                ? "Project copy exported." : requestCode == REQUEST_EXPORT_NOVA
+                                ? "Project exported." : "Project saved to selected location.",
+                                android.widget.Toast.LENGTH_LONG).show();
+                    });
+                } catch (Exception error) {
+                    runOnUiThread(() -> android.widget.Toast.makeText(this, "Save failed: " + error.getMessage(), android.widget.Toast.LENGTH_LONG).show());
+                } finally {
+                    temp.delete();
+                }
+            }, "Meshy-Save-Project").start();
+            return;
+        }
+        if (requestCode != REQUEST_IMPORT_GLB) return;
         new Thread(() -> {
             File modelFile = new File(getCacheDir(), "nova_import_" + System.currentTimeMillis() + ".glb");
             try (InputStream input = getContentResolver().openInputStream(uri);
