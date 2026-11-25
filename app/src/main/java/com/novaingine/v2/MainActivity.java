@@ -1889,7 +1889,60 @@ public final class MainActivity extends Activity
         worldTileCount.setBackgroundColor(0xFF46566A);
         content.addView(worldTileCount, new LinearLayout.LayoutParams(-1, dp(40)));
         worldTileCount.setOnClickListener(v -> engineSurface.getLandscapeWorldTileCount(count ->
-                worldTileCount.setText("STREAMED WORLD TILES: " + count)));
+                worldTileCount.setText("WORLD TILES: " + count)));
+        TextView copyMainTile = new TextView(this);
+        copyMainTile.setText("COPY MAIN LANDSCAPE TO THIS TILE");
+        copyMainTile.setTextColor(Color.WHITE); copyMainTile.setGravity(Gravity.CENTER);
+        copyMainTile.setPadding(dp(8), dp(10), dp(8), dp(10));
+        copyMainTile.setBackgroundColor(0xFF3E684F);
+        content.addView(copyMainTile, new LinearLayout.LayoutParams(-1, dp(40)));
+        copyMainTile.setOnClickListener(v -> {
+            int tx = Math.round(terrainValue(worldTileX, 1));
+            int tz = Math.round(terrainValue(worldTileZ, 0));
+            engineSurface.copyMainLandscapeTile(tx, tz, ok -> {
+                if (ok) {
+                    File asset = landscapeWorldTileAssetFile(tx, tz);
+                    if (asset != null) {
+                        File parent = asset.getParentFile();
+                        if (parent != null && !parent.exists()) parent.mkdirs();
+                        engineSurface.getTerrainHeights(heights -> {
+                            if (heights == null) return;
+                            new Thread(() -> {
+                                try (java.io.DataOutputStream output = new java.io.DataOutputStream(
+                                        new java.io.FileOutputStream(asset))) {
+                                    for (float height : heights) {
+                                        int sample = Math.max(0, Math.min(65535,
+                                                Math.round(((height + 12.0f) / 36.0f) * 65535.0f)));
+                                        output.writeByte(sample & 0xFF);
+                                        output.writeByte((sample >>> 8) & 0xFF);
+                                    }
+                                } catch (Exception ignored) { }
+                            }, "Nova-World-Tile-Copy-Asset").start();
+                        });
+                    }
+                }
+                android.widget.Toast.makeText(this, ok ? "Main landscape copied to tile " + tx + ", " + tz :
+                        "Copy failed. Choose a new tile coordinate.", android.widget.Toast.LENGTH_LONG).show();
+            });
+        });
+        TextView removeWorldTile = new TextView(this);
+        removeWorldTile.setText("REMOVE WORLD TILE AT X / Z");
+        removeWorldTile.setTextColor(Color.WHITE); removeWorldTile.setGravity(Gravity.CENTER);
+        removeWorldTile.setPadding(dp(8), dp(10), dp(8), dp(10));
+        removeWorldTile.setBackgroundColor(0xFF824848);
+        content.addView(removeWorldTile, new LinearLayout.LayoutParams(-1, dp(40)));
+        removeWorldTile.setOnClickListener(v -> {
+            int tx = Math.round(terrainValue(worldTileX, 1));
+            int tz = Math.round(terrainValue(worldTileZ, 0));
+            engineSurface.removeLandscapeWorldTile(tx, tz, ok -> {
+                if (ok) {
+                    File asset = landscapeWorldTileAssetFile(tx, tz);
+                    if (asset != null && asset.exists()) asset.delete();
+                }
+                android.widget.Toast.makeText(this, ok ? "World tile removed" :
+                        "No removable world tile exists at those coordinates", android.widget.Toast.LENGTH_LONG).show();
+            });
+        });
 
         TextView componentHeading = new TextView(this);
         componentHeading.setText("LANDSCAPE COMPONENT MANAGEMENT");
