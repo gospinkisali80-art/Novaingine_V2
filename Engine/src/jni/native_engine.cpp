@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <fstream>
 #include <iomanip>
+#include <sstream>
 #include <mutex>
 #include <condition_variable>
 #include <deque>
@@ -1721,7 +1722,7 @@ Java_com_novaingine_v2_NativeBridge_nativeSaveScene(
     std::ofstream file(temporaryPath, std::ios::out | std::ios::trunc);
     if (!file) return JNI_FALSE;
     file << std::setprecision(9);
-    file << "NOVA_PROJECT 2\n";
+    file << "NOVA_PROJECT 3\n";
     file << gScene.objectCount() << " " << gScene.selectedId() << " "
          << gSculptMeshId << "\n";
     file << gCamera.position.x << " " << gCamera.position.y << " " << gCamera.position.z << " "
@@ -1743,13 +1744,22 @@ Java_com_novaingine_v2_NativeBridge_nativeSaveScene(
 
     file << gCustomMeshes.size() << "\n";
     for (const auto& entry : gCustomMeshes) {
-        const auto& vertices = entry.second.getVertices();
-        const auto& indices = entry.second.getIndices();
+        const nova::Mesh* meshToSave = &entry.second;
+        for (const auto& tileEntry : gLandscapeWorldTiles) {
+            if (tileEntry.second.objectId == entry.first) {
+                meshToSave = &tileEntry.second.fullMesh;
+                break;
+            }
+        }
+        const auto& vertices = meshToSave->getVertices();
+        const auto& indices = meshToSave->getIndices();
         file << entry.first << " " << vertices.size() << " " << indices.size() << "\n";
         for (const auto& v : vertices) {
             file << v.position.x << " " << v.position.y << " " << v.position.z << " "
                  << v.normal.x << " " << v.normal.y << " " << v.normal.z << " "
-                 << v.u << " " << v.v << "\n";
+                 << v.u << " " << v.v << " "
+                 << v.layerWeights[0] << " " << v.layerWeights[1] << " "
+                 << v.layerWeights[2] << " " << v.layerWeights[3] << "\n";
         }
         for (uint32_t index : indices) file << index << " ";
         file << "\n";
@@ -1820,7 +1830,8 @@ Java_com_novaingine_v2_NativeBridge_nativeLoadScene(
     uint32_t selectedId = 0, sculptMeshId = 0;
     if (!(file >> magic >> version)) return JNI_FALSE;
     const bool legacy = magic == "NOVA_SCENE" && version == 1;
-    const bool current = magic == "NOVA_PROJECT" && version == 2;
+    const bool current = magic == "NOVA_PROJECT" && (version == 2 || version == 3);
+    const bool hasLayerWeights = current && version >= 3;
     if (!legacy && !current) return JNI_FALSE;
     if (!(file >> objectCount) || objectCount > 10000) return JNI_FALSE;
     if (current && !(file >> selectedId >> sculptMeshId)) return JNI_FALSE;
@@ -1884,6 +1895,14 @@ Java_com_novaingine_v2_NativeBridge_nativeLoadScene(
                 if (!(file >> vertex.position.x >> vertex.position.y >> vertex.position.z
                       >> vertex.normal.x >> vertex.normal.y >> vertex.normal.z
                       >> vertex.u >> vertex.v)) return JNI_FALSE;
+                if (hasLayerWeights) {
+                    for (float& weight : vertex.layerWeights) {
+                        if (!(file >> weight) || !std::isfinite(weight)) return JNI_FALSE;
+                        weight = std::clamp(weight, 0.0f, 1.0f);
+                    }
+                } else {
+                    vertex.layerWeights[0] = 1.0f;
+                }
                 if (!std::isfinite(vertex.position.x) || !std::isfinite(vertex.position.y) ||
                     !std::isfinite(vertex.position.z) || !std::isfinite(vertex.normal.x) ||
                     !std::isfinite(vertex.normal.y) || !std::isfinite(vertex.normal.z) ||
@@ -1981,12 +2000,62 @@ Java_com_novaingine_v2_NativeBridge_nativeLoadScene(
     gUndoStack.clear();
     gRedoStack.clear();
     gCustomMeshes = std::move(loadedMeshes);
+    gLandscape = nova::LandscapeSystem();
+    gLandscapeWorldTiles.clear();
+
+    auto restoreLandscapeData = [](nova::LandscapeSystem& data, const nova::Mesh& mesh,
+                                   float originX, float originZ) -> bool {
+        const auto& vertices = mesh.getVertices();
+        if (vertices.size() != 129u * 129u) return false;
+        if (!data.initialize(129, 129, 0.5f, originX, originZ)) return false;
+        std::vector<float> heights(vertices.size());
+        std::vector<std::array<float,4>> weights(vertices.size());
+        for (size_t i = 0; i < vertices.size(); ++i) {
+            heights[i] = std::clamp(vertices[i].position.y, -12.0f, 24.0f);
+            for (int c = 0; c < 4; ++c) weights[i][c] = vertices[i].layerWeights[c];
+        }
+        if (!data.setBaseHeights(heights) || !data.setBaseWeights(weights)) return false;
+        std::vector<uint8_t> triangleCount(128u * 128u, 0);
+        const auto& indices = mesh.getIndices();
+        for (size_t i = 0; i + 2 < indices.size(); i += 3) {
+            const uint32_t a = indices[i], b = indices[i+1], c = indices[i+2];
+            const int minX = std::min({static_cast<int>(a % 129u), static_cast<int>(b % 129u), static_cast<int>(c % 129u)});
+            const int minZ = std::min({static_cast<int>(a / 129u), static_cast<int>(b / 129u), static_cast<int>(c / 129u)});
+            if (minX < 128 && minZ < 128) {
+                auto& count = triangleCount[static_cast<size_t>(minZ * 128 + minX)];
+                if (count < 2) ++count;
+            }
+        }
+        for (int z = 0; z < 128; ++z) for (int x = 0; x < 128; ++x)
+            if (triangleCount[static_cast<size_t>(z * 128 + x)] < 2) data.setHole(x, z, true);
+        return true;
+    };
+
+    for (const nova::SceneObject& object : gScene.getObjects()) {
+        auto meshIt = gCustomMeshes.find(object.id);
+        if (meshIt == gCustomMeshes.end()) continue;
+        if (object.name == "Landscape Terrain") {
+            restoreLandscapeData(gLandscape, meshIt->second, -32.0f, -36.0f);
+        } else if (object.name.rfind("Landscape Tile ", 0) == 0) {
+            int tileX = 0, tileZ = 0;
+            if (std::sscanf(object.name.c_str(), "Landscape Tile %d %d", &tileX, &tileZ) != 2) continue;
+            LandscapeWorldTile tile;
+            tile.tileX = tileX; tile.tileZ = tileZ; tile.objectId = object.id;
+            if (!restoreLandscapeData(tile.data, meshIt->second,
+                    landscapeTileOriginX(tileX), landscapeTileOriginZ(tileZ))) continue;
+            tile.fullMesh = meshIt->second;
+            tile.loaded = true; tile.lod = 0;
+            gLandscapeWorldTiles.emplace(landscapeTileKey(tileX, tileZ), std::move(tile));
+        }
+    }
     gSculptMasks = std::move(loadedMasks);
     gSculptMesh = std::move(loadedSculpt);
     gSculptMeshId = current ? sculptMeshId : 0;
     gVisualScript = std::move(loadedScript);
     gVisualScriptStarted = false;
     if (current) gCamera = loadedCamera;
+    gTerrainLodLevel = -1;
+    gTerrainChunksDirty = true;
     else gCamera.reset();
     gSculptMode = false;
     gSculptStrokeActive = false;
