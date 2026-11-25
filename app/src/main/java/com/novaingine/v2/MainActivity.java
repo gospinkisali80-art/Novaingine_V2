@@ -852,12 +852,12 @@ public final class MainActivity extends Activity
         String workspace = manualSculptWorkspace == null ? "Meshy3D workspace not open"
                 : MESHY_WORKSPACE_NAMES[Math.max(0, Math.min(MESHY_WORKSPACE_NAMES.length - 1,
                         manualSculptWorkspace.getActiveWorkspaceIndex()))];
-        String details = "MESHY3D SYSTEM CONSOLE\\n"
-                + "Application: Novaingine / Meshy3D\\n"
-                + "Workspace: " + workspace + "\\n"
-                + "Project: " + project + "\\n"
-                + "Device: " + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL + "\\n"
-                + "Android: " + android.os.Build.VERSION.RELEASE + " (API " + android.os.Build.VERSION.SDK_INT + ")\\n"
+        String details = "MESHY3D SYSTEM CONSOLE\n"
+                + "Application: Novaingine / Meshy3D\n"
+                + "Workspace: " + workspace + "\n"
+                + "Project: " + project + "\n"
+                + "Device: " + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL + "\n"
+                + "Android: " + android.os.Build.VERSION.RELEASE + " (API " + android.os.Build.VERSION.SDK_INT + ")\n"
                 + "This panel shows editor diagnostics. It is not a live Android logcat stream.";
         TextView output = new TextView(this);
         output.setText(details);
@@ -963,19 +963,6 @@ public final class MainActivity extends Activity
                 .setView(scroll).setPositiveButton("Close", null).show();
     }
 
-    public void showMeshyRenderMenu(View anchor) {
-        android.widget.PopupMenu popup = new android.widget.PopupMenu(this, anchor);
-        String[] entries = {"Render Image", "Render Animation", "Viewport Render", "Render Settings"};
-        for (String entry : entries) popup.getMenu().add(entry);
-        popup.setOnMenuItemClickListener(item -> {
-            new AlertDialog.Builder(this).setTitle(item.getTitle())
-                    .setMessage("This render command is listed for the Meshy3D workflow. The current Android renderer provides real-time viewport rendering; offline image and animation rendering are not yet implemented.")
-                    .setPositiveButton("OK", null).show();
-            return true;
-        });
-        popup.show();
-    }
-
     public void showMeshyEditMenu(View anchor) {
         android.widget.PopupMenu popup = new android.widget.PopupMenu(this, anchor);
         String[] entries = {
@@ -1035,11 +1022,11 @@ public final class MainActivity extends Activity
         android.content.SharedPreferences prefs = getSharedPreferences("meshy3d_editor", MODE_PRIVATE);
         if (!prefs.getBoolean("persist_history", false)) return;
         File dir = new File(getFilesDir(), "meshy3d_editor_history");
-        for (String name : prefs.getString("undo_files", "").split("\\n"))
+        for (String name : prefs.getString("undo_files", "").split("\n"))
             if (!name.isEmpty()) { File f = new File(dir, name); if (f.isFile()) meshyUndo.addLast(f); }
-        for (String name : prefs.getString("redo_files", "").split("\\n"))
+        for (String name : prefs.getString("redo_files", "").split("\n"))
             if (!name.isEmpty()) { File f = new File(dir, name); if (f.isFile()) meshyRedo.addLast(f); }
-        for (String line : prefs.getString("repeat_files", "").split("\\n"))
+        for (String line : prefs.getString("repeat_files", "").split("\n"))
             if (!line.isEmpty()) meshyRepeatHistory.add(line);
         meshySnapshotSerial = prefs.getInt("snapshot_serial", 0);
         meshyObjectModesLocked = prefs.getBoolean("lock_object_modes", false);
@@ -1688,6 +1675,8 @@ public final class MainActivity extends Activity
         manualSculptWorkspace = new ManualSculptWorkspace(
                 this, engineSurface, this::closeManualSculpting);
         manualSculptWorkspace.setObjectModesLocked(meshyObjectModesLocked);
+        manualSculptWorkspace.setActiveWorkspaceIndex(getSharedPreferences("meshy3d_editor", MODE_PRIVATE)
+                .getInt("saved_workspace_index", 0));
         rootLayout.addView(manualSculptWorkspace, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
