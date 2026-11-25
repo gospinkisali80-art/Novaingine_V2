@@ -1541,6 +1541,40 @@ public final class MainActivity extends Activity
                             "Could not create road spline", android.widget.Toast.LENGTH_LONG).show());
         });
 
+
+        TextView caveHeading = new TextView(this);
+        caveHeading.setText("CAVE / TUNNEL CREATION");
+        caveHeading.setTextColor(0xFFB45F16);
+        caveHeading.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        caveHeading.setPadding(0, dp(16), 0, dp(4));
+        content.addView(caveHeading);
+        EditText[] caveFields = new EditText[7];
+        String[] caveLabels = {"Entry X", "Entry Y", "Entry Z", "Exit X", "Exit Y", "Exit Z", "Tunnel radius"};
+        String[] caveDefaults = {"-14", "-2.5", "-4", "14", "-2.5", "-4", "2.0"};
+        for (int i=0;i<caveFields.length;i++) {
+            TextView label = new TextView(this); label.setText(caveLabels[i]);
+            label.setTextColor(Color.DKGRAY); label.setTextSize(11); content.addView(label);
+            caveFields[i] = new EditText(this); caveFields[i].setSingleLine(true);
+            caveFields[i].setInputType(android.text.InputType.TYPE_CLASS_NUMBER |
+                    android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL |
+                    android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+            caveFields[i].setText(caveDefaults[i]); content.addView(caveFields[i]);
+        }
+        TextView createCave = new TextView(this);
+        createCave.setText("CREATE CAVE TUNNEL + ENTRANCES");
+        createCave.setTextColor(Color.WHITE); createCave.setGravity(Gravity.CENTER);
+        createCave.setPadding(dp(8), dp(12), dp(8), dp(12)); createCave.setBackgroundColor(0xFF51413A);
+        content.addView(createCave, new LinearLayout.LayoutParams(-1, dp(42)));
+        createCave.setOnClickListener(v -> {
+            float[] pathPoints = {
+                    terrainValue(caveFields[0], -14), terrainValue(caveFields[1], -2.5f), terrainValue(caveFields[2], -4),
+                    terrainValue(caveFields[3], 14), terrainValue(caveFields[4], -2.5f), terrainValue(caveFields[5], -4)
+            };
+            engineSurface.createLandscapeCave(pathPoints, terrainValue(caveFields[6], 2.0f), ok ->
+                    android.widget.Toast.makeText(this, ok ? "Cave tunnel and surface entrances created" :
+                            "Cave creation failed. Create a landscape first.", android.widget.Toast.LENGTH_LONG).show());
+        });
+
         TextView holeHeading = new TextView(this);
         holeHeading.setText("TERRAIN VISIBILITY / HOLES");
         holeHeading.setTextColor(0xFFB45F16);
