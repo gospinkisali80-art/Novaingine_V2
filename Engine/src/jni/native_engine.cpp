@@ -456,6 +456,19 @@ float terrainHeightAt(float worldX, float worldZ, bool& found, bool allowHole) {
     return 0.0f;
 }
 
+nova::Vec3 terrainNormalAt(float worldX, float worldZ) {
+    constexpr float sample = 0.5f;
+    bool leftOk=false, rightOk=false, backOk=false, frontOk=false;
+    const float left = terrainHeightAt(worldX-sample, worldZ, leftOk);
+    const float right = terrainHeightAt(worldX+sample, worldZ, rightOk);
+    const float back = terrainHeightAt(worldX, worldZ-sample, backOk);
+    const float front = terrainHeightAt(worldX, worldZ+sample, frontOk);
+    if (!leftOk || !rightOk || !backOk || !frontOk) return nova::Vec3(0,1,0);
+    const float dx = (right-left)/(2.0f*sample);
+    const float dz = (front-back)/(2.0f*sample);
+    return nova::normalize(nova::Vec3(-dx, 1.0f, -dz));
+}
+
 nova::Mesh buildWorldTileMesh(const nova::LandscapeSystem& data, int tileX, int tileZ, int stride) {
     if (!data.valid()) return nova::Mesh();
     const auto heights = data.heights();
@@ -776,17 +789,38 @@ void stepLandscapeRigidBodies(float dt) {
         object->transform.position = object->transform.position + body.velocity * dt;
 
         const bool inCaveAir = insideVoxelCave(object->transform.position);
-        if (inCaveAir) resolveVoxelCaveCollision(object->transform.position, std::min(halfX, std::min(halfY, halfZ)));
+        if (inCaveAir) resolveVoxelCaveCollision(object->transform.position,
+            std::min(halfX, std::min(halfY, halfZ)));
         bool foundGround = false;
-        const float ground = inCaveAir ? 0.0f : terrainHeightAt(object->transform.position.x,
-                                             object->transform.position.z, foundGround);
-        if (!inCaveAir && foundGround && object->transform.position.y - halfY < ground) {
-            object->transform.position.y = ground + halfY;
-            if (body.velocity.y < 0.0f) body.velocity.y = -body.velocity.y * body.restitution;
-            if (std::fabs(body.velocity.y) < 0.35f) body.velocity.y = 0.0f;
-            const float frictionStep = std::clamp(body.friction * dt, 0.0f, 1.0f);
-            body.velocity.x *= 1.0f - frictionStep;
-            body.velocity.z *= 1.0f - frictionStep;
+        const float ground = inCaveAir ? 0.0f : terrainHeightAt(
+            object->transform.position.x, object->transform.position.z, foundGround);
+        if (!inCaveAir && foundGround) {
+            const nova::Vec3 normal = terrainNormalAt(
+                object->transform.position.x, object->transform.position.z);
+            const float support = std::fabs(normal.x)*halfX +
+                                  std::fabs(normal.y)*halfY +
+                                  std::fabs(normal.z)*halfZ;
+            const float signedDistance =
+                (object->transform.position.y-ground)*normal.y - support;
+            if (signedDistance < 0.0f) {
+                object->transform.position = object->transform.position -
+                    normal * signedDistance;
+                const float normalVelocity = body.velocity.x*normal.x +
+                    body.velocity.y*normal.y + body.velocity.z*normal.z;
+                if (normalVelocity < 0.0f) {
+                    body.velocity = body.velocity -
+                        normal * ((1.0f+body.restitution)*normalVelocity);
+                }
+                const float afterNormal = body.velocity.x*normal.x +
+                    body.velocity.y*normal.y + body.velocity.z*normal.z;
+                nova::Vec3 tangent(body.velocity.x-normal.x*afterNormal,
+                    body.velocity.y-normal.y*afterNormal,
+                    body.velocity.z-normal.z*afterNormal);
+                const float frictionStep = std::clamp(body.friction*dt*5.0f,0.0f,1.0f);
+                body.velocity = body.velocity - tangent*frictionStep;
+                if (std::fabs(body.velocity.x)+std::fabs(body.velocity.y)+
+                    std::fabs(body.velocity.z) < 0.02f) body.velocity = nova::Vec3();
+            }
         }
 
         for (const nova::SceneObject& other : gScene.getObjects()) {
