@@ -2583,6 +2583,26 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateEmptyScene(
     gSculptMeshId = 0;
     gRenderer.setSculptCursor(false, nova::Vec3(), nova::Vec3(0,1,0), 0.18f);
     gScene.clear();
+    // A new level is an empty, lit editor environment rather than a black screen:
+    // keep the procedural sky visible and provide a neutral ground surface.
+    nova::RendererSettings emptyLevelSettings = gRenderer.getSettings();
+    emptyLevelSettings.showSky = true;
+    emptyLevelSettings.showGrid = false;
+    emptyLevelSettings.showShadows = true;
+    gRenderer.setSettings(emptyLevelSettings);
+    gRenderer.setViewMode(0);
+    nova::Transform groundTransform;
+    groundTransform.position = nova::Vec3(0.0f, -0.12f, 0.0f);
+    groundTransform.scale = nova::Vec3(100.0f, 0.20f, 100.0f);
+    const nova::Color groundColor(0.27f, 0.29f, 0.32f, 1.0f);
+    const uint32_t groundId = gScene.addObject(
+        "Ground", nova::PrimitiveType::Cube, groundTransform, groundColor
+    );
+    if (nova::SceneObject* ground = gScene.find(groundId)) {
+        ground->material.baseColor = nova::Vec3(groundColor.r, groundColor.g, groundColor.b);
+        ground->material.roughness = 0.94f;
+        ground->material.metallic = 0.0f;
+    }
     gCustomMeshes.clear();
     gSculptMasks.clear();
     gVisualScript = nova::VisualScript();
