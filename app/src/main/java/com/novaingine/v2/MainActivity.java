@@ -1085,17 +1085,17 @@ public final class MainActivity extends Activity
 
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(18), dp(8), dp(18), dp(4));
+        content.setPadding(dp(18), dp(8), dp(18), dp(8));
 
         TextView info = new TextView(this);
-        info.setText("Create an editable 11 x 11 terrain patch, then sculpt around a world X/Z position. The patch is centered near the arena.");
+        info.setText("LANDSCAPE • 129 x 129 connected heightfield\\nCreate a continuous terrain surface, then shape it with height brushes. Brush positions use world X/Z coordinates.");
         info.setTextColor(Color.DKGRAY);
         info.setTextSize(12);
         content.addView(info);
 
         String[] labels = {"Brush center X", "Brush center Z", "Brush radius", "Brush strength"};
         EditText[] fields = new EditText[4];
-        String[] defaults = {"0", "-4", "3.0", "0.45"};
+        String[] defaults = {"0", "-4", "6.0", "0.65"};
         for (int i = 0; i < fields.length; i++) {
             TextView label = new TextView(this);
             label.setText(labels[i]);
@@ -1113,20 +1113,47 @@ public final class MainActivity extends Activity
             fields[i] = field;
         }
 
-        new AlertDialog.Builder(this)
-                .setTitle("Terrain Sculpting")
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Landscape Tools")
                 .setView(content)
-                .setNeutralButton("Generate", (dialog, which) -> {
-                    boolean ok = engineSurface.createTerrain();
-                    android.widget.Toast.makeText(this,
-                            ok ? "Terrain generated" : "Terrain generation failed",
-                            android.widget.Toast.LENGTH_SHORT).show();
-                })
-                .setPositiveButton("Raise", (dialog, which) ->
-                        applyTerrainBrush(fields, 0))
-                .setNegativeButton("More Tools", (dialog, which) ->
-                        showTerrainModes(fields))
-                .show();
+                .setNegativeButton("Close", null)
+                .create();
+
+        TextView generate = new TextView(this);
+        generate.setText("CREATE / REPLACE LANDSCAPE");
+        generate.setTextColor(Color.WHITE);
+        generate.setTextSize(12);
+        generate.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        generate.setGravity(Gravity.CENTER);
+        generate.setPadding(dp(12), dp(13), dp(12), dp(13));
+        generate.setBackgroundColor(0xFF276A48);
+        LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(44));
+        actionParams.topMargin = dp(8);
+        content.addView(generate, actionParams);
+        generate.setOnClickListener(v -> engineSurface.createTerrain(ok ->
+                android.widget.Toast.makeText(this,
+                        ok ? "129 x 129 landscape created" : "Landscape creation failed",
+                        android.widget.Toast.LENGTH_SHORT).show()));
+
+        String[] brushNames = {"Raise", "Lower", "Smooth", "Flatten"};
+        for (int mode = 0; mode < brushNames.length; mode++) {
+            final int brushMode = mode;
+            TextView action = new TextView(this);
+            action.setText(brushNames[mode].toUpperCase(java.util.Locale.ROOT));
+            action.setTextColor(Color.WHITE);
+            action.setTextSize(12);
+            action.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+            action.setGravity(Gravity.CENTER);
+            action.setPadding(dp(12), dp(10), dp(12), dp(10));
+            action.setBackgroundColor(0xFF354456);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(40));
+            params.topMargin = dp(5);
+            content.addView(action, params);
+            action.setOnClickListener(v -> applyTerrainBrush(fields, brushMode));
+        }
+        dialog.show();
     }
 
     private float terrainValue(EditText field, float fallback) {
@@ -1140,21 +1167,12 @@ public final class MainActivity extends Activity
     private void applyTerrainBrush(EditText[] fields, int mode) {
         float x = terrainValue(fields[0], 0.0f);
         float z = terrainValue(fields[1], -4.0f);
-        float radius = terrainValue(fields[2], 3.0f);
-        float strength = terrainValue(fields[3], 0.45f);
-        boolean changed = engineSurface.sculptTerrain(x, z, radius, strength, mode);
-        android.widget.Toast.makeText(this,
-                changed ? "Terrain sculpted" : "No terrain found or no change",
-                android.widget.Toast.LENGTH_SHORT).show();
-    }
-
-    private void showTerrainModes(EditText[] fields) {
-        new AlertDialog.Builder(this)
-                .setTitle("Terrain Brush")
-                .setItems(new String[]{"Lower", "Smooth", "Flatten"},
-                        (dialog, which) -> applyTerrainBrush(fields, which + 1))
-                .setNegativeButton("Cancel", null)
-                .show();
+        float radius = terrainValue(fields[2], 6.0f);
+        float strength = terrainValue(fields[3], 0.65f);
+        engineSurface.sculptTerrain(x, z, radius, strength, mode, changed ->
+                android.widget.Toast.makeText(this,
+                        changed ? "Landscape updated" : "No landscape change. Create a landscape first.",
+                        android.widget.Toast.LENGTH_SHORT).show());
     }
 
     private void openAIAssistant() {
