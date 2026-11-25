@@ -59,6 +59,12 @@ public final class MainActivity extends Activity
     private float drawerScaleSnap = 0.25f;
     private float drawerCameraSpeed = 3.07f;
     private ManualSculptWorkspace manualSculptWorkspace;
+    private final java.util.ArrayDeque<File> meshyUndo = new java.util.ArrayDeque<>();
+    private final java.util.ArrayDeque<File> meshyRedo = new java.util.ArrayDeque<>();
+    private final java.util.ArrayList<String> meshyEditHistory = new java.util.ArrayList<>();
+    private String meshyLastOperation;
+    private int meshySnapshotSerial;
+    private boolean meshyObjectModesLocked;
     private ControllerAgent controllerAgent;
     private View projectStartPage;
     private final Handler projectHandler = new Handler(Looper.getMainLooper());
@@ -755,10 +761,16 @@ public final class MainActivity extends Activity
     public void showMeshyEditMenu(View anchor) {
         android.widget.PopupMenu popup = new android.widget.PopupMenu(this, anchor);
         String[] entries = {
-                "Undo", "Redo", "Extrude", "Inset", "Bevel",
-                "Loop Cut", "Subdivide", "Merge by Distance", "Knife Split"
+                "Undo", "Redo", "Undo History", "Repeat Last", "Repeat History",
+                "Adjust Last Operation", "Menu Search", "Rename Active Item",
+                "Batch Rename", "Lock Object Modes", "Preferences",
+                "Extrude", "Inset", "Bevel", "Loop Cut", "Subdivide",
+                "Merge by Distance", "Knife Split"
         };
-        for (int i = 0; i < entries.length; i++) popup.getMenu().add(0, i, i, entries[i]);
+        for (int i = 0; i < entries.length; i++) {
+            android.view.MenuItem item = popup.getMenu().add(0, i, i, entries[i]);
+            if ("Lock Object Modes".equals(entries[i])) item.setCheckable(true).setChecked(meshyObjectModesLocked);
+        }
         popup.setOnMenuItemClickListener(item -> {
             performMeshyEditAction(item.getTitle().toString());
             return true;
@@ -766,14 +778,211 @@ public final class MainActivity extends Activity
         popup.show();
     }
 
-    private void performMeshyEditAction(String action) {
-        if ("Undo".equals(action)) {
-            engineSurface.undoScene();
+    private File nextMeshySnapshot(String label) {
+        File dir = new File(getCacheDir(), "meshy3d_editor_history");
+        if (!dir.exists()) dir.mkdirs();
+        return new File(dir, String.format(java.util.Locale.US, "%05d_%s.nova",
+                ++meshySnapshotSerial, label.replaceAll("[^A-Za-z0-9_-]", "_")));
+    }
+
+    private void captureMeshyState(java.util.ArrayDeque<File> target, String label, Runnable done) {
+        File snapshot = nextMeshySnapshot(label);
+        engineSurface.saveSceneAsync(snapshot.getAbsolutePath(), ok -> {
+            if (ok) {
+                target.addLast(snapshot);
+                while (target.size() > 30) {
+                    File old = target.removeFirst();
+                    if (old.exists()) old.delete();
+                }
+            }
+            if (done != null) done.run();
+        });
+    }
+
+    private void meshyUndo() {
+        if (meshyUndo.isEmpty()) {
+            android.widget.Toast.makeText(this, "Meshy3D editor history is empty.", android.widget.Toast.LENGTH_SHORT).show();
             return;
         }
-        if ("Redo".equals(action)) {
-            engineSurface.redoScene();
+        File target = meshyUndo.removeLast();
+        captureMeshyState(meshyRedo, "redo", () ->
+                engineSurface.loadSceneAsync(target.getAbsolutePath(), ok -> {
+                    if (!ok) meshyUndo.addLast(target);
+                    else if (statisticsText != null) statisticsText.setText("MESHY3D  |  EDIT UNDO");
+                }));
+    }
+
+    private void meshyRedo() {
+        if (meshyRedo.isEmpty()) {
+            android.widget.Toast.makeText(this, "Meshy3D editor redo history is empty.", android.widget.Toast.LENGTH_SHORT).show();
             return;
+        }
+        File target = meshyRedo.removeLast();
+        captureMeshyState(meshyUndo, "undo", () ->
+                engineSurface.loadSceneAsync(target.getAbsolutePath(), ok -> {
+                    if (!ok) meshyRedo.addLast(target);
+                    else if (statisticsText != null) statisticsText.setText("MESHY3D  |  EDIT REDO");
+                }));
+    }
+
+    private void showMeshyUndoHistory() {
+        java.util.ArrayList<String> rows = new java.util.ArrayList<>();
+        rows.add("Current state");
+        for (int i = meshyUndo.size() - 1; i >= 0; i--) rows.add("Undo checkpoint " + (meshyUndo.size() - i));
+        new AlertDialog.Builder(this).setTitle("Meshy3D Undo History")
+                .setItems(rows.toArray(new String[0]), (d, which) -> {
+                    if (which == 0) return;
+                    File[] states = meshyUndo.toArray(new File[0]);
+                    int index = states.length - which;
+                    if (index >= 0 && index < states.length) {
+                        File target = states[index];
+                        captureMeshyState(meshyRedo, "redo", () ->
+                                engineSurface.loadSceneAsync(target.getAbsolutePath(), ok -> {
+                                    if (ok) while (meshyUndo.peekLast() != target && !meshyUndo.isEmpty()) meshyUndo.removeLast();
+                                }));
+                    }
+                }).setNegativeButton("Close", null).show();
+    }
+
+    private void showMeshyMenuSearch() {
+        EditText query = new EditText(this);
+        query.setSingleLine(true);
+        query.setHint("Search Edit commands");
+        String[] commands = {"Undo", "Redo", "Undo History", "Repeat Last", "Repeat History",
+                "Adjust Last Operation", "Rename Active Item", "Batch Rename",
+                "Lock Object Modes", "Preferences", "Extrude", "Inset", "Bevel",
+                "Loop Cut", "Subdivide", "Merge by Distance", "Knife Split"};
+        new AlertDialog.Builder(this).setTitle("Menu Search").setView(query)
+                .setItems(commands, (d, which) -> performMeshyEditAction(commands[which]))
+                .setNegativeButton("Close", null).show();
+    }
+
+    private void showMeshyPreferences() {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setPadding(dp(18), dp(10), dp(18), 0);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        CheckBox confirm = new CheckBox(this);
+        confirm.setText("Confirm destructive mesh operations");
+        confirm.setChecked(getSharedPreferences("meshy3d_editor", MODE_PRIVATE).getBoolean("confirm_ops", true));
+        panel.addView(confirm);
+        CheckBox history = new CheckBox(this);
+        history.setText("Keep editor history between sessions");
+        history.setChecked(getSharedPreferences("meshy3d_editor", MODE_PRIVATE).getBoolean("persist_history", false));
+        panel.addView(history);
+        new AlertDialog.Builder(this).setTitle("Meshy3D Preferences").setView(panel)
+                .setPositiveButton("Save", (d, w) -> getSharedPreferences("meshy3d_editor", MODE_PRIVATE)
+                        .edit().putBoolean("confirm_ops", confirm.isChecked())
+                        .putBoolean("persist_history", history.isChecked()).apply())
+                .setNegativeButton("Cancel", null).show();
+    }
+
+    private void renameActiveItem() {
+        String[] objects = engineSurface.getSceneObjects();
+        if (objects == null) return;
+        int selectedId = -1;
+        String selectedName = "";
+        for (String row : objects) {
+            if (row == null) continue;
+            int split = row.indexOf('|');
+            if (split > 0) { selectedId = Integer.parseInt(row.substring(0, split)); selectedName = row.substring(split + 1); }
+        }
+        if (selectedId < 0) {
+            android.widget.Toast.makeText(this, "No active object found.", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        final int id = selectedId;
+        EditText name = new EditText(this);
+        name.setSingleLine(true);
+        name.setText(selectedName);
+        new AlertDialog.Builder(this).setTitle("Rename Active Item").setView(name)
+                .setNegativeButton("Cancel", null).setPositiveButton("Rename", (d, w) -> {
+                    String value = name.getText().toString().trim();
+                    if (value.isEmpty()) return;
+                    captureMeshyState(meshyUndo, "rename", () -> {
+                        meshyRedo.clear();
+                        engineSurface.renameObject(id, value, ok -> {
+                            if (ok) recordMeshyHistory("Rename Active Item");
+                        });
+                    });
+                }).show();
+    }
+
+    private void showMeshyBatchRename() {
+        String[] objects = engineSurface.getSceneObjects();
+        if (objects == null || objects.length == 0) return;
+        LinearLayout form = new LinearLayout(this);
+        form.setPadding(dp(16), dp(8), dp(16), 0);
+        form.setOrientation(LinearLayout.VERTICAL);
+        EditText prefix = new EditText(this); prefix.setSingleLine(true); prefix.setHint("Name prefix"); prefix.setText("Object");
+        EditText start = new EditText(this); start.setSingleLine(true); start.setInputType(android.text.InputType.TYPE_CLASS_NUMBER); start.setText("1");
+        form.addView(prefix); form.addView(start);
+        new AlertDialog.Builder(this).setTitle("Batch Rename " + objects.length + " Objects").setView(form)
+                .setNegativeButton("Cancel", null).setPositiveButton("Rename All", (d, w) -> {
+                    String base = prefix.getText().toString().trim();
+                    int first;
+                    try { first = Integer.parseInt(start.getText().toString()); } catch (Exception e) { first = 1; }
+                    if (base.isEmpty()) base = "Object";
+                    final String root = base;
+                    final int offset = first;
+                    captureMeshyState(meshyUndo, "batch_rename", () -> {
+                        meshyRedo.clear();
+                        renameBatchAt(objects, 0, root, offset);
+                    });
+                }).show();
+    }
+
+    private void renameBatchAt(String[] objects, int index, String prefix, int first) {
+        if (index >= objects.length) { recordMeshyHistory("Batch Rename"); return; }
+        String row = objects[index];
+        int split = row == null ? -1 : row.indexOf('|');
+        if (split < 1) { renameBatchAt(objects, index + 1, prefix, first); return; }
+        try {
+            int id = Integer.parseInt(row.substring(0, split));
+            engineSurface.renameObject(id, prefix + String.format(java.util.Locale.US, "_%03d", first + index),
+                    ok -> renameBatchAt(objects, index + 1, prefix, first));
+        } catch (Exception e) { renameBatchAt(objects, index + 1, prefix, first); }
+    }
+
+    private void recordMeshyHistory(String action) {
+        meshyEditHistory.add(action);
+        if (meshyEditHistory.size() > 50) meshyEditHistory.remove(0);
+        meshyLastOperation = action;
+    }
+
+    private void performMeshyEditAction(String action) {
+        switch (action) {
+            case "Undo": meshyUndo(); return;
+            case "Redo": meshyRedo(); return;
+            case "Undo History": showMeshyUndoHistory(); return;
+            case "Repeat Last":
+                if (meshyLastOperation == null) {
+                    android.widget.Toast.makeText(this, "No previous Meshy3D operation.", android.widget.Toast.LENGTH_SHORT).show();
+                } else performMeshyEditAction(meshyLastOperation);
+                return;
+            case "Repeat History":
+                if (meshyEditHistory.isEmpty()) {
+                    android.widget.Toast.makeText(this, "No Meshy3D edit history yet.", android.widget.Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                new AlertDialog.Builder(this).setTitle("Repeat History")
+                        .setItems(meshyEditHistory.toArray(new String[0]), (d, which) -> performMeshyEditAction(meshyEditHistory.get(which)))
+                        .setNegativeButton("Close", null).show();
+                return;
+            case "Adjust Last Operation":
+                if (meshyLastOperation == null) {
+                    android.widget.Toast.makeText(this, "There is no last operation to adjust.", android.widget.Toast.LENGTH_SHORT).show();
+                } else performMeshyEditAction(meshyLastOperation);
+                return;
+            case "Menu Search": showMeshyMenuSearch(); return;
+            case "Rename Active Item": renameActiveItem(); return;
+            case "Batch Rename": showMeshyBatchRename(); return;
+            case "Lock Object Modes":
+                meshyObjectModesLocked = !meshyObjectModesLocked;
+                android.widget.Toast.makeText(this, meshyObjectModesLocked ? "Object mode switching locked." : "Object mode switching unlocked.",
+                        android.widget.Toast.LENGTH_SHORT).show();
+                return;
+            case "Preferences": showMeshyPreferences(); return;
+            default: break;
         }
         final int operation;
         switch (action) {
@@ -788,7 +997,7 @@ public final class MainActivity extends Activity
         }
         LinearLayout form = new LinearLayout(this);
         form.setOrientation(LinearLayout.VERTICAL);
-        int pad = (int)(16 * getResources().getDisplayMetrics().density);
+        int pad = dp(16);
         form.setPadding(pad, pad, pad, 0);
         EditText element = new EditText(this);
         element.setSingleLine(true);
@@ -803,26 +1012,24 @@ public final class MainActivity extends Activity
         amount.setText(operation == 4 ? "1" : "0.1");
         form.addView(amount);
         new AlertDialog.Builder(this).setTitle(action)
-                .setMessage("Runs the selected native mesh operation on the active mesh. Select a supported editable mesh first.")
-                .setView(form)
-                .setNegativeButton("Cancel", null)
+                .setMessage("Runs the native mesh operation on the active supported mesh.")
+                .setView(form).setNegativeButton("Cancel", null)
                 .setPositiveButton("Apply", (dialog, which) -> {
-                    int elementIndex;
-                    float value;
-                    try {
-                        elementIndex = Integer.parseInt(element.getText().toString().trim());
-                        value = Float.parseFloat(amount.getText().toString().trim());
-                    } catch (Exception error) {
-                        android.widget.Toast.makeText(this, "Enter a valid element index and amount.", android.widget.Toast.LENGTH_LONG).show();
-                        return;
+                    int elementIndex; float value;
+                    try { elementIndex = Integer.parseInt(element.getText().toString().trim()); value = Float.parseFloat(amount.getText().toString().trim()); }
+                    catch (Exception error) {
+                        android.widget.Toast.makeText(this, "Enter a valid element index and amount.", android.widget.Toast.LENGTH_LONG).show(); return;
                     }
-                    engineSurface.modelSelectedMesh(operation, elementIndex, value, result -> {
-                        String message;
-                        if (result == 1) message = action + " completed.";
-                        else if (result == -1) message = "Select or create a supported custom mesh first.";
-                        else if (result == -2) message = "The 3D engine is not initialized.";
-                        else message = action + " could not be applied (result " + result + ").";
-                        android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show();
+                    captureMeshyState(meshyUndo, action, () -> {
+                        meshyRedo.clear();
+                        engineSurface.modelSelectedMesh(operation, elementIndex, value, result -> {
+                            String message = result == 1 ? action + " completed."
+                                    : result == -1 ? "Select a supported editable mesh first."
+                                    : result == -2 ? "The engine is not initialized."
+                                    : action + " failed (result " + result + ").";
+                            android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show();
+                            if (result == 1) recordMeshyHistory(action);
+                        });
                     });
                 }).show();
     }
