@@ -14,9 +14,10 @@ namespace nova {
 class VoxelCaveSystem {
 public:
     bool build(const std::vector<Vec3>& controlPath, float radius, float voxelSize = 0.5f) {
-        if (controlPath.size() < 2 || controlPath.size() > 1024) return false;
+        if (controlPath.size() < 2 || controlPath.size() > 128) return false;
         radius_ = std::clamp(radius, 0.5f, 8.0f);
         spacing_ = std::clamp(voxelSize, 0.2f, 1.0f);
+        sourcePath_ = controlPath;
         path_ = controlPath;
 
         for (const Vec3& point : path_) {
@@ -51,8 +52,8 @@ public:
         nx_ = std::max(3, static_cast<int>(std::ceil(extent.x / spacing_)) + 1);
         ny_ = std::max(3, static_cast<int>(std::ceil(extent.y / spacing_)) + 1);
         nz_ = std::max(3, static_cast<int>(std::ceil(extent.z / spacing_)) + 1);
-        if (nx_ > 256 || ny_ > 256 || nz_ > 256 ||
-            static_cast<uint64_t>(nx_) * ny_ * nz_ > 1200000u) return false;
+        if (nx_ > 128 || ny_ > 128 || nz_ > 128 ||
+            static_cast<uint64_t>(nx_) * ny_ * nz_ > 300000u) return false;
 
         field_.resize(static_cast<size_t>(nx_) * ny_ * nz_);
         for (int z = 0; z < nz_; ++z) {
@@ -74,7 +75,7 @@ public:
                field_.size() == static_cast<size_t>(nx_) * ny_ * nz_;
     }
 
-    const std::vector<Vec3>& path() const { return path_; }
+    const std::vector<Vec3>& path() const { return sourcePath_; }
     float radius() const { return radius_; }
     float spacing() const { return spacing_; }
 
@@ -145,7 +146,9 @@ public:
                 std::clamp(da / denominator, 0.0f, 1.0f);
             return a + (b - a) * t;
         };
+        bool tooLarge = false;
         auto addTriangle = [&](const Vec3& a, const Vec3& b, const Vec3& c) {
+            if (vertices.size() + 3u > 1500000u) { tooLarge = true; return; }
             const uint32_t base = static_cast<uint32_t>(vertices.size());
             vertices.emplace_back(a, Vec3(0,1,0), 0, 0);
             vertices.emplace_back(b, Vec3(0,1,0), 0, 0);
@@ -153,9 +156,9 @@ public:
             indices.insert(indices.end(), {base, base+1, base+2});
         };
 
-        for (int z = 0; z < nz_ - 1; ++z) {
-            for (int y = 0; y < ny_ - 1; ++y) {
-                for (int x = 0; x < nx_ - 1; ++x) {
+        for (int z = 0; z < nz_ - 1 && !tooLarge; ++z) {
+            for (int y = 0; y < ny_ - 1 && !tooLarge; ++y) {
+                for (int x = 0; x < nx_ - 1 && !tooLarge; ++x) {
                     Vec3 points[8];
                     float values[8];
                     for (int c = 0; c < 8; ++c) {
@@ -200,6 +203,7 @@ public:
                 }
             }
         }
+        if (tooLarge) return Mesh();
         Mesh result(std::move(vertices), std::move(indices));
         if (result.isValid()) result.recalculateNormals();
         return result;
@@ -225,6 +229,7 @@ private:
     int nx_=0, ny_=0, nz_=0;
     float spacing_=0.5f, radius_=1.0f;
     std::vector<float> field_;
+    std::vector<Vec3> sourcePath_;
     std::vector<Vec3> path_;
 };
 
