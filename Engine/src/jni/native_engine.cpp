@@ -2870,6 +2870,16 @@ Java_com_novaingine_v2_NativeBridge_nativeGetLandscapeLayerName(JNIEnv* env,jcla
     return env->NewStringUTF(layers[static_cast<size_t>(index)].name.c_str());
 }
 
+JNIEXPORT jfloatArray JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeGetLandscapeLayerState(JNIEnv* env,jclass,jint index) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    const auto& layers=gLandscape.layers();
+    if(index<0||index>=static_cast<jint>(layers.size()))return nullptr;
+    const auto& layer=layers[static_cast<size_t>(index)];
+    const jfloat values[4]={layer.visible?1.0f:0.0f,layer.locked?1.0f:0.0f,layer.heightAlpha,layer.paintAlpha};
+    jfloatArray result=env->NewFloatArray(4);if(result)env->SetFloatArrayRegion(result,0,4,values);return result;
+}
+
 JNIEXPORT jint JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeGetLandscapeChunkCount(JNIEnv*,jclass) {
     std::lock_guard<std::mutex> lock(engineMutex);return static_cast<jint>(gLandscape.chunks().size());
