@@ -136,6 +136,8 @@ public final class NativeBridge {
     public static native boolean nativeSetTerrainHoleAtScreen(float screenX, float screenY, boolean makeHole);
     public static native boolean nativeAddLandscapeSpline(float[] points);
     public static native int nativeGetLandscapeChunkCount();
+    public static native int nativeGetLandscapeLayerCount();
+    public static native String nativeGetLandscapeLayerName(int index);
     public static native boolean nativeSetLandscapeChunkSize(int quadsPerChunk);
     public static native float[] nativeGetTerrainHeights();
 
