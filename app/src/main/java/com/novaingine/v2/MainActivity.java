@@ -63,6 +63,7 @@ public final class MainActivity extends Activity
     private LinearLayout toolsDrawer;
     private boolean toolsDrawerOpen;
     private boolean drawerPhysicsEnabled;
+    private boolean selectedRigidBodyEnabled;
     private boolean terrainViewportSculpting;
     private boolean terrainViewportPainting;
     private boolean drawerWorldSpace = true;
@@ -406,6 +407,7 @@ public final class MainActivity extends Activity
 
         addDrawerSection("GAME SYSTEMS");
         addDrawerItem("Animation", "Keyframes and playback", () -> showToolStatus("Animation"));
+        addDrawerItem("Selected Object Rigid Body", "Attach or remove a gravity body that collides with the sculpted landscape", this::showRigidBodySetup);
         addDrawerItem("Audio", "Sound sources and audio controls", () -> showToolStatus("Audio"));
         addDrawerItem("AI Assistant", "Groq-hosted Qwen cloud scene-building assistant", this::openAIAssistant);
         addDrawerItem("Visual Scripting", "Create, connect, edit and run gameplay nodes", this::showVisualScriptingEditor);
@@ -1481,11 +1483,27 @@ public final class MainActivity extends Activity
                 android.widget.Toast.makeText(this, "Create a landscape first", android.widget.Toast.LENGTH_SHORT).show();
                 return;
             }
-            new AlertDialog.Builder(this).setTitle("Select Active Edit Layer")
-                    .setItems(names, (d, which) -> engineSurface.selectLandscapeLayer(which, ok ->
-                            android.widget.Toast.makeText(this, ok ? "Active layer: " + names[which] :
-                                    "Layer selection failed", android.widget.Toast.LENGTH_SHORT).show()))
-                    .setNegativeButton("Close", null).show();
+            new AlertDialog.Builder(this).setTitle("Landscape Edit Layers")
+                    .setItems(names, (d, which) -> {
+                        engineSurface.selectLandscapeLayer(which, ok -> {
+                            if (!ok) return;
+                            String[] actions = {"Toggle visibility", "Toggle lock", "Move layer up", "Delete layer"};
+                            new AlertDialog.Builder(this).setTitle(names[which])
+                                    .setItems(actions, (ad, action) -> engineSurface.getLandscapeLayerState(which, state -> {
+                                        if (state == null || state.length < 4) return;
+                                        if (action == 0) engineSurface.setLandscapeLayerState(which,
+                                                state[0] < 0.5f, state[1] > 0.5f, state[2], state[3], result ->
+                                                android.widget.Toast.makeText(this, result ? "Layer visibility updated" : "Layer update failed", android.widget.Toast.LENGTH_SHORT).show());
+                                        else if (action == 1) engineSurface.setLandscapeLayerState(which,
+                                                state[0] > 0.5f, state[1] < 0.5f, state[2], state[3], result ->
+                                                android.widget.Toast.makeText(this, result ? "Layer lock updated" : "Layer update failed", android.widget.Toast.LENGTH_SHORT).show());
+                                        else if (action == 2) engineSurface.moveLandscapeLayer(which, Math.max(0, which - 1), result ->
+                                                android.widget.Toast.makeText(this, result ? "Layer order updated" : "Layer move failed", android.widget.Toast.LENGTH_SHORT).show());
+                                        else engineSurface.deleteLandscapeLayer(which, result ->
+                                                android.widget.Toast.makeText(this, result ? "Layer deleted" : "The last remaining layer cannot be deleted", android.widget.Toast.LENGTH_SHORT).show());
+                                    })).setNegativeButton("Close", null).show();
+                        });
+                    }).setNegativeButton("Close", null).show();
         }));
 
         TextView splineHeading = new TextView(this);
@@ -1602,6 +1620,38 @@ public final class MainActivity extends Activity
     private void openAIAssistant() {
         closeToolsDrawer();
         new AIEditorAssistant(this, engineSurface).show();
+    }
+
+    private void showRigidBodySetup() {
+        closeToolsDrawer();
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(16), dp(8), dp(16), dp(8));
+        EditText mass = new EditText(this); mass.setSingleLine(true); mass.setHint("Mass (kg)"); mass.setText("1.0");
+        EditText restitution = new EditText(this); restitution.setSingleLine(true); restitution.setHint("Bounciness (0 - 0.9)"); restitution.setText("0.12");
+        EditText friction = new EditText(this); friction.setSingleLine(true); friction.setHint("Friction (0 - 2)"); friction.setText("0.7");
+        content.addView(mass); content.addView(restitution); content.addView(friction);
+        new AlertDialog.Builder(this).setTitle("Selected Object Physics")
+                .setMessage("Select a mesh in the viewport first. This adds a basic dynamic body with gravity, terrain contact and static-platform contact.")
+                .setView(content)
+                .setNegativeButton("Cancel", null)
+                .setNeutralButton(selectedRigidBodyEnabled ? "REMOVE BODY" : "ADD BODY", (d, w) -> {
+                    if (selectedRigidBodyEnabled) {
+                        engineSurface.setSelectedRigidBody(false, 1.0f, 0.12f, 0.7f, ok -> {
+                            if (ok) selectedRigidBodyEnabled = false;
+                            android.widget.Toast.makeText(this, ok ? "Rigid body removed" :
+                                    "Select a non-landscape object first", android.widget.Toast.LENGTH_LONG).show();
+                        });
+                    } else {
+                        engineSurface.setSelectedRigidBody(true,
+                                terrainValue(mass, 1.0f), terrainValue(restitution, 0.12f),
+                                terrainValue(friction, 0.7f), ok -> {
+                                    if (ok) selectedRigidBodyEnabled = true;
+                                    android.widget.Toast.makeText(this, ok ? "Rigid body attached" :
+                                            "Select a non-landscape object first", android.widget.Toast.LENGTH_LONG).show();
+                                });
+                    }
+                }).show();
     }
 
     private void showToolStatus(String toolName) {
