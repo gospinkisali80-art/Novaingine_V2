@@ -2617,6 +2617,60 @@ Java_com_novaingine_v2_NativeBridge_nativeSculptTerrain(
 }
 
 
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetTerrainHeights(
+    JNIEnv* env, jclass, jfloatArray heightArray
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized || !heightArray || env->GetArrayLength(heightArray) != 129 * 129) return JNI_FALSE;
+    nova::SceneObject* terrain = nullptr;
+    for (nova::SceneObject& object : gScene.getObjects()) {
+        if (object.name == "Landscape Terrain") { terrain = &object; break; }
+    }
+    if (!terrain) return JNI_FALSE;
+    auto meshIt = gCustomMeshes.find(terrain->id);
+    if (meshIt == gCustomMeshes.end()) return JNI_FALSE;
+    std::vector<jfloat> heights(129u * 129u);
+    env->GetFloatArrayRegion(heightArray, 0, static_cast<jsize>(heights.size()), heights.data());
+    if (env->ExceptionCheck()) { env->ExceptionClear(); return JNI_FALSE; }
+    std::vector<nova::Vertex> vertices = meshIt->second.getVertices();
+    const auto indices = meshIt->second.getIndices();
+    if (vertices.size() != heights.size()) return JNI_FALSE;
+    for (size_t i = 0; i < vertices.size(); ++i) {
+        vertices[i].position.y = std::clamp(static_cast<float>(heights[i]), -12.0f, 24.0f);
+    }
+    recordUndo(true);
+    nova::Mesh updated;
+    updated.setData(std::move(vertices), indices);
+    updated.recalculateNormals();
+    if (!updated.isValid()) return JNI_FALSE;
+    meshIt->second = std::move(updated);
+    return gRenderer.uploadMesh(terrain->id, meshIt->second) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jfloatArray JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeGetTerrainHeights(
+    JNIEnv* env, jclass
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized) return nullptr;
+    for (const nova::SceneObject& object : gScene.getObjects()) {
+        if (object.name != "Landscape Terrain") continue;
+        auto meshIt = gCustomMeshes.find(object.id);
+        if (meshIt == gCustomMeshes.end()) return nullptr;
+        const auto& vertices = meshIt->second.getVertices();
+        if (vertices.size() != 129u * 129u) return nullptr;
+        std::vector<jfloat> heights(vertices.size());
+        for (size_t i = 0; i < vertices.size(); ++i) heights[i] = vertices[i].position.y;
+        jfloatArray result = env->NewFloatArray(static_cast<jsize>(heights.size()));
+        if (!result) return nullptr;
+        env->SetFloatArrayRegion(result, 0, static_cast<jsize>(heights.size()), heights.data());
+        return result;
+    }
+    return nullptr;
+}
+
 JNIEXPORT jboolean JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeSculptTerrainAtScreen(
     JNIEnv*, jclass, jfloat screenXValue, jfloat screenYValue,
