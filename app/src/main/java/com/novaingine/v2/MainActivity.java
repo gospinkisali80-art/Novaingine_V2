@@ -64,6 +64,7 @@ public final class MainActivity extends Activity
     private boolean toolsDrawerOpen;
     private boolean drawerPhysicsEnabled;
     private boolean terrainViewportSculpting;
+    private boolean terrainViewportPainting;
     private boolean drawerWorldSpace = true;
     private boolean drawerSnapEnabled = true;
     private float drawerGridSnap = 10.0f;
@@ -1300,6 +1301,202 @@ public final class MainActivity extends Activity
                 }
             });
         }
+
+        TextView paintHeading = new TextView(this);
+        paintHeading.setText("MATERIAL PAINTING");
+        paintHeading.setTextColor(0xFFB45F16);
+        paintHeading.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        paintHeading.setPadding(0, dp(16), 0, dp(4));
+        content.addView(paintHeading);
+        Spinner materialPicker = new Spinner(this);
+        String[] materialNames = {"Grass", "Rock", "Sand", "Snow"};
+        ArrayAdapter<String> materialAdapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, materialNames);
+        materialAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        materialPicker.setAdapter(materialAdapter);
+        content.addView(materialPicker, new LinearLayout.LayoutParams(-1, dp(44)));
+        TextView paintToggle = new TextView(this);
+        paintToggle.setText(terrainViewportPainting ? "STOP MATERIAL PAINTING" : "START MATERIAL PAINTING");
+        paintToggle.setTextColor(Color.WHITE); paintToggle.setGravity(Gravity.CENTER);
+        paintToggle.setPadding(dp(10), dp(12), dp(10), dp(12));
+        paintToggle.setBackgroundColor(0xFF246A83);
+        content.addView(paintToggle, new LinearLayout.LayoutParams(-1, dp(44)));
+        paintToggle.setOnClickListener(v -> {
+            terrainViewportPainting = !terrainViewportPainting;
+            engineSurface.setTerrainPaintMode(terrainViewportPainting,
+                    materialPicker.getSelectedItemPosition(),
+                    terrainValue(fields[2], 6.0f), terrainValue(fields[3], 0.35f));
+            terrainViewportSculpting = false;
+            dialog.dismiss();
+            android.widget.Toast.makeText(this,
+                    terrainViewportPainting ? "Paint mode ON • drag on terrain" : "Paint mode OFF",
+                    android.widget.Toast.LENGTH_LONG).show();
+        });
+
+        TextView erosionHeading = new TextView(this);
+        erosionHeading.setText("EROSION SIMULATION");
+        erosionHeading.setTextColor(0xFFB45F16);
+        erosionHeading.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        erosionHeading.setPadding(0, dp(16), 0, dp(4));
+        content.addView(erosionHeading);
+        TextView hydraulic = new TextView(this);
+        hydraulic.setText("RUN HYDRAULIC EROSION • 1200 DROPLETS");
+        hydraulic.setTextColor(Color.WHITE); hydraulic.setGravity(Gravity.CENTER);
+        hydraulic.setPadding(dp(8), dp(12), dp(8), dp(12));
+        hydraulic.setBackgroundColor(0xFF35566B);
+        content.addView(hydraulic, new LinearLayout.LayoutParams(-1, dp(42)));
+        hydraulic.setOnClickListener(v -> engineSurface.runTerrainErosion(0, 1200,
+                terrainValue(fields[3], 0.35f), ok ->
+                android.widget.Toast.makeText(this, ok ? "Hydraulic erosion applied" :
+                        "Create a landscape first or unlock the active layer",
+                        android.widget.Toast.LENGTH_LONG).show()));
+        TextView thermal = new TextView(this);
+        thermal.setText("RUN THERMAL EROSION • 12 PASSES");
+        thermal.setTextColor(Color.WHITE); thermal.setGravity(Gravity.CENTER);
+        thermal.setPadding(dp(8), dp(12), dp(8), dp(12));
+        thermal.setBackgroundColor(0xFF66512F);
+        LinearLayout.LayoutParams thermalParams = new LinearLayout.LayoutParams(-1, dp(42));
+        thermalParams.topMargin = dp(5);
+        content.addView(thermal, thermalParams);
+        thermal.setOnClickListener(v -> engineSurface.runTerrainErosion(1, 12,
+                terrainValue(fields[3], 0.35f), ok ->
+                android.widget.Toast.makeText(this, ok ? "Thermal erosion applied" :
+                        "Create a landscape first or unlock the active layer",
+                        android.widget.Toast.LENGTH_LONG).show()));
+
+        TextView layerHeading = new TextView(this);
+        layerHeading.setText("NON-DESTRUCTIVE EDIT LAYERS");
+        layerHeading.setTextColor(0xFFB45F16);
+        layerHeading.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        layerHeading.setPadding(0, dp(16), 0, dp(4));
+        content.addView(layerHeading);
+        TextView addLayer = new TextView(this);
+        addLayer.setText("ADD EDIT LAYER");
+        addLayer.setTextColor(Color.WHITE); addLayer.setGravity(Gravity.CENTER);
+        addLayer.setPadding(dp(8), dp(12), dp(8), dp(12));
+        addLayer.setBackgroundColor(0xFF3C6847);
+        content.addView(addLayer, new LinearLayout.LayoutParams(-1, dp(42)));
+        addLayer.setOnClickListener(v -> {
+            EditText name = new EditText(this); name.setSingleLine(true);
+            name.setHint("Layer name (e.g. Mountain sculpt)");
+            new AlertDialog.Builder(this).setTitle("New Landscape Layer").setView(name)
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton("Add", (d, w) -> engineSurface.addLandscapeLayer(
+                            name.getText().toString().trim(), index ->
+                                    android.widget.Toast.makeText(this, index >= 0 ?
+                                            "Edit layer added: " + (index + 1) :
+                                            "Could not add layer. Create a landscape first.",
+                                            android.widget.Toast.LENGTH_LONG).show()))
+                    .show();
+        });
+        TextView manageLayers = new TextView(this);
+        manageLayers.setText("SELECT / MANAGE EDIT LAYERS");
+        manageLayers.setTextColor(Color.WHITE); manageLayers.setGravity(Gravity.CENTER);
+        manageLayers.setPadding(dp(8), dp(12), dp(8), dp(12));
+        manageLayers.setBackgroundColor(0xFF354456);
+        LinearLayout.LayoutParams layerParams = new LinearLayout.LayoutParams(-1, dp(42));
+        layerParams.topMargin = dp(5); content.addView(manageLayers, layerParams);
+        manageLayers.setOnClickListener(v -> engineSurface.getLandscapeLayers(names -> {
+            if (names == null || names.length == 0) {
+                android.widget.Toast.makeText(this, "Create a landscape first", android.widget.Toast.LENGTH_SHORT).show();
+                return;
+            }
+            new AlertDialog.Builder(this).setTitle("Select Active Edit Layer")
+                    .setItems(names, (d, which) -> engineSurface.selectLandscapeLayer(which, ok ->
+                            android.widget.Toast.makeText(this, ok ? "Active layer: " + names[which] :
+                                    "Layer selection failed", android.widget.Toast.LENGTH_SHORT).show()))
+                    .setNegativeButton("Close", null).show();
+        }));
+
+        TextView splineHeading = new TextView(this);
+        splineHeading.setText("LANDSCAPE SPLINES • ROAD CORRIDORS");
+        splineHeading.setTextColor(0xFFB45F16);
+        splineHeading.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        splineHeading.setPadding(0, dp(16), 0, dp(4));
+        content.addView(splineHeading);
+        EditText[] road = new EditText[5];
+        String[] roadLabels = {"Start X", "Start Z", "End X", "End Z", "Road width"};
+        String[] roadDefaults = {"-20", "-4", "20", "-4", "5"};
+        for (int i=0;i<road.length;i++) {
+            TextView label = new TextView(this); label.setText(roadLabels[i]);
+            label.setTextColor(Color.DKGRAY); label.setTextSize(11); content.addView(label);
+            road[i] = new EditText(this); road[i].setSingleLine(true);
+            road[i].setInputType(android.text.InputType.TYPE_CLASS_NUMBER |
+                    android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL |
+                    android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+            road[i].setText(roadDefaults[i]); content.addView(road[i]);
+        }
+        TextView addRoad = new TextView(this);
+        addRoad.setText("CREATE / CONFORM ROAD SPLINE");
+        addRoad.setTextColor(Color.WHITE); addRoad.setGravity(Gravity.CENTER);
+        addRoad.setPadding(dp(8), dp(12), dp(8), dp(12));
+        addRoad.setBackgroundColor(0xFF6B5733);
+        content.addView(addRoad, new LinearLayout.LayoutParams(-1, dp(42)));
+        addRoad.setOnClickListener(v -> {
+            float width = terrainValue(road[4], 5.0f);
+            float[] points = {
+                    terrainValue(road[0], -20), terrainValue(road[1], -4), width,
+                    terrainValue(road[2], 20), terrainValue(road[3], -4), width
+            };
+            engineSurface.addLandscapeSpline(points, ok ->
+                    android.widget.Toast.makeText(this, ok ? "Road spline stored and terrain conformed" :
+                            "Could not create road spline", android.widget.Toast.LENGTH_LONG).show());
+        });
+
+        TextView holeHeading = new TextView(this);
+        holeHeading.setText("TERRAIN VISIBILITY / HOLES");
+        holeHeading.setTextColor(0xFFB45F16);
+        holeHeading.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        holeHeading.setPadding(0, dp(16), 0, dp(4));
+        content.addView(holeHeading);
+        TextView cutHole = new TextView(this);
+        cutHole.setText("CUT TERRAIN HOLES • TAP CELLS");
+        cutHole.setTextColor(Color.WHITE); cutHole.setGravity(Gravity.CENTER);
+        cutHole.setPadding(dp(8), dp(12), dp(8), dp(12)); cutHole.setBackgroundColor(0xFF7A3F3F);
+        content.addView(cutHole, new LinearLayout.LayoutParams(-1, dp(42)));
+        cutHole.setOnClickListener(v -> {
+            engineSurface.setTerrainHoleMode(true, true);
+            dialog.dismiss();
+            android.widget.Toast.makeText(this, "Hole editing ON • tap terrain cells", android.widget.Toast.LENGTH_LONG).show();
+        });
+        TextView fillHole = new TextView(this);
+        fillHole.setText("FILL TERRAIN HOLES • TAP CELLS");
+        fillHole.setTextColor(Color.WHITE); fillHole.setGravity(Gravity.CENTER);
+        fillHole.setPadding(dp(8), dp(12), dp(8), dp(12)); fillHole.setBackgroundColor(0xFF426B75);
+        LinearLayout.LayoutParams fillParams = new LinearLayout.LayoutParams(-1, dp(42));
+        fillParams.topMargin = dp(5); content.addView(fillHole, fillParams);
+        fillHole.setOnClickListener(v -> {
+            engineSurface.setTerrainHoleMode(true, false);
+            dialog.dismiss();
+            android.widget.Toast.makeText(this, "Hole filling ON • tap a hole cell", android.widget.Toast.LENGTH_LONG).show();
+        });
+
+        TextView componentHeading = new TextView(this);
+        componentHeading.setText("LANDSCAPE COMPONENT MANAGEMENT");
+        componentHeading.setTextColor(0xFFB45F16);
+        componentHeading.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        componentHeading.setPadding(0, dp(16), 0, dp(4));
+        content.addView(componentHeading);
+        Spinner chunkPicker = new Spinner(this);
+        String[] chunkSizes = {"8 quads", "16 quads", "32 quads", "64 quads", "128 quads"};
+        ArrayAdapter<String> chunkAdapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, chunkSizes);
+        chunkAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        chunkPicker.setAdapter(chunkAdapter); chunkPicker.setSelection(2);
+        content.addView(chunkPicker, new LinearLayout.LayoutParams(-1, dp(44)));
+        TextView applyChunks = new TextView(this);
+        applyChunks.setText("REBUILD LANDSCAPE COMPONENT GRID");
+        applyChunks.setTextColor(Color.WHITE); applyChunks.setGravity(Gravity.CENTER);
+        applyChunks.setPadding(dp(8), dp(12), dp(8), dp(12)); applyChunks.setBackgroundColor(0xFF354456);
+        content.addView(applyChunks, new LinearLayout.LayoutParams(-1, dp(42)));
+        applyChunks.setOnClickListener(v -> {
+            int[] sizes = {8,16,32,64,128};
+            engineSurface.setLandscapeChunkSize(sizes[chunkPicker.getSelectedItemPosition()], ok -> {
+                engineSurface.getLandscapeChunkCount(count ->
+                        android.widget.Toast.makeText(this, ok ? "Landscape component grid: " + count + " components" :
+                                "Component grid update failed", android.widget.Toast.LENGTH_LONG).show());
+            });
+        });
         dialog.show();
     }
 
