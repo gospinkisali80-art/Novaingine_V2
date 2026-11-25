@@ -1797,7 +1797,7 @@ Java_com_novaingine_v2_NativeBridge_nativeSaveScene(
     std::ofstream file(temporaryPath, std::ios::out | std::ios::trunc);
     if (!file) return JNI_FALSE;
     file << std::setprecision(9);
-    file << "NOVA_PROJECT 4\n";
+    file << "NOVA_PROJECT 5\n";
     file << gScene.objectCount() << " " << gScene.selectedId() << " "
          << gSculptMeshId << "\n";
     file << gCamera.position.x << " " << gCamera.position.y << " " << gCamera.position.z << " "
@@ -1881,6 +1881,48 @@ Java_com_novaingine_v2_NativeBridge_nativeSaveScene(
             file << point.x << " " << point.y << " " << point.z << "\n";
     }
 
+    std::vector<std::pair<uint32_t, const nova::LandscapeSystem*>> landscapesToSave;
+    for (const nova::SceneObject& object : gScene.getObjects()) {
+        if (object.name == "Landscape Terrain" && gLandscape.valid())
+            landscapesToSave.emplace_back(object.id, &gLandscape);
+    }
+    for (const auto& tile : gLandscapeWorldTiles)
+        if (tile.second.data.valid())
+            landscapesToSave.emplace_back(tile.second.objectId, &tile.second.data);
+
+    file << landscapesToSave.size() << "\n";
+    for (const auto& landscapeEntry : landscapesToSave) {
+        const uint32_t objectId = landscapeEntry.first;
+        const nova::LandscapeSystem& data = *landscapeEntry.second;
+        const auto& baseHeights = data.baseHeights();
+        const auto& baseWeights = data.baseWeights();
+        file << objectId << " " << data.width() << " " << data.height() << " "
+             << data.spacing() << " " << data.originX() << " " << data.originZ() << "\n";
+        file << baseHeights.size() << "\n";
+        for (float height : baseHeights) file << height << " ";
+        file << "\n";
+        file << baseWeights.size() << "\n";
+        for (const auto& weight : baseWeights)
+            file << weight[0] << " " << weight[1] << " " << weight[2] << " " << weight[3] << "\n";
+        file << data.layers().size() << "\n";
+        for (const auto& layer : data.layers()) {
+            file << std::quoted(layer.name) << " " << layer.visible << " " << layer.locked << " "
+                 << layer.heightAlpha << " " << layer.paintAlpha << "\n";
+            file << layer.heightDelta.size() << "\n";
+            for (float delta : layer.heightDelta) file << delta << " ";
+            file << "\n";
+            file << layer.paintDelta.size() << "\n";
+            for (const auto& delta : layer.paintDelta)
+                file << delta[0] << " " << delta[1] << " " << delta[2] << " " << delta[3] << "\n";
+        }
+        file << data.splines().size() << "\n";
+        for (const auto& spline : data.splines()) {
+            file << spline.size() << "\n";
+            for (const auto& point : spline)
+                file << point.x << " " << point.z << " " << point.width << "\n";
+        }
+    }
+
     file.flush();
     const bool written = file.good();
     file.close();
@@ -1913,7 +1955,7 @@ Java_com_novaingine_v2_NativeBridge_nativeLoadScene(
     uint32_t selectedId = 0, sculptMeshId = 0;
     if (!(file >> magic >> version)) return JNI_FALSE;
     const bool legacy = magic == "NOVA_SCENE" && version == 1;
-    const bool current = magic == "NOVA_PROJECT" && (version == 2 || version == 3 || version == 4);
+    const bool current = magic == "NOVA_PROJECT" && (version == 2 || version == 3 || version == 4 || version == 5);
     const bool hasLayerWeights = current && version >= 3;
     if (!legacy && !current) return JNI_FALSE;
     if (!(file >> objectCount) || objectCount > 10000) return JNI_FALSE;
