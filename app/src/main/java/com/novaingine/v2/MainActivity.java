@@ -2193,6 +2193,56 @@ public final class MainActivity extends Activity
                 }), 700L);
     }
 
+    private static void writePngInt(java.io.OutputStream output, int value) throws java.io.IOException {
+        output.write((value >>> 24) & 0xFF);
+        output.write((value >>> 16) & 0xFF);
+        output.write((value >>> 8) & 0xFF);
+        output.write(value & 0xFF);
+    }
+
+    private static void writePngChunk(java.io.OutputStream output, String type, byte[] data)
+            throws java.io.IOException {
+        byte[] typeBytes = type.getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        writePngInt(output, data.length);
+        output.write(typeBytes);
+        output.write(data);
+        java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+        crc.update(typeBytes);
+        crc.update(data);
+        writePngInt(output, (int) crc.getValue());
+    }
+
+    private static byte[] encodeTerrainHeightmap16Png(float[] heights) throws java.io.IOException {
+        if (heights == null || heights.length != 129 * 129)
+            throw new IllegalArgumentException("Expected 129 x 129 height samples.");
+        java.io.ByteArrayOutputStream png = new java.io.ByteArrayOutputStream();
+        png.write(new byte[]{(byte)137, 80, 78, 71, 13, 10, 26, 10});
+        java.io.ByteArrayOutputStream header = new java.io.ByteArrayOutputStream(13);
+        writePngInt(header, 129); writePngInt(header, 129);
+        header.write(16); header.write(0); header.write(0); header.write(0); header.write(0);
+        writePngChunk(png, "IHDR", header.toByteArray());
+
+        java.io.ByteArrayOutputStream raw = new java.io.ByteArrayOutputStream(129 * 129 * 2 + 129);
+        for (int y = 0; y < 129; y++) {
+            raw.write(0);
+            for (int x = 0; x < 129; x++) {
+                float h = heights[y * 129 + x];
+                int sample = Math.max(0, Math.min(65535,
+                        Math.round(((h + 12.0f) / 36.0f) * 65535.0f)));
+                raw.write((sample >>> 8) & 0xFF);
+                raw.write(sample & 0xFF);
+            }
+        }
+        java.io.ByteArrayOutputStream compressed = new java.io.ByteArrayOutputStream();
+        try (java.util.zip.DeflaterOutputStream deflater =
+                     new java.util.zip.DeflaterOutputStream(compressed)) {
+            raw.writeTo(deflater);
+        }
+        writePngChunk(png, "IDAT", compressed.toByteArray());
+        writePngChunk(png, "IEND", new byte[0]);
+        return png.toByteArray();
+    }
+
     private File landscapeWorldTileAssetFile(int tileX, int tileZ) {
         if (activeProjectDirectory == null) return null;
         return new File(new File(activeProjectDirectory, "Assets/LandscapeTiles"),
