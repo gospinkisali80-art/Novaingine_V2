@@ -351,6 +351,21 @@ public final class EngineSurface extends GLSurfaceView
         });
     }
 
+    public void setTerrainHeights(float[] heights, java.util.function.Consumer<Boolean> callback) {
+        float[] copy = heights.clone();
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeSetTerrainHeights(copy);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
+    }
+
+    public void getTerrainHeights(java.util.function.Consumer<float[]> callback) {
+        queueEvent(() -> {
+            float[] heights = NativeBridge.nativeGetTerrainHeights();
+            if (callback != null) post(() -> callback.accept(heights));
+        });
+    }
+
     public void sculptTerrain(
             float centerX, float centerZ, float radius, float strength, int mode,
             java.util.function.Consumer<Boolean> callback) {
