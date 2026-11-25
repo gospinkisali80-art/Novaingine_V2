@@ -63,6 +63,11 @@ public final class MainActivity extends Activity
     private final java.util.ArrayDeque<File> meshyRedo = new java.util.ArrayDeque<>();
     private final java.util.ArrayList<String> meshyEditHistory = new java.util.ArrayList<>();
     private String meshyLastOperation;
+    private int meshyLastOperationCode = -1;
+    private int meshyLastElementIndex;
+    private float meshyLastAmount = 0.1f;
+    private final java.util.ArrayList<String> meshyRepeatHistory = new java.util.ArrayList<>();
+    private boolean meshyEditBusy;
     private int meshySnapshotSerial;
     private boolean meshyObjectModesLocked;
     private ControllerAgent controllerAgent;
@@ -845,16 +850,44 @@ public final class MainActivity extends Activity
     }
 
     private void showMeshyMenuSearch() {
-        EditText query = new EditText(this);
-        query.setSingleLine(true);
-        query.setHint("Search Edit commands");
-        String[] commands = {"Undo", "Redo", "Undo History", "Repeat Last", "Repeat History",
+        final String[] commands = {"Undo", "Redo", "Undo History", "Repeat Last", "Repeat History",
                 "Adjust Last Operation", "Rename Active Item", "Batch Rename",
                 "Lock Object Modes", "Preferences", "Extrude", "Inset", "Bevel",
                 "Loop Cut", "Subdivide", "Merge by Distance", "Knife Split"};
-        new AlertDialog.Builder(this).setTitle("Menu Search").setView(query)
-                .setItems(commands, (d, which) -> performMeshyEditAction(commands[which]))
-                .setNegativeButton("Close", null).show();
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(16), dp(8), dp(16), 0);
+        EditText query = new EditText(this);
+        query.setSingleLine(true);
+        query.setHint("Type to filter Edit commands");
+        panel.addView(query);
+        android.widget.ListView list = new android.widget.ListView(this);
+        panel.addView(list, new LinearLayout.LayoutParams(-1, dp(300)));
+        java.util.ArrayList<String> filtered = new java.util.ArrayList<>();
+        android.widget.ArrayAdapter<String> adapter = new android.widget.ArrayAdapter<>(
+                this, android.R.layout.simple_list_item_1, filtered);
+        list.setAdapter(adapter);
+        Runnable refresh = () -> {
+            String q = query.getText().toString().trim().toLowerCase(java.util.Locale.ROOT);
+            filtered.clear();
+            for (String command : commands)
+                if (q.isEmpty() || command.toLowerCase(java.util.Locale.ROOT).contains(q)) filtered.add(command);
+            adapter.notifyDataSetChanged();
+        };
+        query.addTextChangedListener(new android.text.TextWatcher() {
+            public void beforeTextChanged(CharSequence s, int st, int count, int after) {}
+            public void onTextChanged(CharSequence s, int st, int before, int count) { refresh.run(); }
+            public void afterTextChanged(android.text.Editable e) {}
+        });
+        refresh.run();
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("Menu Search")
+                .setView(panel).setNegativeButton("Close", null).create();
+        list.setOnItemClickListener((parent, view, position, id) -> {
+            String selected = filtered.get(position);
+            dialog.dismiss();
+            performMeshyEditAction(selected);
+        });
+        dialog.show();
     }
 
     private void showMeshyPreferences() {
@@ -877,31 +910,31 @@ public final class MainActivity extends Activity
     }
 
     private void renameActiveItem() {
-        String[] objects = engineSurface.getSceneObjects();
-        if (objects == null) return;
-        int selectedId = -1;
         String selectedName = "";
-        for (String row : objects) {
-            if (row == null) continue;
-            int split = row.indexOf('|');
-            if (split > 0) { selectedId = Integer.parseInt(row.substring(0, split)); selectedName = row.substring(split + 1); }
+        String[] objects = engineSurface.getSceneObjects();
+        if (objects != null) {
+            // The engine's selected-object rename API targets the actual active object;
+            // never guess selection by taking the final row in the Outliner.
+            float[] selected = engineSurface.getSelectedTransform();
+            if (selected == null) {
+                android.widget.Toast.makeText(this, "Select an object first.", android.widget.Toast.LENGTH_SHORT).show();
+                return;
+            }
+            // Native selected-object rename is authoritative. Use the current selected name
+            // only when the engine exposes it; otherwise request the new name directly.
         }
-        if (selectedId < 0) {
-            android.widget.Toast.makeText(this, "No active object found.", android.widget.Toast.LENGTH_SHORT).show();
-            return;
-        }
-        final int id = selectedId;
         EditText name = new EditText(this);
         name.setSingleLine(true);
-        name.setText(selectedName);
+        name.setHint("New active object name");
         new AlertDialog.Builder(this).setTitle("Rename Active Item").setView(name)
                 .setNegativeButton("Cancel", null).setPositiveButton("Rename", (d, w) -> {
                     String value = name.getText().toString().trim();
                     if (value.isEmpty()) return;
                     captureMeshyState(meshyUndo, "rename", () -> {
                         meshyRedo.clear();
-                        engineSurface.renameObject(id, value, ok -> {
+                        engineSurface.renameSelectedObject(value, ok -> {
                             if (ok) recordMeshyHistory("Rename Active Item");
+                            else android.widget.Toast.makeText(this, "No active object could be renamed.", android.widget.Toast.LENGTH_SHORT).show();
                         });
                     });
                 }).show();
@@ -955,23 +988,29 @@ public final class MainActivity extends Activity
             case "Redo": meshyRedo(); return;
             case "Undo History": showMeshyUndoHistory(); return;
             case "Repeat Last":
-                if (meshyLastOperation == null) {
-                    android.widget.Toast.makeText(this, "No previous Meshy3D operation.", android.widget.Toast.LENGTH_SHORT).show();
-                } else performMeshyEditAction(meshyLastOperation);
+                if (meshyLastOperationCode < 0) {
+                    android.widget.Toast.makeText(this, "No repeatable mesh operation is available yet.", android.widget.Toast.LENGTH_SHORT).show();
+                } else runMeshyMeshOperation(meshyLastOperation, meshyLastOperationCode, meshyLastElementIndex, meshyLastAmount);
                 return;
             case "Repeat History":
-                if (meshyEditHistory.isEmpty()) {
-                    android.widget.Toast.makeText(this, "No Meshy3D edit history yet.", android.widget.Toast.LENGTH_SHORT).show();
+                if (meshyRepeatHistory.isEmpty()) {
+                    android.widget.Toast.makeText(this, "No repeatable operations in Meshy3D history.", android.widget.Toast.LENGTH_SHORT).show();
                     return;
                 }
+                String[] repeats = meshyRepeatHistory.toArray(new String[0]);
                 new AlertDialog.Builder(this).setTitle("Repeat History")
-                        .setItems(meshyEditHistory.toArray(new String[0]), (d, which) -> performMeshyEditAction(meshyEditHistory.get(which)))
-                        .setNegativeButton("Close", null).show();
+                        .setItems(repeats, (d, which) -> {
+                            String[] parts = repeats[which].split("\\|", -1);
+                            try { runMeshyMeshOperation(parts[0], Integer.parseInt(parts[1]),
+                                    Integer.parseInt(parts[2]), Float.parseFloat(parts[3])); }
+                            catch (Exception ignored) { android.widget.Toast.makeText(this, "Saved operation data is invalid.", android.widget.Toast.LENGTH_SHORT).show(); }
+                        }).setNegativeButton("Close", null).show();
                 return;
             case "Adjust Last Operation":
-                if (meshyLastOperation == null) {
-                    android.widget.Toast.makeText(this, "There is no last operation to adjust.", android.widget.Toast.LENGTH_SHORT).show();
-                } else performMeshyEditAction(meshyLastOperation);
+                if (meshyLastOperationCode < 0) {
+                    android.widget.Toast.makeText(this, "There is no previous mesh operation to adjust.", android.widget.Toast.LENGTH_SHORT).show();
+                } else showMeshyOperationDialog(meshyLastOperation, meshyLastOperationCode,
+                        meshyLastElementIndex, meshyLastAmount, true);
                 return;
             case "Menu Search": showMeshyMenuSearch(); return;
             case "Rename Active Item": renameActiveItem(); return;
@@ -995,6 +1034,11 @@ public final class MainActivity extends Activity
             case "Knife Split": operation = 6; break;
             default: return;
         }
+        showMeshyOperationDialog(action, operation, 0, operation == 4 ? 1.0f : 0.1f, false);
+    }
+
+    private void showMeshyOperationDialog(String action, int operation, int initialElement,
+                                         float initialAmount, boolean adjusting) {
         LinearLayout form = new LinearLayout(this);
         form.setOrientation(LinearLayout.VERTICAL);
         int pad = dp(16);
@@ -1003,35 +1047,61 @@ public final class MainActivity extends Activity
         element.setSingleLine(true);
         element.setInputType(android.text.InputType.TYPE_CLASS_NUMBER | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
         element.setHint("Element index (0 for default)");
-        element.setText("0");
+        element.setText(String.valueOf(initialElement));
         form.addView(element);
         EditText amount = new EditText(this);
         amount.setSingleLine(true);
         amount.setInputType(android.text.InputType.TYPE_CLASS_NUMBER | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
         amount.setHint("Amount / cut factor");
-        amount.setText(operation == 4 ? "1" : "0.1");
+        amount.setText(String.valueOf(initialAmount));
         form.addView(amount);
-        new AlertDialog.Builder(this).setTitle(action)
-                .setMessage("Runs the native mesh operation on the active supported mesh.")
+        new AlertDialog.Builder(this).setTitle((adjusting ? "Adjust Last Operation: " : "") + action)
+                .setMessage("Set the native mesh operation parameters.")
                 .setView(form).setNegativeButton("Cancel", null)
-                .setPositiveButton("Apply", (dialog, which) -> {
+                .setPositiveButton(adjusting ? "Apply Adjustment" : "Apply", (dialog, which) -> {
                     int elementIndex; float value;
-                    try { elementIndex = Integer.parseInt(element.getText().toString().trim()); value = Float.parseFloat(amount.getText().toString().trim()); }
-                    catch (Exception error) {
-                        android.widget.Toast.makeText(this, "Enter a valid element index and amount.", android.widget.Toast.LENGTH_LONG).show(); return;
+                    try {
+                        elementIndex = Integer.parseInt(element.getText().toString().trim());
+                        value = Float.parseFloat(amount.getText().toString().trim());
+                        if (!Float.isFinite(value)) throw new NumberFormatException();
+                    } catch (Exception error) {
+                        android.widget.Toast.makeText(this, "Enter a valid element index and amount.", android.widget.Toast.LENGTH_LONG).show();
+                        return;
                     }
-                    captureMeshyState(meshyUndo, action, () -> {
-                        meshyRedo.clear();
-                        engineSurface.modelSelectedMesh(operation, elementIndex, value, result -> {
-                            String message = result == 1 ? action + " completed."
-                                    : result == -1 ? "Select a supported editable mesh first."
-                                    : result == -2 ? "The engine is not initialized."
-                                    : action + " failed (result " + result + ").";
-                            android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show();
-                            if (result == 1) recordMeshyHistory(action);
-                        });
-                    });
+                    runMeshyMeshOperation(action, operation, elementIndex, value);
                 }).show();
+    }
+
+    private void runMeshyMeshOperation(String action, int operation, int elementIndex, float value) {
+        if (meshyEditBusy) {
+            android.widget.Toast.makeText(this, "Wait for the current Meshy3D edit to finish.", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        meshyEditBusy = true;
+        captureMeshyState(meshyUndo, action, () -> {
+            meshyRedo.clear();
+            engineSurface.modelSelectedMesh(operation, elementIndex, value, result -> {
+                meshyEditBusy = false;
+                String message = result == 1 ? action + " completed."
+                        : result == -1 ? "Select a supported editable mesh first."
+                        : result == -2 ? "The engine is not initialized."
+                        : action + " failed (result " + result + ").";
+                android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show();
+                if (result == 1) {
+                    meshyLastOperation = action;
+                    meshyLastOperationCode = operation;
+                    meshyLastElementIndex = elementIndex;
+                    meshyLastAmount = value;
+                    String record = action + "|" + operation + "|" + elementIndex + "|" + value;
+                    meshyRepeatHistory.add(record);
+                    if (meshyRepeatHistory.size() > 50) meshyRepeatHistory.remove(0);
+                    recordMeshyHistory(action);
+                } else if (!meshyUndo.isEmpty()) {
+                    File unused = meshyUndo.removeLast();
+                    if (unused.exists()) unused.delete();
+                }
+            });
+        });
     }
 
     private void openNovaDocumentPicker() {
