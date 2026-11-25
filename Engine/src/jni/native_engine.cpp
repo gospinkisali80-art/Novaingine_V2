@@ -3105,14 +3105,16 @@ Java_com_novaingine_v2_NativeBridge_nativeSculptTerrain(
     jfloat radiusValue, jfloat strengthValue, jint modeValue
 ) {
     std::lock_guard<std::mutex> lock(engineMutex);
-    if (!gInitialized || !gLandscape.valid()) return JNI_FALSE;
-    const float x=std::clamp(static_cast<float>(centerXValue),-32.0f,32.0f);
-    const float z=std::clamp(static_cast<float>(centerZValue),-36.0f,28.0f);
+    if (!gInitialized || (!gLandscape.valid() && gLandscapeWorldTiles.empty())) return JNI_FALSE;
+    const float x = static_cast<float>(centerXValue);
+    const float z = static_cast<float>(centerZValue);
+    nova::LandscapeSystem* target = landscapeAtWorld(x, z);
+    if (!target) return JNI_FALSE;
     const float radius=std::clamp(static_cast<float>(radiusValue),0.5f,32.0f);
     const float strength=std::clamp(static_cast<float>(strengthValue),0.005f,8.0f);
     const int mode=std::clamp(static_cast<int>(modeValue),0,6);
     recordUndo(true);
-    return gLandscape.sculpt(x,z,radius,strength,mode) && syncLandscapeMeshFromData()
+    return target->sculpt(x,z,radius,strength,mode) && syncLandscapeAtWorld(x,z)
         ? JNI_TRUE : JNI_FALSE;
 }
 
@@ -3310,7 +3312,7 @@ Java_com_novaingine_v2_NativeBridge_nativeAddLandscapeSpline(
     JNIEnv* env,jclass,jfloatArray pointArray
 ) {
     std::lock_guard<std::mutex> lock(engineMutex);
-    if(!gInitialized||!gLandscape.valid()||!pointArray)return JNI_FALSE;
+    if(!gInitialized||(!gLandscape.valid()&&gLandscapeWorldTiles.empty())||!pointArray)return JNI_FALSE;
     const jsize count=env->GetArrayLength(pointArray);
     if(count<6||count%3!=0||count>12288)return JNI_FALSE;
     std::vector<jfloat> values(static_cast<size_t>(count));
@@ -3319,8 +3321,16 @@ Java_com_novaingine_v2_NativeBridge_nativeAddLandscapeSpline(
     std::vector<nova::LandscapeSystem::SplinePoint> points;
     points.reserve(static_cast<size_t>(count/3));
     for(jsize i=0;i<count;i+=3)points.push_back({values[i],values[i+1],std::clamp(values[i+2],0.5f,32.0f)});
+    nova::LandscapeSystem* target = landscapeAtWorld(points.front().x, points.front().z);
+    if (!target) return JNI_FALSE;
+    for (const auto& point : points) {
+        const float gx = (point.x - target->originX()) / target->spacing();
+        const float gz = (point.z - target->originZ()) / target->spacing();
+        if (gx < 0.0f || gz < 0.0f || gx > target->width()-1 || gz > target->height()-1)
+            return JNI_FALSE;
+    }
     recordUndo(true);
-    return gLandscape.addSpline(points)&&syncLandscapeMeshFromData()?JNI_TRUE:JNI_FALSE;
+    return target->addSpline(points)&&syncLandscapeAtWorld(points.front().x,points.front().z)?JNI_TRUE:JNI_FALSE;
 }
 
 JNIEXPORT jint JNICALL
