@@ -29,6 +29,8 @@ public final class Meshy3DViewport extends View {
     private float metallic = 0.0f;
     private float roughness = 0.65f;
     private final float[][] originalVertices = createDenseCubeVertices();
+    private float[][] uvCoordinates;
+    private final java.util.HashMap<Integer, float[][]> meshKeyframes = new java.util.HashMap<>();
 
 
     private static float[][] createDenseCubeVertices() {
@@ -229,6 +231,39 @@ public final class Meshy3DViewport extends View {
         return 0xFF000000 | ((int)(ar+(br-ar)*t)<<16)
                 | ((int)(ag+(bg-ag)*t)<<8) | (int)(ab+(bb-ab)*t);
     }
+
+    public void resetView(){yaw=-0.62f;pitch=0.42f;zoom=1.0f;invalidate();}
+
+    public void generatePlanarUv(){
+        float minX=Float.MAX_VALUE,maxX=-Float.MAX_VALUE,minY=Float.MAX_VALUE,maxY=-Float.MAX_VALUE;
+        float minZ=Float.MAX_VALUE,maxZ=-Float.MAX_VALUE;
+        for(float[] v:vertices){minX=Math.min(minX,v[0]);maxX=Math.max(maxX,v[0]);
+            minY=Math.min(minY,v[1]);maxY=Math.max(maxY,v[1]);minZ=Math.min(minZ,v[2]);maxZ=Math.max(maxZ,v[2]);}
+        uvCoordinates=new float[vertices.length][2];
+        float sx=Math.max(0.0001f,maxX-minX),sy=Math.max(0.0001f,maxY-minY),sz=Math.max(0.0001f,maxZ-minZ);
+        for(int i=0;i<vertices.length;i++){
+            float[] v=vertices[i];
+            // Dominant extent chooses the projection plane for a stable initial UV layout.
+            if(sx>=sy && sx>=sz){uvCoordinates[i][0]=(v[2]-minZ)/sz;uvCoordinates[i][1]=(v[1]-minY)/sy;}
+            else if(sy>=sx && sy>=sz){uvCoordinates[i][0]=(v[0]-minX)/sx;uvCoordinates[i][1]=(v[2]-minZ)/sz;}
+            else {uvCoordinates[i][0]=(v[0]-minX)/sx;uvCoordinates[i][1]=(v[1]-minY)/sy;}
+        }
+    }
+
+    public String exportUvCsv(){
+        if(uvCoordinates==null)generatePlanarUv();
+        StringBuilder out=new StringBuilder("vertex,u,v\n");
+        for(int i=0;i<uvCoordinates.length;i++)out.append(i).append(',')
+                .append(uvCoordinates[i][0]).append(',').append(uvCoordinates[i][1]).append('\n');
+        return out.toString();
+    }
+
+    public void storeMeshKeyframe(int frame){
+        float[][] snapshot=new float[vertices.length][3];
+        for(int i=0;i<vertices.length;i++)System.arraycopy(vertices[i],0,snapshot[i],0,3);
+        meshKeyframes.put(Math.max(0,frame),snapshot);
+    }
+    public void deleteMeshKeyframe(int frame){meshKeyframes.remove(Math.max(0,frame));}
 
     /** Apply a geometric transform to every vertex of the active Meshy3D object. */
     public void transformMesh(int operation, float x, float y, float z) {
@@ -460,6 +495,28 @@ public final class Meshy3DViewport extends View {
             state.put("vertices", vertexArray);
             state.put("mask", maskArray);
             state.put("yaw", yaw); state.put("pitch", pitch); state.put("zoom", zoom);
+            state.put("meshTint", meshTint); state.put("metallic", metallic); state.put("roughness", roughness);
+            state.put("meshVisible", meshVisible); state.put("showFloorGrid", showFloorGrid);
+            state.put("showTopology", showTopology);
+            if (uvCoordinates != null) {
+                org.json.JSONArray uv = new org.json.JSONArray();
+                for (float[] pair : uvCoordinates) {
+                    org.json.JSONArray p = new org.json.JSONArray(); p.put(pair[0]); p.put(pair[1]); uv.put(p);
+                }
+                state.put("uv", uv);
+            }
+            org.json.JSONArray keyframes = new org.json.JSONArray();
+            for (java.util.Map.Entry<Integer,float[][]> entry : meshKeyframes.entrySet()) {
+                org.json.JSONObject frame = new org.json.JSONObject();
+                frame.put("frame", entry.getKey());
+                org.json.JSONArray points = new org.json.JSONArray();
+                for (float[] point : entry.getValue()) {
+                    org.json.JSONArray p = new org.json.JSONArray();
+                    p.put(point[0]); p.put(point[1]); p.put(point[2]); points.put(p);
+                }
+                frame.put("vertices", points); keyframes.put(frame);
+            }
+            state.put("keyframes", keyframes);
             return state;
         } catch (org.json.JSONException error) {
             throw new IllegalStateException("Could not serialize Meshy3D mesh", error);
@@ -490,6 +547,34 @@ public final class Meshy3DViewport extends View {
             yaw = (float) state.optDouble("yaw", yaw);
             pitch = Math.max(-1.35f, Math.min(1.35f, (float) state.optDouble("pitch", pitch)));
             zoom = Math.max(0.35f, Math.min(3.4f, (float) state.optDouble("zoom", zoom)));
+            meshTint = state.optInt("meshTint", meshTint);
+            metallic = (float) state.optDouble("metallic", metallic);
+            roughness = (float) state.optDouble("roughness", roughness);
+            meshVisible = state.optBoolean("meshVisible", meshVisible);
+            showFloorGrid = state.optBoolean("showFloorGrid", showFloorGrid);
+            showTopology = state.optBoolean("showTopology", showTopology);
+            org.json.JSONArray uv = state.optJSONArray("uv");
+            if (uv != null && uv.length() == vertices.length) {
+                float[][] restored = new float[vertices.length][2];
+                for (int i=0;i<uv.length();i++) {
+                    org.json.JSONArray pair=uv.getJSONArray(i);
+                    restored[i][0]=(float)pair.getDouble(0); restored[i][1]=(float)pair.getDouble(1);
+                }
+                uvCoordinates=restored;
+            }
+            meshKeyframes.clear();
+            org.json.JSONArray frames=state.optJSONArray("keyframes");
+            if(frames!=null)for(int i=0;i<frames.length();i++){
+                org.json.JSONObject frame=frames.getJSONObject(i);
+                org.json.JSONArray points=frame.getJSONArray("vertices");
+                if(points.length()!=vertices.length)continue;
+                float[][] snapshot=new float[vertices.length][3];
+                for(int j=0;j<points.length();j++){
+                    org.json.JSONArray point=points.getJSONArray(j);
+                    for(int axis=0;axis<3;axis++)snapshot[j][axis]=(float)point.getDouble(axis);
+                }
+                meshKeyframes.put(frame.optInt("frame",i),snapshot);
+            }
             invalidate();
             return true;
         } catch (Exception error) {
