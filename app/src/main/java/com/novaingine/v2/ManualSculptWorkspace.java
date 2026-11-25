@@ -644,7 +644,10 @@ public final class ManualSculptWorkspace extends FrameLayout {
     public boolean importMeshyDocumentState(org.json.JSONObject document) {
         if (document == null || !"Meshy3D".equals(document.optString("format"))) return false;
         org.json.JSONObject mesh = document.optJSONObject("mesh");
-        if (mesh == null || meshyViewport == null || !meshyViewport.importDocumentState(mesh)) return false;
+        // Version-1 starter documents contained only object metadata; keep the
+        // current default mesh when opening those older files.
+        if (mesh == null) return true;
+        if (meshyViewport == null || !meshyViewport.importDocumentState(mesh)) return false;
         int savedWorkspace = document.optInt("workspace", activeWorkspaceIndex);
         if (savedWorkspace >= 0 && savedWorkspace < WORKSPACE_NAMES.length) setActiveWorkspaceIndex(savedWorkspace);
         return true;
