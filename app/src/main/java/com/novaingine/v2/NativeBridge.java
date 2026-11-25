@@ -126,6 +126,17 @@ public final class NativeBridge {
             float screenX, float screenY, float radius, float strength, int mode, int phase
     );
     public static native boolean nativeSetTerrainHeights(float[] heights);
+    public static native boolean nativePaintTerrainAtScreen(float screenX, float screenY, float radius, float strength, int material, int phase);
+    public static native boolean nativeRunTerrainErosion(int type, int iterations, float strength);
+    public static native int nativeAddLandscapeLayer(String name);
+    public static native boolean nativeSelectLandscapeLayer(int index);
+    public static native boolean nativeSetLandscapeLayerState(int index, boolean visible, boolean locked, float heightAlpha, float paintAlpha);
+    public static native boolean nativeMoveLandscapeLayer(int from, int to);
+    public static native boolean nativeDeleteLandscapeLayer(int index);
+    public static native boolean nativeSetTerrainHoleAtScreen(float screenX, float screenY, boolean makeHole);
+    public static native boolean nativeAddLandscapeSpline(float[] points);
+    public static native int nativeGetLandscapeChunkCount();
+    public static native boolean nativeSetLandscapeChunkSize(int quadsPerChunk);
     public static native float[] nativeGetTerrainHeights();
 
     public static native int nativeImportGlb(String path);
