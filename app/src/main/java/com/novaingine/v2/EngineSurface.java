@@ -338,6 +338,7 @@ public final class EngineSurface extends GLSurfaceView
         terrainBrushRadius = Math.max(0.5f, Math.min(24.0f, radius));
         terrainBrushStrength = Math.max(0.005f, Math.min(2.5f, strength));
         terrainSculptMode = enabled;
+        if (enabled) { terrainPaintMode = false; terrainHoleMode = false; }
     }
 
     private void terrainStroke(float x, float y, int phase) {
@@ -351,6 +352,7 @@ public final class EngineSurface extends GLSurfaceView
     public void setTerrainPaintMode(boolean enabled, int material, float radius, float strength) {
         terrainPaintMode = enabled;
         terrainHoleMode = false;
+        terrainSculptMode = false;
         terrainMaterial = Math.max(0, Math.min(3, material));
         terrainBrushRadius = Math.max(0.5f, Math.min(24.0f, radius));
         terrainBrushStrength = Math.max(0.0f, Math.min(1.0f, strength));
