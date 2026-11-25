@@ -1391,6 +1391,24 @@ Java_com_novaingine_v2_NativeBridge_nativeSelectObjectById(
     if (gInitialized) gScene.select(static_cast<uint32_t>(objectId));
 }
 
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeRenameSelectedObject(
+    JNIEnv* env, jclass, jstring rawName
+) {
+    if (!rawName) return JNI_FALSE;
+    const char* chars = env->GetStringUTFChars(rawName, nullptr);
+    if (!chars) return JNI_FALSE;
+    std::string name(chars);
+    env->ReleaseStringUTFChars(rawName, chars);
+    if (name.empty() || name.size() > 128) return JNI_FALSE;
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized) return JNI_FALSE;
+    nova::SceneObject* object = gScene.selected();
+    if (!object) return JNI_FALSE;
+    object->name = name;
+    return JNI_TRUE;
+}
+
 JNIEXPORT jfloatArray JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeGetSelectedTransform(
     JNIEnv* env, jclass
