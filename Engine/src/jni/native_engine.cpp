@@ -2711,6 +2711,32 @@ Java_com_novaingine_v2_NativeBridge_nativeSetTerrainHeights(
     return syncLandscapeMeshFromData()?JNI_TRUE:JNI_FALSE;
 }
 
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetTerrainTexture(
+    JNIEnv* env, jclass, jint layer, jint mapType, jint width, jint height, jintArray pixelArray
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized || !pixelArray || layer < 0 || layer >= 4 ||
+        mapType < 0 || mapType >= 3 || width < 1 || height < 1 ||
+        width > 2048 || height > 2048) return JNI_FALSE;
+    const jsize count = env->GetArrayLength(pixelArray);
+    if (count != width * height) return JNI_FALSE;
+    std::vector<jint> argb(static_cast<size_t>(count));
+    env->GetIntArrayRegion(pixelArray, 0, count, argb.data());
+    if (env->ExceptionCheck()) { env->ExceptionClear(); return JNI_FALSE; }
+    std::vector<uint8_t> rgba(static_cast<size_t>(count) * 4u);
+    for (jsize i = 0; i < count; ++i) {
+        const uint32_t pixel = static_cast<uint32_t>(argb[static_cast<size_t>(i)]);
+        const size_t out = static_cast<size_t>(i) * 4u;
+        rgba[out + 0] = static_cast<uint8_t>((pixel >> 16) & 0xFFu);
+        rgba[out + 1] = static_cast<uint8_t>((pixel >> 8) & 0xFFu);
+        rgba[out + 2] = static_cast<uint8_t>(pixel & 0xFFu);
+        rgba[out + 3] = 255u;
+    }
+    return gRenderer.setTerrainTexture(layer, mapType, width, height, rgba.data())
+        ? JNI_TRUE : JNI_FALSE;
+}
+
 JNIEXPORT jfloatArray JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeGetTerrainHeights(JNIEnv* env, jclass) {
     std::lock_guard<std::mutex> lock(engineMutex);
