@@ -1847,95 +1847,6 @@ Java_com_novaingine_v2_NativeBridge_nativeSaveScene(
     const std::string path(rawPath);
     env->ReleaseStringUTFChars(pathValue, rawPath);
 
-    struct LoadedLandscapeState {
-        int width = 0, height = 0;
-        float spacing = 0.5f, originX = 0.0f, originZ = 0.0f;
-        std::vector<float> baseHeights;
-        std::vector<std::array<float,4>> baseWeights;
-        std::vector<nova::LandscapeSystem::Layer> layers;
-        std::vector<std::vector<nova::LandscapeSystem::SplinePoint>> splines;
-    };
-    std::unordered_map<uint32_t, LoadedLandscapeState> loadedLandscapeStates;
-    if (current && version >= 5) {
-        size_t landscapeCount = 0;
-        if (!(file >> landscapeCount) || landscapeCount > 256) return JNI_FALSE;
-        for (size_t landscapeIndex = 0; landscapeIndex < landscapeCount; ++landscapeIndex) {
-            uint32_t objectId = 0;
-            LoadedLandscapeState state;
-            if (!(file >> objectId >> state.width >> state.height >> state.spacing
-                       >> state.originX >> state.originZ) ||
-                objectId == 0 || !loadedScene.find(objectId) ||
-                state.width != 129 || state.height != 129 ||
-                !std::isfinite(state.spacing) || state.spacing <= 0.0f ||
-                !std::isfinite(state.originX) || !std::isfinite(state.originZ))
-                return JNI_FALSE;
-            const size_t expectedSamples = 129u * 129u;
-            size_t count = 0;
-            if (!(file >> count) || count != expectedSamples) return JNI_FALSE;
-            state.baseHeights.resize(count);
-            for (float& value : state.baseHeights)
-                if (!(file >> value) || !std::isfinite(value) || std::fabs(value) > 100000.0f)
-                    return JNI_FALSE;
-            if (!(file >> count) || count != expectedSamples) return JNI_FALSE;
-            state.baseWeights.resize(count);
-            for (auto& weights : state.baseWeights) {
-                float total = 0.0f;
-                for (float& value : weights) {
-                    if (!(file >> value) || !std::isfinite(value)) return JNI_FALSE;
-                    value = std::clamp(value, 0.0f, 1.0f);
-                    total += value;
-                }
-                if (total < 1e-6f) weights = {1.0f, 0.0f, 0.0f, 0.0f};
-                else for (float& value : weights) value /= total;
-            }
-            size_t layerCount = 0;
-            if (!(file >> layerCount) || layerCount == 0 || layerCount > 32) return JNI_FALSE;
-            state.layers.reserve(layerCount);
-            for (size_t layerIndex = 0; layerIndex < layerCount; ++layerIndex) {
-                nova::LandscapeSystem::Layer layer;
-                if (!(file >> std::quoted(layer.name) >> layer.visible >> layer.locked
-                           >> layer.heightAlpha >> layer.paintAlpha) ||
-                    layer.name.size() > 256 || !std::isfinite(layer.heightAlpha) ||
-                    !std::isfinite(layer.paintAlpha)) return JNI_FALSE;
-                layer.heightAlpha = std::clamp(layer.heightAlpha, 0.0f, 1.0f);
-                layer.paintAlpha = std::clamp(layer.paintAlpha, 0.0f, 1.0f);
-                if (!(file >> count) || count != expectedSamples) return JNI_FALSE;
-                layer.heightDelta.resize(count);
-                for (float& value : layer.heightDelta)
-                    if (!(file >> value) || !std::isfinite(value) || std::fabs(value) > 100000.0f)
-                        return JNI_FALSE;
-                if (!(file >> count) || count != expectedSamples) return JNI_FALSE;
-                layer.paintDelta.resize(count);
-                for (auto& weights : layer.paintDelta)
-                    for (float& value : weights)
-                        if (!(file >> value) || !std::isfinite(value) || std::fabs(value) > 10.0f)
-                            return JNI_FALSE;
-                state.layers.push_back(std::move(layer));
-            }
-            size_t splineCount = 0;
-            if (!(file >> splineCount) || splineCount > 4096) return JNI_FALSE;
-            state.splines.reserve(splineCount);
-            for (size_t splineIndex = 0; splineIndex < splineCount; ++splineIndex) {
-                size_t pointCount = 0;
-                if (!(file >> pointCount) || pointCount < 2 || pointCount > 4096)
-                    return JNI_FALSE;
-                std::vector<nova::LandscapeSystem::SplinePoint> spline;
-                spline.reserve(pointCount);
-                for (size_t pointIndex = 0; pointIndex < pointCount; ++pointIndex) {
-                    nova::LandscapeSystem::SplinePoint point;
-                    if (!(file >> point.x >> point.z >> point.width) ||
-                        !std::isfinite(point.x) || !std::isfinite(point.z) ||
-                        !std::isfinite(point.width) || point.width < 0.5f || point.width > 32.0f)
-                        return JNI_FALSE;
-                    spline.push_back(point);
-                }
-                state.splines.push_back(std::move(spline));
-            }
-            if (!loadedLandscapeStates.emplace(objectId, std::move(state)).second)
-                return JNI_FALSE;
-        }
-    }
-
     std::lock_guard<std::mutex> lock(engineMutex);
     while (gSculptJobsPending.load(std::memory_order_acquire) != 0) {
         std::this_thread::yield();
@@ -2287,6 +2198,95 @@ Java_com_novaingine_v2_NativeBridge_nativeLoadScene(
             record.objectId = objectId;
             if (!record.volume.build(path, radius, 0.5f)) return JNI_FALSE;
             loadedVoxelCaves.push_back(std::move(record));
+        }
+    }
+
+    struct LoadedLandscapeState {
+        int width = 0, height = 0;
+        float spacing = 0.5f, originX = 0.0f, originZ = 0.0f;
+        std::vector<float> baseHeights;
+        std::vector<std::array<float,4>> baseWeights;
+        std::vector<nova::LandscapeSystem::Layer> layers;
+        std::vector<std::vector<nova::LandscapeSystem::SplinePoint>> splines;
+    };
+    std::unordered_map<uint32_t, LoadedLandscapeState> loadedLandscapeStates;
+    if (current && version >= 5) {
+        size_t landscapeCount = 0;
+        if (!(file >> landscapeCount) || landscapeCount > 256) return JNI_FALSE;
+        for (size_t landscapeIndex = 0; landscapeIndex < landscapeCount; ++landscapeIndex) {
+            uint32_t objectId = 0;
+            LoadedLandscapeState state;
+            if (!(file >> objectId >> state.width >> state.height >> state.spacing
+                       >> state.originX >> state.originZ) ||
+                objectId == 0 || !loadedScene.find(objectId) ||
+                state.width != 129 || state.height != 129 ||
+                !std::isfinite(state.spacing) || state.spacing <= 0.0f ||
+                !std::isfinite(state.originX) || !std::isfinite(state.originZ))
+                return JNI_FALSE;
+            const size_t expectedSamples = 129u * 129u;
+            size_t count = 0;
+            if (!(file >> count) || count != expectedSamples) return JNI_FALSE;
+            state.baseHeights.resize(count);
+            for (float& value : state.baseHeights)
+                if (!(file >> value) || !std::isfinite(value) || std::fabs(value) > 100000.0f)
+                    return JNI_FALSE;
+            if (!(file >> count) || count != expectedSamples) return JNI_FALSE;
+            state.baseWeights.resize(count);
+            for (auto& weights : state.baseWeights) {
+                float total = 0.0f;
+                for (float& value : weights) {
+                    if (!(file >> value) || !std::isfinite(value)) return JNI_FALSE;
+                    value = std::clamp(value, 0.0f, 1.0f);
+                    total += value;
+                }
+                if (total < 1e-6f) weights = {1.0f, 0.0f, 0.0f, 0.0f};
+                else for (float& value : weights) value /= total;
+            }
+            size_t layerCount = 0;
+            if (!(file >> layerCount) || layerCount == 0 || layerCount > 32) return JNI_FALSE;
+            state.layers.reserve(layerCount);
+            for (size_t layerIndex = 0; layerIndex < layerCount; ++layerIndex) {
+                nova::LandscapeSystem::Layer layer;
+                if (!(file >> std::quoted(layer.name) >> layer.visible >> layer.locked
+                           >> layer.heightAlpha >> layer.paintAlpha) ||
+                    layer.name.size() > 256 || !std::isfinite(layer.heightAlpha) ||
+                    !std::isfinite(layer.paintAlpha)) return JNI_FALSE;
+                layer.heightAlpha = std::clamp(layer.heightAlpha, 0.0f, 1.0f);
+                layer.paintAlpha = std::clamp(layer.paintAlpha, 0.0f, 1.0f);
+                if (!(file >> count) || count != expectedSamples) return JNI_FALSE;
+                layer.heightDelta.resize(count);
+                for (float& value : layer.heightDelta)
+                    if (!(file >> value) || !std::isfinite(value) || std::fabs(value) > 100000.0f)
+                        return JNI_FALSE;
+                if (!(file >> count) || count != expectedSamples) return JNI_FALSE;
+                layer.paintDelta.resize(count);
+                for (auto& weights : layer.paintDelta)
+                    for (float& value : weights)
+                        if (!(file >> value) || !std::isfinite(value) || std::fabs(value) > 10.0f)
+                            return JNI_FALSE;
+                state.layers.push_back(std::move(layer));
+            }
+            size_t splineCount = 0;
+            if (!(file >> splineCount) || splineCount > 4096) return JNI_FALSE;
+            state.splines.reserve(splineCount);
+            for (size_t splineIndex = 0; splineIndex < splineCount; ++splineIndex) {
+                size_t pointCount = 0;
+                if (!(file >> pointCount) || pointCount < 2 || pointCount > 4096)
+                    return JNI_FALSE;
+                std::vector<nova::LandscapeSystem::SplinePoint> spline;
+                spline.reserve(pointCount);
+                for (size_t pointIndex = 0; pointIndex < pointCount; ++pointIndex) {
+                    nova::LandscapeSystem::SplinePoint point;
+                    if (!(file >> point.x >> point.z >> point.width) ||
+                        !std::isfinite(point.x) || !std::isfinite(point.z) ||
+                        !std::isfinite(point.width) || point.width < 0.5f || point.width > 32.0f)
+                        return JNI_FALSE;
+                    spline.push_back(point);
+                }
+                state.splines.push_back(std::move(spline));
+            }
+            if (!loadedLandscapeStates.emplace(objectId, std::move(state)).second)
+                return JNI_FALSE;
         }
     }
 
