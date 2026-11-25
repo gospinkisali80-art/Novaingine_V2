@@ -36,6 +36,7 @@ public:
     const std::vector<uint8_t>& holes()const{return holes_;}
     const std::vector<std::vector<SplinePoint>>& splines()const{return splines_;}
     bool setBaseHeights(const std::vector<float>& h){if(!valid()||h.size()!=baseHeight_.size())return false;baseHeight_=h;return true;}
+    bool setBaseWeights(const std::vector<std::array<float,4>>& w){if(!valid()||w.size()!=baseWeights_.size())return false;baseWeights_=w;for(auto& value:baseWeights_)normalize(value);return true;}
     std::vector<float> heights()const{
         auto out=baseHeight_;for(const auto& l:layers_)if(l.visible&&l.heightDelta.size()==out.size())
             for(size_t i=0;i<out.size();++i)out[i]+=l.heightDelta[i]*l.heightAlpha;return out;
