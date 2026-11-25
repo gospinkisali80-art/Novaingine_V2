@@ -177,6 +177,9 @@ public final class MainActivity extends Activity
                 viewportInput,
                 inputParams
         );
+        // Unreal-style editor navigation uses direct viewport gestures.
+        // Mobile MOVE/LOOK sticks belong to the live game preview only.
+        viewportInput.setVisibility(View.GONE);
     }
 
     private void createStatistics() {
@@ -810,7 +813,7 @@ public final class MainActivity extends Activity
         engineSurface.setSculptOptions(false, 0, 0.18f, 0.12f, 0.5f, 0, false, 1.0f);
         engineSurface.setManualSculptWorkspace(false);
         if (editorToolbar != null) editorToolbar.setVisibility(View.VISIBLE);
-        if (viewportInput != null) viewportInput.setVisibility(View.VISIBLE);
+        if (viewportInput != null) viewportInput.setVisibility(playMode ? View.VISIBLE : View.GONE);
         if (statisticsText != null) statisticsText.setVisibility(View.VISIBLE);
         if (editorPanels != null) editorPanels.setVisibility(View.VISIBLE);
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
@@ -1331,6 +1334,7 @@ public final class MainActivity extends Activity
             if (editorPanels != null) editorPanels.setVisibility(View.GONE);
             updateViewportStatus("PLAY MODE  •  LIVE");
             statisticsText.setVisibility(View.VISIBLE);
+            if (viewportInput != null) viewportInput.setVisibility(View.VISIBLE);
             if (playStopButton == null) {
                 playStopButton = new TextView(this);
                 playStopButton.setText("■  STOP");
@@ -1356,6 +1360,7 @@ public final class MainActivity extends Activity
             engineSurface.setPhysicsEnabled(false);
             editorToolbar.setVisibility(View.VISIBLE);
             if (editorPanels != null) editorPanels.setVisibility(View.VISIBLE);
+            if (viewportInput != null) viewportInput.setVisibility(View.GONE);
             updateViewportStatus("NOVAINGINE V2  |  VIEWPORT");
             if (playStopButton != null) playStopButton.setVisibility(View.GONE);
         }
@@ -1375,7 +1380,7 @@ public final class MainActivity extends Activity
         } else {
 
             editorToolbar.setVisibility(View.VISIBLE);
-            viewportInput.setVisibility(View.VISIBLE);
+            viewportInput.setVisibility(playMode ? View.VISIBLE : View.GONE);
             statisticsText.setVisibility(View.VISIBLE);
         }
     }
