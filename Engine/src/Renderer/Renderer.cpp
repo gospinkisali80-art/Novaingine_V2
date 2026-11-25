@@ -197,6 +197,28 @@ out vec4 fragColor;
 
 const float PI = 3.14159265358979323846;
 
+float terrainHash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+float terrainNoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = terrainHash(i);
+    float b = terrainHash(i + vec2(1.0, 0.0));
+    float c = terrainHash(i + vec2(0.0, 1.0));
+    float d = terrainHash(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+float terrainFbm(vec2 p) {
+    float value = 0.0, amplitude = 0.5;
+    for (int i = 0; i < 4; ++i) {
+        value += terrainNoise(p) * amplitude;
+        p *= 2.03;
+        amplitude *= 0.5;
+    }
+    return value;
+}
+
 float shadowAmount(vec4 position) {
     if (position.w <= 0.0) return 0.0;
 
@@ -283,13 +305,20 @@ void main() {
     );
 
     if (uTerrainMaterial == 1) {
-        float detail = 0.5 + 0.5 * sin(vWorldPosition.x * 2.7) * cos(vWorldPosition.z * 2.1);
+        float detail = terrainFbm(vWorldPosition.xz * 0.42);
         vec3 grass = mix(vec3(0.075, 0.16, 0.045), vec3(0.22, 0.34, 0.10), detail);
         vec3 rock = mix(vec3(0.19, 0.19, 0.18), vec3(0.42, 0.40, 0.36), detail);
         vec3 sand = mix(vec3(0.42, 0.32, 0.18), vec3(0.72, 0.58, 0.34), detail);
         vec3 snow = mix(vec3(0.68, 0.74, 0.78), vec3(0.96, 0.98, 1.0), detail);
-        vec3 baseTerrain = grass * vLayerWeights.x + rock * vLayerWeights.y + sand * vLayerWeights.z;
-        albedo = pow(max(mix(baseTerrain, snow, clamp(vLayerWeights.w, 0.0, 1.0)), vec3(0.001)), vec3(2.2));
+        float steepness = 1.0 - clamp(N.y, 0.0, 1.0);
+        float exposedRock = smoothstep(0.28, 0.82, steepness) * 0.28;
+        vec3 weights = vec3(vLayerWeights.x * (1.0 - exposedRock),
+                            max(vLayerWeights.y, exposedRock),
+                            vLayerWeights.z * (1.0 - exposedRock));
+        weights /= max(weights.x + weights.y + weights.z, 0.0001);
+        vec3 baseTerrain = grass * weights.x + rock * weights.y + sand * weights.z;
+        float snowAmount = clamp(vLayerWeights.w, 0.0, 1.0);
+        albedo = pow(max(mix(baseTerrain, snow, snowAmount), vec3(0.001)), vec3(2.2));
         roughness = mix(0.92, 0.72, clamp(vLayerWeights.w, 0.0, 1.0));
         metallic = 0.0;
     }
