@@ -1765,9 +1765,9 @@ public final class MainActivity extends Activity
         splineHeading.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
         splineHeading.setPadding(0, dp(16), 0, dp(4));
         content.addView(splineHeading);
-        EditText[] road = new EditText[7];
-        String[] roadLabels = {"Start X", "Start Z", "Control X", "Control Z", "End X", "End Z", "Road width"};
-        String[] roadDefaults = {"-20", "-4", "0", "5", "20", "-4", "5"};
+        EditText[] road = new EditText[9];
+        String[] roadLabels = {"Start X", "Start Z", "Start width", "Control X", "Control Z", "Control width", "End X", "End Z", "End width"};
+        String[] roadDefaults = {"-20", "-4", "5", "0", "5", "5", "20", "-4", "5"};
         for (int i=0;i<road.length;i++) {
             TextView label = new TextView(this); label.setText(roadLabels[i]);
             label.setTextColor(Color.DKGRAY); label.setTextSize(11); content.addView(label);
@@ -1784,11 +1784,10 @@ public final class MainActivity extends Activity
         addRoad.setBackgroundColor(0xFF6B5733);
         content.addView(addRoad, new LinearLayout.LayoutParams(-1, dp(42)));
         addRoad.setOnClickListener(v -> {
-            float width = terrainValue(road[6], 5.0f);
             float[] points = {
-                    terrainValue(road[0], -20), terrainValue(road[1], -4), width,
-                    terrainValue(road[2], 0), terrainValue(road[3], 5), width,
-                    terrainValue(road[4], 20), terrainValue(road[5], -4), width
+                    terrainValue(road[0], -20), terrainValue(road[1], -4), terrainValue(road[2], 5),
+                    terrainValue(road[3], 0), terrainValue(road[4], 5), terrainValue(road[5], 5),
+                    terrainValue(road[6], 20), terrainValue(road[7], -4), terrainValue(road[8], 5)
             };
             engineSurface.addLandscapeSpline(points, ok ->
                     android.widget.Toast.makeText(this, ok ? "Curved road spline stored and terrain conformed" :
