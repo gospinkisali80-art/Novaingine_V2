@@ -423,24 +423,66 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 else showWorkspaceActionInfo(item);
                 break;
             case 1:
-                if ("Move".equals(item) || "Rotate".equals(item) || "Scale".equals(item)
-                        || "Transform".equals(item)) showTransformDialog(item.equals("Transform") ? "Move" : item);
-                else if ("Extrude Region".equals(item) || "Extrude".equals(item))
-                    showAmountDialog("Extrude distance", 0.05f, 2.0f, value -> { checkpointMeshEdit(); meshyViewport.extrudeMesh(value); });
-                else if ("Smooth Vertices".equals(item) || "Smooth".equals(item))
-                    showAmountDialog("Smoothing amount", 0.05f, 0.8f, value -> { checkpointMeshEdit(); meshyViewport.smoothMesh(value, 2); });
+                if ("Vertex".equalsIgnoreCase(item) || "Vertex Select".equalsIgnoreCase(item)) {
+                    meshyViewport.setMeshEditMode(true);meshyViewport.setSelectionMode("Vertex");
+                    status.setText("Modeling | Vertex selection | Tap vertices to select");
+                } else if ("Edge".equalsIgnoreCase(item) || "Edge Select".equalsIgnoreCase(item)) {
+                    meshyViewport.setMeshEditMode(true);meshyViewport.setSelectionMode("Edge");
+                    status.setText("Modeling | Edge selection | Tap edges to select");
+                } else if ("Face".equalsIgnoreCase(item) || "Face Select".equalsIgnoreCase(item)) {
+                    meshyViewport.setMeshEditMode(true);meshyViewport.setSelectionMode("Face");
+                    status.setText("Modeling | Face selection | Tap faces to select");
+                } else if ("Select All".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.selectAllElements();
+                    status.setText("Modeling | All " + meshyViewport.getSelectionMode().toLowerCase()
+                            + " elements selected (" + meshyViewport.getSelectedElementCount() + ")");
+                } else if ("Move".equals(item) || "Rotate".equals(item) || "Scale".equals(item)
+                        || "Transform".equals(item)) {
+                    meshyViewport.setMeshEditMode(true);
+                    showTransformDialog(item.equals("Transform") ? "Move" : item);
+                } else if ("Extrude Region".equals(item) || "Extrude Along Normals".equals(item)
+                        || "Extrude Individual Faces".equals(item) || "Extrude".equals(item)) {
+                    showAmountDialog("Extrude distance",0.01f,2.0f,value->{
+                        checkpointMeshEdit();meshyViewport.extrudeSelected(value);
+                        status.setText("Modeling | Extruded selected face region");
+                    });
+                } else if ("Inset Faces".equals(item) || "Inset".equals(item)) {
+                    showAmountDialog("Inset thickness",0.01f,0.9f,value->{
+                        checkpointMeshEdit();meshyViewport.insetSelected(value);
+                        status.setText("Modeling | Inset operation applied to selected faces");
+                    });
+                } else if ("Bevel Edges".equals(item) || "Bevel".equals(item)) {
+                    showAmountDialog("Bevel width",0.01f,0.45f,value->{
+                        checkpointMeshEdit();meshyViewport.bevelSelected(value);
+                        status.setText("Modeling | Bevel applied to selected edges");
+                    });
+                } else if ("Loop Cut".equals(item)) {
+                    showAmountDialog("Loop cut position",0.05f,0.95f,value->{
+                        checkpointMeshEdit();meshyViewport.loopCutSelected(value);
+                        status.setText("Modeling | Loop cut evaluated on selected edge");
+                    });
+                } else if ("Subdivide".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.subdivideSelected();
+                    status.setText("Modeling | Mesh subdivided");
+                } else if ("Merge by Distance".equals(item) || "Merge".equals(item)) {
+                    showAmountDialog("Merge distance",0.001f,0.25f,value->{
+                        checkpointMeshEdit();meshyViewport.mergeSelected(value);
+                        status.setText("Modeling | Merge by distance completed");
+                    });
+                } else if ("Smooth Vertices".equals(item) || "Smooth".equals(item))
+                    showAmountDialog("Smoothing amount",0.05f,0.8f,value->{checkpointMeshEdit();meshyViewport.smoothMesh(value,2);});
                 else if ("Mesh Statistics".equals(item) || "Vertex / Edge / Face Counts".equals(item)
                         || "Topology Overview".equals(item))
                     status.setText("Mesh | " + meshyViewport.getVertexCount() + " vertices | "
-                            + meshyViewport.getFaceCount() + " quad faces");
+                            + meshyViewport.getEdgeCount() + " edges | " + meshyViewport.getFaceCount() + " faces");
                 else if ("Object Mode / Edit Mode".equals(item) || "Edit Mode".equals(item)) {
-                    activeEditorMode = "Edit Mode"; if (modeButton != null) modeButton.setText(activeEditorMode);
-                    meshyViewport.setShowTopology(true); status.setText("Modeling | Edit Mode");
+                    activeEditorMode = "Edit Mode";if(modeButton!=null)modeButton.setText(activeEditorMode);
+                    meshyViewport.setMeshEditMode(true);meshyViewport.setShowTopology(true);status.setText("Modeling | Edit Mode");
                 } else if ("Object Mode".equals(item)) {
-                    activeEditorMode = "Object Mode"; if (modeButton != null) modeButton.setText(activeEditorMode);
-                    status.setText("Modeling | Object Mode");
+                    activeEditorMode = "Object Mode";if(modeButton!=null)modeButton.setText(activeEditorMode);
+                    meshyViewport.setMeshEditMode(false);status.setText("Modeling | Object Mode");
                 } else if ("Wireframe".equals(item)) meshyViewport.toggleTopology();
-                else if ("Reset Mesh".equals(item)) meshyViewport.resetMesh();
+                else if ("Reset Mesh".equals(item)) {checkpointMeshEdit();meshyViewport.resetMesh();}
                 else showWorkspaceActionInfo(item);
                 break;
             case 3:
@@ -629,6 +671,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
         if (workspaceLayoutLayer == null) return;
         workspaceLayoutLayer.removeAllViews();
         viewportFocusMode = false;
+        if (meshyViewport != null) meshyViewport.setMeshEditMode(index == 1);
         workspaceToolbar = new LinearLayout(activity);
         workspaceToolbar.setGravity(Gravity.CENTER_VERTICAL);
         workspaceToolbar.setBackgroundColor(0xE02B333D);
