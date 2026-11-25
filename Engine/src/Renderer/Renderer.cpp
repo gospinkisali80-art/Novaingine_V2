@@ -585,21 +585,41 @@ void main() {
                pow(max(dot(ray, normalize(uSunDirection)), 0.0), 8.0) * mie * 0.035;
     }
 
-    // Two broad world-direction cloud layers with soft multi-octave edges.
-    float cloudHeight = max(ray.y + 0.19, 0.10);
-    vec2 cloudPlane = ray.xz / cloudHeight;
-    vec3 cloudDrift = vec3(uTime * uCloudSpeed, 0.0,
-                           uTime * uCloudSpeed * 0.37);
-    float cloudField = cloudFbm(vec3(cloudPlane * 1.05, 2.8) + cloudDrift);
-    float cloudEdge = 0.78 - clamp(uCloudCoverage, 0.0, 1.0) * 0.38;
-    float cloudMask = smoothstep(cloudEdge - 0.10, cloudEdge + 0.10, cloudField);
-    cloudMask *= smoothstep(-0.035, 0.20, ray.y);
-    float underside = clamp(0.78 + ray.y * 0.38, 0.62, 1.0);
-    vec3 cloudColor = mix(vec3(0.57, 0.62, 0.70),
-                          vec3(0.98, 0.985, 1.0), underside);
-    if (uCloudsEnabled == 1) {
-        sky = mix(sky, cloudColor,
-                  cloudMask * clamp(uCloudDensity, 0.0, 1.0) * 0.90);
+    // Low-cost cloud-volume ray march. Six density samples through a
+    // world-space cloud slab keep the feature practical on mobile GPUs.
+    if (uCloudsEnabled == 1 && ray.y > 0.015) {
+        const float cloudBase = 26.0;
+        const float cloudTop = 38.0;
+        float tEnter = max((cloudBase - uCameraPosition.y) / ray.y, 0.0);
+        float tExit = max((cloudTop - uCameraPosition.y) / ray.y, 0.0);
+        if (tExit > tEnter) {
+            float transmittance = 1.0;
+            vec3 cloudAccumulation = vec3(0.0);
+            float coverage = clamp(uCloudCoverage, 0.0, 1.0);
+            float densityScale = clamp(uCloudDensity, 0.0, 1.0);
+            for (int stepIndex = 0; stepIndex < 6; ++stepIndex) {
+                float fraction = (float(stepIndex) + 0.5) / 6.0;
+                float distanceAlongRay = mix(tEnter, tExit, fraction);
+                vec3 samplePosition = uCameraPosition + ray * distanceAlongRay;
+                samplePosition += vec3(uTime * uCloudSpeed, 0.0,
+                                       uTime * uCloudSpeed * 0.37);
+                float shapeNoise = noise3(samplePosition * 0.055);
+                float cloudThreshold = 0.78 - coverage * 0.42;
+                float localDensity = smoothstep(
+                    cloudThreshold - 0.10, cloudThreshold + 0.10, shapeNoise
+                ) * densityScale;
+                float stepOpacity = 1.0 - exp(
+                    -localDensity * 0.32 * (tExit - tEnter) / 6.0
+                );
+                float sunLighting = 0.68 + 0.32 *
+                    max(dot(normalize(uSunDirection), normalize(vec3(0.25, 1.0, 0.15))), 0.0);
+                vec3 cloudColor = mix(vec3(0.48, 0.53, 0.62),
+                                      vec3(0.98, 0.985, 1.0), sunLighting);
+                cloudAccumulation += transmittance * stepOpacity * cloudColor;
+                transmittance *= 1.0 - stepOpacity;
+            }
+            sky = sky * transmittance + cloudAccumulation;
+        }
     }
 
     vec3 sunDirection = normalize(uSunDirection);
