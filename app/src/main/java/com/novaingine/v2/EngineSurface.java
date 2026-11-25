@@ -37,6 +37,10 @@ public final class EngineSurface extends GLSurfaceView
     private volatile int sculptSymmetryAxis = 0;
     private volatile boolean sculptSubtract;
     private boolean sculptStrokeActive;
+    private volatile boolean terrainSculptMode;
+    private volatile int terrainBrushMode;
+    private volatile float terrainBrushRadius = 5.0f;
+    private volatile float terrainBrushStrength = 0.35f;
 
     public EngineSurface(Context context) {
         super(context);
@@ -323,6 +327,21 @@ public final class EngineSurface extends GLSurfaceView
 
     public int clearFoliage() {
         return NativeBridge.nativeClearFoliage();
+    }
+
+    public void setTerrainSculptMode(boolean enabled, int brushMode, float radius, float strength) {
+        terrainBrushMode = Math.max(0, Math.min(6, brushMode));
+        terrainBrushRadius = Math.max(0.5f, Math.min(24.0f, radius));
+        terrainBrushStrength = Math.max(0.005f, Math.min(2.5f, strength));
+        terrainSculptMode = enabled;
+    }
+
+    private void terrainStroke(float x, float y, int phase) {
+        final int mode = terrainBrushMode;
+        final float radius = terrainBrushRadius;
+        final float strength = terrainBrushStrength;
+        queueEvent(() -> NativeBridge.nativeSculptTerrainAtScreen(
+                x, y, radius, strength, mode, phase));
     }
 
     public void createTerrain(java.util.function.Consumer<Boolean> callback) {
