@@ -421,26 +421,32 @@ float terrainHeightAt(float worldX, float worldZ, bool& found, bool allowHole) {
         found = true;
         return h0 + (h1 - h0) * tz;
     }
-    for (const auto& entry : gLandscapeWorldTiles) {
-        const LandscapeWorldTile& tile = entry.second;
-        if (!tile.data.valid() || tile.fullMesh.getVertices().size() != 129u * 129u) continue;
-        const float gx = (worldX - landscapeTileOriginX(tile.tileX)) / tile.data.spacing();
-        const float gz = (worldZ - landscapeTileOriginZ(tile.tileZ)) / tile.data.spacing();
-        if (gx < 0.0f || gz < 0.0f || gx > 128.0f || gz > 128.0f) continue;
-        const int x0 = std::min(127, static_cast<int>(std::floor(gx)));
-        const int z0 = std::min(127, static_cast<int>(std::floor(gz)));
-        if (!allowHole && tile.data.isHole(x0, z0)) continue;
-        const int x1 = x0 + 1, z1 = z0 + 1;
-        const float tx = gx - x0, tz = gz - z0;
-        const auto& vertices = tile.fullMesh.getVertices();
-        const float h00 = vertices[static_cast<size_t>(z0 * 129 + x0)].position.y;
-        const float h10 = vertices[static_cast<size_t>(z0 * 129 + x1)].position.y;
-        const float h01 = vertices[static_cast<size_t>(z1 * 129 + x0)].position.y;
-        const float h11 = vertices[static_cast<size_t>(z1 * 129 + x1)].position.y;
-        const float h0 = h00 + (h10 - h00) * tx;
-        const float h1 = h01 + (h11 - h01) * tx;
-        found = true;
-        return h0 + (h1 - h0) * tz;
+    const int tileX = static_cast<int>(std::floor((worldX + 32.0f) / 64.0f));
+    const int tileZ = static_cast<int>(std::floor((worldZ + 36.0f) / 64.0f));
+    auto tileIt = gLandscapeWorldTiles.find(landscapeTileKey(tileX, tileZ));
+    if (tileIt != gLandscapeWorldTiles.end()) {
+        const LandscapeWorldTile& tile = tileIt->second;
+        if (tile.data.valid() && tile.fullMesh.getVertices().size() == 129u * 129u) {
+            const float gx = (worldX - landscapeTileOriginX(tile.tileX)) / tile.data.spacing();
+            const float gz = (worldZ - landscapeTileOriginZ(tile.tileZ)) / tile.data.spacing();
+            if (gx >= 0.0f && gz >= 0.0f && gx <= 128.0f && gz <= 128.0f) {
+                const int x0 = std::min(127, static_cast<int>(std::floor(gx)));
+                const int z0 = std::min(127, static_cast<int>(std::floor(gz)));
+                if (allowHole || !tile.data.isHole(x0, z0)) {
+                    const int x1 = x0 + 1, z1 = z0 + 1;
+                    const float tx = gx - x0, tz = gz - z0;
+                    const auto& vertices = tile.fullMesh.getVertices();
+                    const float h00 = vertices[static_cast<size_t>(z0 * 129 + x0)].position.y;
+                    const float h10 = vertices[static_cast<size_t>(z0 * 129 + x1)].position.y;
+                    const float h01 = vertices[static_cast<size_t>(z1 * 129 + x0)].position.y;
+                    const float h11 = vertices[static_cast<size_t>(z1 * 129 + x1)].position.y;
+                    const float h0 = h00 + (h10 - h00) * tx;
+                    const float h1 = h01 + (h11 - h01) * tx;
+                    found = true;
+                    return h0 + (h1 - h0) * tz;
+                }
+            }
+        }
     }
     return 0.0f;
 }
