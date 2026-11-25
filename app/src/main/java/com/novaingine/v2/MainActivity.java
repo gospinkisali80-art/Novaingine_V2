@@ -691,7 +691,7 @@ public final class MainActivity extends Activity
     public void performMeshyFileAction(String action) {
         switch (action) {
             case "New":
-                createNewProject();
+                createNewMeshyProject();
                 break;
             case "Open":
                 new AlertDialog.Builder(this).setTitle("Open")
@@ -2029,6 +2029,44 @@ public final class MainActivity extends Activity
                     engineSurface.createEmptyScene(activeProjectScene.getAbsolutePath(), ok -> {
                         if (ok) enterProject("Created " + projectName);
                         else android.widget.Toast.makeText(this, "Could not initialize project.", android.widget.Toast.LENGTH_LONG).show();
+                    });
+                }).setNegativeButton("CANCEL", null).show();
+    }
+
+    private void createNewMeshyProject() {
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setHint("My Meshy3D Project");
+        new AlertDialog.Builder(this).setTitle("New Meshy3D Project")
+                .setMessage("Create a new project and open it directly in the Meshy3D editor.")
+                .setView(input).setPositiveButton("CREATE", (d, w) -> {
+                    String name = input.getText().toString().trim()
+                            .replaceAll("[^A-Za-z0-9 _-]", "");
+                    if (name.length() > 40) name = name.substring(0, 40).trim();
+                    if (name.isEmpty()) name = "Untitled Meshy3D";
+                    File dir = new File(projectsDirectory(), name);
+                    if (dir.exists()) {
+                        android.widget.Toast.makeText(this,
+                                "That project already exists.", android.widget.Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    if (!dir.mkdirs()) {
+                        android.widget.Toast.makeText(this,
+                                "Could not create project folder.", android.widget.Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    activeProjectDirectory = dir;
+                    activeProjectScene = new File(dir, "Scene.nova");
+                    final String projectName = name;
+                    engineSurface.createEmptyScene(activeProjectScene.getAbsolutePath(), ok -> {
+                        if (ok) {
+                            enterProject("Created " + projectName);
+                            openManualSculpting();
+                        } else {
+                            android.widget.Toast.makeText(this,
+                                    "Could not initialize Meshy3D project.",
+                                    android.widget.Toast.LENGTH_LONG).show();
+                        }
                     });
                 }).setNegativeButton("CANCEL", null).show();
     }
