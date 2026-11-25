@@ -534,7 +534,7 @@ public final class Meshy3DViewport extends View {
                 return true;
             case MotionEvent.ACTION_UP:
                 strokeActive=false;
-                if(!moved && sculpting){syncCoreFromViewport();}
+                if(sculpting){syncCoreFromViewport();}
                 if(!moved && !sculpting){
                     float gx=getWidth()-190*d, gy=150*d, radius=35*d;
                     float dx=event.getX()-gx,dy=event.getY()-gy;
