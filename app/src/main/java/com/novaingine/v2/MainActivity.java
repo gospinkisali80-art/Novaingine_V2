@@ -377,7 +377,7 @@ public final class MainActivity extends Activity
 
         addDrawerSection("WORLD BUILDING");
         addDrawerItem("Terrain Sculpting", "Sculpt the generated terrain surface", this::showTerrainSculptor);
-        addDrawerItem("Manual Sculpting", "Open the landscape sculpt editor with brush browser, scene tools and viewport controls", this::showMeshSculptor);
+        addDrawerItem("Meshy3D Editor", "Open the docked 3D workspace with viewport, Outliner, object properties, tools and timeline", this::showMeshSculptor);
         addDrawerItem("Foliage Painting", "Paint trees and bushes into the scene", this::showFoliagePainter);
         addDrawerItem("Import Blender Model (.glb)", "Import a Blender-exported glTF binary model", this::openGlbPicker);
 
