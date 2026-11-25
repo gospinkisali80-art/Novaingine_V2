@@ -168,7 +168,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
         menus.setGravity(Gravity.CENTER_VERTICAL);
         menuWorkspaceRow.addView(menus, new LinearLayout.LayoutParams(
                 LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
-        String[] menuNames = {"File", "Edit", "Render", "Window", "Help"};
+        String[] menuNames = {"File", "Edit", "Window", "Help"};
         for (String menuName : menuNames) {
             TextView menu = new TextView(activity);
             menu.setText(menuName);
@@ -183,7 +183,6 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     else if ("Edit".equals(menuName)) host.showMeshyEditMenu(view);
                     else if ("Window".equals(menuName)) host.showMeshyWindowMenu(view);
                     else if ("Help".equals(menuName)) host.showMeshyHelpMenu(view);
-                    else if ("Render".equals(menuName)) host.showMeshyRenderMenu(view);
                 }
             });
             menus.addView(menu, new LinearLayout.LayoutParams(
