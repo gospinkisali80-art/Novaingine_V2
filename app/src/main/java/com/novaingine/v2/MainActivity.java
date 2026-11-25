@@ -131,6 +131,7 @@ public final class MainActivity extends Activity
         createTouchControls();
         createStatistics();
         createEditorPanels();
+        restoreMeshyHistory();
 
         setContentView(rootLayout);
 
@@ -784,7 +785,7 @@ public final class MainActivity extends Activity
     }
 
     private File nextMeshySnapshot(String label) {
-        File dir = new File(getCacheDir(), "meshy3d_editor_history");
+        File dir = new File(getFilesDir(), "meshy3d_editor_history");
         if (!dir.exists()) dir.mkdirs();
         return new File(dir, String.format(java.util.Locale.US, "%05d_%s.nova",
                 ++meshySnapshotSerial, label.replaceAll("[^A-Za-z0-9_-]", "_")));
@@ -799,9 +800,37 @@ public final class MainActivity extends Activity
                     File old = target.removeFirst();
                     if (old.exists()) old.delete();
                 }
+                persistMeshyHistory();
             }
             if (done != null) done.run();
         });
+    }
+
+    private void persistMeshyHistory() {
+        android.content.SharedPreferences prefs = getSharedPreferences("meshy3d_editor", MODE_PRIVATE);
+        if (!prefs.getBoolean("persist_history", false)) return;
+        java.util.ArrayList<String> undoNames = new java.util.ArrayList<>();
+        java.util.ArrayList<String> redoNames = new java.util.ArrayList<>();
+        for (File f : meshyUndo) undoNames.add(f.getName());
+        for (File f : meshyRedo) redoNames.add(f.getName());
+        prefs.edit().putString("undo_files", android.text.TextUtils.join("\n", undoNames))
+                .putString("redo_files", android.text.TextUtils.join("\n", redoNames))
+                .putString("repeat_files", android.text.TextUtils.join("\n", meshyRepeatHistory))
+                .putInt("snapshot_serial", meshySnapshotSerial).apply();
+    }
+
+    private void restoreMeshyHistory() {
+        android.content.SharedPreferences prefs = getSharedPreferences("meshy3d_editor", MODE_PRIVATE);
+        if (!prefs.getBoolean("persist_history", false)) return;
+        File dir = new File(getFilesDir(), "meshy3d_editor_history");
+        for (String name : prefs.getString("undo_files", "").split("\\n"))
+            if (!name.isEmpty()) { File f = new File(dir, name); if (f.isFile()) meshyUndo.addLast(f); }
+        for (String name : prefs.getString("redo_files", "").split("\\n"))
+            if (!name.isEmpty()) { File f = new File(dir, name); if (f.isFile()) meshyRedo.addLast(f); }
+        for (String line : prefs.getString("repeat_files", "").split("\\n"))
+            if (!line.isEmpty()) meshyRepeatHistory.add(line);
+        meshySnapshotSerial = prefs.getInt("snapshot_serial", 0);
+        meshyObjectModesLocked = prefs.getBoolean("lock_object_modes", false);
     }
 
     private void meshyUndo() {
@@ -899,13 +928,18 @@ public final class MainActivity extends Activity
         confirm.setChecked(getSharedPreferences("meshy3d_editor", MODE_PRIVATE).getBoolean("confirm_ops", true));
         panel.addView(confirm);
         CheckBox history = new CheckBox(this);
-        history.setText("Keep editor history between sessions");
+        history.setText("Keep Meshy3D undo / redo history between sessions");
         history.setChecked(getSharedPreferences("meshy3d_editor", MODE_PRIVATE).getBoolean("persist_history", false));
         panel.addView(history);
+        CheckBox lockModes = new CheckBox(this);
+        lockModes.setText("Lock Object / Edit / Sculpt mode switching");
+        lockModes.setChecked(getSharedPreferences("meshy3d_editor", MODE_PRIVATE).getBoolean("lock_object_modes", false));
+        panel.addView(lockModes);
         new AlertDialog.Builder(this).setTitle("Meshy3D Preferences").setView(panel)
                 .setPositiveButton("Save", (d, w) -> getSharedPreferences("meshy3d_editor", MODE_PRIVATE)
                         .edit().putBoolean("confirm_ops", confirm.isChecked())
-                        .putBoolean("persist_history", history.isChecked()).apply())
+                        .putBoolean("persist_history", history.isChecked())
+                        .putBoolean("lock_object_modes", lockModes.isChecked()).apply())
                 .setNegativeButton("Cancel", null).show();
     }
 
@@ -1017,8 +1051,9 @@ public final class MainActivity extends Activity
             case "Batch Rename": showMeshyBatchRename(); return;
             case "Lock Object Modes":
                 meshyObjectModesLocked = !meshyObjectModesLocked;
-                android.widget.Toast.makeText(this, meshyObjectModesLocked ? "Object mode switching locked." : "Object mode switching unlocked.",
-                        android.widget.Toast.LENGTH_SHORT).show();
+                if (manualSculptWorkspace != null) manualSculptWorkspace.setObjectModesLocked(meshyObjectModesLocked);
+                getSharedPreferences("meshy3d_editor", MODE_PRIVATE).edit().putBoolean("lock_object_modes", meshyObjectModesLocked).apply();
+                android.widget.Toast.makeText(this, meshyObjectModesLocked ? "Meshy3D mode switching is locked." : "Meshy3D mode switching is unlocked.", android.widget.Toast.LENGTH_SHORT).show();
                 return;
             case "Preferences": showMeshyPreferences(); return;
             default: break;
