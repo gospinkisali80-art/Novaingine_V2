@@ -22,6 +22,14 @@ public final class Meshy3DViewport extends View {
     private final float[][] vertices = createDenseCubeVertices();
     private final int[][] faces = createDenseCubeFaces();
     private final float[] vertexMask = new float[vertices.length];
+    private boolean meshVisible = true;
+    private boolean showFloorGrid = true;
+    private boolean showTopology = true;
+    private int meshTint = 0xFF9DAAB7;
+    private float metallic = 0.0f;
+    private float roughness = 0.65f;
+    private final float[][] originalVertices = createDenseCubeVertices();
+
 
     private static float[][] createDenseCubeVertices() {
         int n = MESH_SUBDIVISIONS + 1;
@@ -122,6 +130,7 @@ public final class Meshy3DViewport extends View {
         final float unit=Math.min(width,height)*0.235f*zoom;
 
         // Perspective floor grid with Blender-like red X and green Y ground axes.
+        if (showFloorGrid) {
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(1f);
         for(int i=-12;i<=12;i++){
@@ -141,7 +150,12 @@ public final class Meshy3DViewport extends View {
         paint.setColor(0xFF55A879);
         float[] y1=project(0,-1.11f,-6,cx,cy,unit), y2=project(0,-1.11f,6,cx,cy,unit);
         canvas.drawLine(y1[0],y1[1],y2[0],y2[1],paint);
+        }
 
+        if (!meshVisible) {
+            drawNavigationGizmo(canvas, width, 18f*getResources().getDisplayMetrics().density);
+            return;
+        }
         float[][] p=new float[vertices.length][3];
         for(int i=0;i<vertices.length;i++) p[i]=project(vertices[i][0],vertices[i][1],vertices[i][2],cx,cy,unit);
 
@@ -173,9 +187,14 @@ public final class Meshy3DViewport extends View {
             path.moveTo(p[face[0]][0],p[face[0]][1]);
             for(int k=1;k<4;k++) path.lineTo(p[face[k]][0],p[face[k]][1]);
             path.close();
-            paint.setStyle(Paint.Style.FILL); paint.setColor(FACE_COLORS[f / (MESH_SUBDIVISIONS * MESH_SUBDIVISIONS)]); canvas.drawPath(path,paint);
-            paint.setStyle(Paint.Style.STROKE); paint.setColor(0xAA303840);
-            paint.setStrokeWidth(0.65f); canvas.drawPath(path,paint);
+            int side = f / (MESH_SUBDIVISIONS * MESH_SUBDIVISIONS);
+            int base = FACE_COLORS[side];
+            int shaded = blendColor(base, meshTint, 0.48f);
+            paint.setStyle(Paint.Style.FILL); paint.setColor(shaded); canvas.drawPath(path,paint);
+            if (showTopology) {
+                paint.setStyle(Paint.Style.STROKE); paint.setColor(0xAA303840);
+                paint.setStrokeWidth(0.65f); canvas.drawPath(path,paint);
+            }
         }
         paint.setStyle(Paint.Style.FILL);
         drawNavigationGizmo(canvas, width, 18f*getResources().getDisplayMetrics().density);
@@ -201,6 +220,73 @@ public final class Meshy3DViewport extends View {
             paint.setStyle(Paint.Style.STROKE);
         }
         paint.setStyle(Paint.Style.FILL);
+    }
+
+    private static int blendColor(int a, int b, float amount) {
+        float t = Math.max(0f, Math.min(1f, amount));
+        int ar=(a>>16)&255, ag=(a>>8)&255, ab=a&255;
+        int br=(b>>16)&255, bg=(b>>8)&255, bb=b&255;
+        return 0xFF000000 | ((int)(ar+(br-ar)*t)<<16)
+                | ((int)(ag+(bg-ag)*t)<<8) | (int)(ab+(bb-ab)*t);
+    }
+
+    /** Apply a geometric transform to every vertex of the active Meshy3D object. */
+    public void transformMesh(int operation, float x, float y, float z) {
+        for (float[] v : vertices) {
+            if (operation == 0) { v[0]+=x; v[1]+=y; v[2]+=z; }
+            else if (operation == 1) {
+                double rx=Math.toRadians(x), ry=Math.toRadians(y), rz=Math.toRadians(z);
+                float yy=(float)(v[1]*Math.cos(rx)-v[2]*Math.sin(rx));
+                float zz=(float)(v[1]*Math.sin(rx)+v[2]*Math.cos(rx));
+                float xx=(float)(v[0]*Math.cos(ry)+zz*Math.sin(ry));
+                float z2=(float)(-v[0]*Math.sin(ry)+zz*Math.cos(ry));
+                v[0]=(float)(xx*Math.cos(rz)-yy*Math.sin(rz));
+                v[1]=(float)(xx*Math.sin(rz)+yy*Math.cos(rz));
+                v[2]=z2;
+            } else if (operation == 2) { v[0]*=x; v[1]*=y; v[2]*=z; }
+        }
+        invalidate();
+    }
+
+    /** Laplacian relaxation over each cube-grid surface patch. */
+    public void smoothMesh(float amount, int iterations) {
+        float t=Math.max(0f,Math.min(1f,amount)); int n=MESH_SUBDIVISIONS+1;
+        float[][] next=new float[vertices.length][3];
+        for(int pass=0;pass<Math.max(1,Math.min(20,iterations));pass++){
+            for(int side=0;side<6;side++) for(int v=0;v<n;v++) for(int u=0;u<n;u++){
+                int index=side*n*n+v*n+u; float[] point=vertices[index];
+                float sx=0,sy=0,sz=0; int count=0;
+                int[] du={-1,1,0,0}, dv={0,0,-1,1};
+                for(int k=0;k<4;k++){int uu=u+du[k],vv=v+dv[k];if(uu>=0&&uu<n&&vv>=0&&vv<n){
+                    float[] q=vertices[side*n*n+vv*n+uu];sx+=q[0];sy+=q[1];sz+=q[2];count++;}}
+                next[index][0]=count==0?point[0]:point[0]+(sx/count-point[0])*t;
+                next[index][1]=count==0?point[1]:point[1]+(sy/count-point[1])*t;
+                next[index][2]=count==0?point[2]:point[2]+(sz/count-point[2])*t;
+            }
+            for(int i=0;i<vertices.length;i++) System.arraycopy(next[i],0,vertices[i],0,3);
+        }
+        invalidate();
+    }
+
+    public void extrudeMesh(float distance) {
+        for(float[] v:vertices){float length=(float)Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]);
+            if(length>0.0001f){v[0]+=v[0]/length*distance;v[1]+=v[1]/length*distance;v[2]+=v[2]/length*distance;}}
+        invalidate();
+    }
+    public void setMeshVisible(boolean visible){meshVisible=visible;invalidate();}
+    public void setShowFloorGrid(boolean visible){showFloorGrid=visible;invalidate();}
+    public void setShowTopology(boolean visible){showTopology=visible;invalidate();}
+    public void setMeshTint(int color){meshTint=color|0xFF000000;invalidate();}
+    public void setMaterialParameters(float metallicValue,float roughnessValue){
+        metallic=Math.max(0f,Math.min(1f,metallicValue));roughness=Math.max(0.02f,Math.min(1f,roughnessValue));invalidate();
+    }
+    public float getMetallic(){return metallic;}
+    public float getRoughness(){return roughness;}
+    public int getVertexCount(){return vertices.length;}
+    public int getFaceCount(){return faces.length;}
+    public void resetMesh(){
+        for(int i=0;i<vertices.length;i++) System.arraycopy(originalVertices[i],0,vertices[i],0,3);
+        java.util.Arrays.fill(vertexMask,0f);meshVisible=true;showTopology=true;invalidate();
     }
 
     public void setSculptSettings(boolean enabled, int brush, float radius, float strength,
