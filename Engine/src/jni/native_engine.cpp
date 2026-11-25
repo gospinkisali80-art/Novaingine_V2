@@ -1755,7 +1755,7 @@ Java_com_novaingine_v2_NativeBridge_nativeSaveScene(
     std::ofstream file(temporaryPath, std::ios::out | std::ios::trunc);
     if (!file) return JNI_FALSE;
     file << std::setprecision(9);
-    file << "NOVA_PROJECT 3\n";
+    file << "NOVA_PROJECT 4\n";
     file << gScene.objectCount() << " " << gScene.selectedId() << " "
          << gSculptMeshId << "\n";
     file << gCamera.position.x << " " << gCamera.position.y << " " << gCamera.position.z << " "
@@ -1831,6 +1831,14 @@ Java_com_novaingine_v2_NativeBridge_nativeSaveScene(
              << node.value << " " << node.compareValue << " " << node.condition << "\n";
     }
 
+    file << gVoxelCaves.size() << "\n";
+    for (const VoxelCaveRecord& cave : gVoxelCaves) {
+        file << cave.objectId << " " << cave.volume.radius() << " "
+             << cave.volume.path().size() << "\n";
+        for (const nova::Vec3& point : cave.volume.path())
+            file << point.x << " " << point.y << " " << point.z << "\n";
+    }
+
     file.flush();
     const bool written = file.good();
     file.close();
@@ -1863,7 +1871,7 @@ Java_com_novaingine_v2_NativeBridge_nativeLoadScene(
     uint32_t selectedId = 0, sculptMeshId = 0;
     if (!(file >> magic >> version)) return JNI_FALSE;
     const bool legacy = magic == "NOVA_SCENE" && version == 1;
-    const bool current = magic == "NOVA_PROJECT" && (version == 2 || version == 3);
+    const bool current = magic == "NOVA_PROJECT" && (version == 2 || version == 3 || version == 4);
     const bool hasLayerWeights = current && version >= 3;
     if (!legacy && !current) return JNI_FALSE;
     if (!(file >> objectCount) || objectCount > 10000) return JNI_FALSE;
@@ -2021,6 +2029,34 @@ Java_com_novaingine_v2_NativeBridge_nativeLoadScene(
         }
     }
 
+    std::vector<VoxelCaveRecord> loadedVoxelCaves;
+    if (current && version >= 4) {
+        size_t caveCount = 0;
+        if (!(file >> caveCount) || caveCount > 128) return JNI_FALSE;
+        loadedVoxelCaves.reserve(caveCount);
+        for (size_t c = 0; c < caveCount; ++c) {
+            uint32_t objectId = 0;
+            float radius = 0.0f;
+            size_t pointCount = 0;
+            if (!(file >> objectId >> radius >> pointCount) ||
+                objectId == 0 || pointCount < 2 || pointCount > 1024 ||
+                !loadedScene.find(objectId)) return JNI_FALSE;
+            std::vector<nova::Vec3> path;
+            path.reserve(pointCount);
+            for (size_t p = 0; p < pointCount; ++p) {
+                nova::Vec3 point;
+                if (!(file >> point.x >> point.y >> point.z) ||
+                    !std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z))
+                    return JNI_FALSE;
+                path.push_back(point);
+            }
+            VoxelCaveRecord record;
+            record.objectId = objectId;
+            if (!record.volume.build(path, radius, 0.5f)) return JNI_FALSE;
+            loadedVoxelCaves.push_back(std::move(record));
+        }
+    }
+
     std::lock_guard<std::mutex> lock(engineMutex);
     while (gSculptJobsPending.load(std::memory_order_acquire) != 0) {
         std::this_thread::yield();
@@ -2036,6 +2072,7 @@ Java_com_novaingine_v2_NativeBridge_nativeLoadScene(
     gCustomMeshes = std::move(loadedMeshes);
     gLandscape = nova::LandscapeSystem();
     gLandscapeWorldTiles.clear();
+    gVoxelCaves = std::move(loadedVoxelCaves);
 
     auto restoreLandscapeData = [](nova::LandscapeSystem& data, const nova::Mesh& mesh,
                                    float originX, float originZ) -> bool {
@@ -3743,6 +3780,7 @@ Java_com_novaingine_v2_NativeBridge_nativeResetScene(
     nova::SceneFactory::buildShowcaseScene(gScene);
     gLandscape = nova::LandscapeSystem();
     gLandscapeWorldTiles.clear();
+    gVoxelCaves.clear();
     gCustomMeshes.clear();
     gSculptMasks.clear();
     gRenderer.releaseAllMeshes();
