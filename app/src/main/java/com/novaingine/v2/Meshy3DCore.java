@@ -211,7 +211,7 @@ public final class Meshy3DCore {
         revision++;
     }
     public void unwrapPlanar(){
-        faceUvs=new float[faces.size()][];islands.clear();
+        faceUvs=new float[faces.size()][][];islands.clear();
         // Create seams at hard normal discontinuities, preserving explicitly marked seams.
         for(Edge edge:edges)if(edge.faces.size()==2){
             float[] a=normal(faces.get(edge.faces.get(0)).vertices);
