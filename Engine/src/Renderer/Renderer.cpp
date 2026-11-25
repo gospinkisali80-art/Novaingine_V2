@@ -1337,7 +1337,7 @@ void Renderer::bindObjectUniforms(
     );
     setFloatUniform(program, "uRoughness", object.material.roughness);
     setFloatUniform(program, "uMetallic", object.material.metallic);
-    setIntUniform(program, "uTerrainMaterial", (object.name == "Landscape Terrain" || object.name.rfind("Landscape Chunk ", 0) == 0) ? 1 : 0);
+    setIntUniform(program, "uTerrainMaterial", (object.name == "Landscape Terrain" || object.name.rfind("Landscape Chunk ", 0) == 0 || object.name.rfind("Landscape Tile ", 0) == 0) ? 1 : 0);
 }
 
 bool Renderer::ensureObjectGPU(const SceneObject& object) {
