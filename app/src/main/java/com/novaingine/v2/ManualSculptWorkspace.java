@@ -518,14 +518,18 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 } else showWorkspaceActionInfo(item);
                 break;
             case 5:
-                if ("Base Color".equals(item) || "Viewport Display".equals(item)
+                if ("Shader Editor".equals(item) || "Shader Nodes".equals(item) || "Node Graph".equals(item)
+                        || "Principled BSDF".equals(item)) showNodeGraph(1);
+                else if ("Base Color".equals(item) || "Viewport Display".equals(item)
                         || "New Material".equals(item) || "Material Preview".equals(item)) showPaintColorDialog();
-                else if ("Metallic".equals(item)) showAmountDialog("Metallic", 0f, 1f,
-                        value -> { checkpointMeshEdit(); meshyViewport.setMaterialParameters(value, meshyViewport.getRoughness());
-                            status.setText("Shading | Metallic " + value); });
-                else if ("Roughness".equals(item)) showAmountDialog("Roughness", 0.02f, 1f,
-                        value -> { checkpointMeshEdit(); meshyViewport.setMaterialParameters(meshyViewport.getMetallic(), value);
-                            status.setText("Shading | Roughness " + value); });
+                else if ("Metallic".equals(item)) showAmountDialog("Metallic",0f,1f,value->{
+                    checkpointMeshEdit();meshyViewport.setMaterialParameters(value,meshyViewport.getRoughness());
+                    status.setText("Shading | Metallic "+value);
+                });
+                else if ("Roughness".equals(item)) showAmountDialog("Roughness",.02f,1f,value->{
+                    checkpointMeshEdit();meshyViewport.setMaterialParameters(meshyViewport.getMetallic(),value);
+                    status.setText("Shading | Roughness "+value);
+                });
                 else showWorkspaceActionInfo(item);
                 break;
             case 6:
@@ -541,13 +545,20 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 else showWorkspaceActionInfo(item);
                 break;
             case 8:
-                showWorkspaceActionInfo(item);
+                if ("Node Editor".equals(item) || "Compositor".equals(item) || "Node Graph".equals(item)
+                        || "Add Node".equals(item)) {
+                    if(meshyViewport.getDocumentCore().getTexturePixels()==null)
+                        meshyViewport.createPaintTexture(512,512,0xFF808080);
+                    showNodeGraph(2);
+                } else showWorkspaceActionInfo(item);
                 break;
             case 9:
-                if ("Transform Geometry".equals(item) || "Set Position".equals(item) || "Move".equals(item))
+                if ("Node Graph".equals(item) || "Geometry Nodes".equals(item) || "Add Node".equals(item)
+                        || "Group Input".equals(item) || "Group Output".equals(item)) showNodeGraph(0);
+                else if ("Transform Geometry".equals(item) || "Set Position".equals(item) || "Move".equals(item))
                     showTransformDialog("Move");
                 else if ("Set Shade Smooth".equals(item) || "Smooth".equals(item)) {
-                    checkpointMeshEdit(); meshyViewport.smoothMesh(0.18f, 1);
+                    checkpointMeshEdit();meshyViewport.smoothMesh(.18f,1);
                     status.setText("Geometry Nodes | Smooth operation evaluated on active mesh");
                 } else showWorkspaceActionInfo(item);
                 break;
@@ -588,6 +599,42 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 .setView(root).setPositiveButton("Done",(d,w)->status.setText(paintMode
                         ?"Texture Paint | Pixel image updated":"UV Editing | UV island changes applied"))
                 .setNegativeButton("Close",null).show();
+    }
+
+    private void showNodeGraph(int graph) {
+        Meshy3DCore core=meshyViewport.getDocumentCore();
+        String title=graph==0?"Geometry Nodes":graph==1?"Shader Editor":"Compositor";
+        Meshy3DNodeGraphView graphView=new Meshy3DNodeGraphView(activity);
+        graphView.setNodes(core.getGraphNodeLabels(graph));
+        LinearLayout root=new LinearLayout(activity);root.setOrientation(LinearLayout.VERTICAL);
+        HorizontalScrollView actions=new HorizontalScrollView(activity);actions.setHorizontalScrollBarEnabled(false);
+        LinearLayout row=new LinearLayout(activity);row.setOrientation(LinearLayout.HORIZONTAL);
+        TextView add=dockItem("Add Node",false),evaluate=dockItem("Evaluate Graph",false);
+        row.addView(add);row.addView(evaluate);actions.addView(row);
+        add.setOnClickListener(v->{
+            String[] choices=graph==0
+                    ?new String[]{"Transform Geometry","Set Position","Subdivide Mesh","Smooth","Delete Geometry","Join Geometry","Instance on Points","Set Material","Random Value","Math"}
+                    :graph==1?new String[]{"Image Texture","Base Color","Principled BSDF","Metallic","Roughness","Material Output"}
+                    :new String[]{"Grayscale","Brightness","Contrast","Blur","Invert","Alpha Over","Color Balance","Composite"};
+            new android.app.AlertDialog.Builder(activity).setTitle("Add "+title+" Node").setItems(choices,(d,w)->{
+                String type=choices[w];float value=graph==0?.15f:graph==1?(type.equals("Metallic")?.5f:type.equals("Roughness")?.65f:0f):type.equals("Blur")?2f:20f;
+                if(graph==0)core.addGeometryNode(type,type.equals("Instance on Points")?2f:0f,0f,0f,value);
+                else core.addNodeToGraph(graph,type,value);
+                graphView.setNodes(core.getGraphNodeLabels(graph));
+                status.setText(title+" | Added "+type+" node");
+            }).setNegativeButton("Cancel",null).show();
+        });
+        evaluate.setOnClickListener(v->{
+            checkpointMeshEdit();core.evaluateGraph(graph);
+            if(graph==0){meshyViewport.refreshFromDocument();status.setText("Geometry Nodes | "+core.getVertexCount()+" vertices, "+core.getFaceCount()+" faces evaluated");}
+            else if(graph==1){meshyViewport.setMeshTint(core.getBaseColor());meshyViewport.setMaterialParameters(core.getMetallic(),core.getRoughness());status.setText("Shading | Shader graph evaluated");}
+            else {status.setText("Compositor | "+core.getCompositorNodeCount()+" image operations evaluated");showUvEditor(true);}
+            graphView.setNodes(core.getGraphNodeLabels(graph));
+        });
+        root.addView(actions,new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT,dp(44)));
+        root.addView(graphView,new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT,dp(390)));
+        new android.app.AlertDialog.Builder(activity).setTitle(title+" • Executable Node Chain")
+                .setView(root).setPositiveButton("Done",null).setNegativeButton("Close",null).show();
     }
 
     private void showWorkspaceActionInfo(String item) {
