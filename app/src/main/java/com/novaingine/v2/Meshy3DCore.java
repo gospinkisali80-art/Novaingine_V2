@@ -147,6 +147,7 @@ public final class Meshy3DCore {
             Edge e=edges.get(i);
             if(selectedVertices.get(e.a)&&selectedVertices.get(e.b))selectedEdges.set(i);
         }
+        if(faceUvs!=null&&faceUvs.length!=faces.size()){faceUvs=null;islands.clear();}
     }
     public void clearSelection(){selectedVertices.clear();selectedEdges.clear();selectedFaces.clear();}
     public void selectVertex(int index,boolean additive){
