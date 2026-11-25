@@ -2585,7 +2585,7 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateEmptyScene(
     gScene.clear();
     // A new level is an empty, lit editor environment rather than a black screen:
     // keep the procedural sky visible and provide a neutral ground surface.
-    nova::RendererSettings emptyLevelSettings = gRenderer.getSettings();
+    RendererSettings emptyLevelSettings = gRenderer.getSettings();
     emptyLevelSettings.showSky = true;
     emptyLevelSettings.showGrid = false;
     emptyLevelSettings.showShadows = true;
