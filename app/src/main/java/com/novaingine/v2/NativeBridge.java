@@ -140,6 +140,7 @@ public final class NativeBridge {
     public static native boolean nativeAddLandscapeSpline(float[] points);
     public static native boolean nativeCreateLandscapeCave(float[] pathPoints, float radius);
     public static native boolean nativeCreateLandscapeWorldTile(int tileX, int tileZ, float[] heights);
+    public static native boolean nativeCopyMainLandscapeTile(int tileX, int tileZ);
     public static native boolean nativeRemoveLandscapeWorldTile(int tileX, int tileZ);
     public static native int nativeGetLandscapeWorldTileCount();
     public static native int nativeGetLandscapeChunkCount();
