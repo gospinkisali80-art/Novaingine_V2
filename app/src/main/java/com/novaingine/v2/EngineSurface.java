@@ -518,6 +518,25 @@ public final class EngineSurface extends GLSurfaceView
     @Override
     public boolean onTouchEvent(MotionEvent event) {
 
+        if (terrainSculptMode) {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    terrainStroke(event.getX(), event.getY(), 1);
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    if (event.getPointerCount() == 1) {
+                        terrainStroke(event.getX(), event.getY(), 0);
+                    }
+                    return true;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    terrainStroke(-1.0f, -1.0f, 2);
+                    return true;
+                default:
+                    return true;
+            }
+        }
+
         switch (event.getActionMasked()) {
 
             case MotionEvent.ACTION_DOWN:
