@@ -70,6 +70,7 @@ public final class MainActivity extends Activity
     private boolean meshyEditBusy;
     private int meshySnapshotSerial;
     private boolean meshyObjectModesLocked;
+    private boolean meshyWindowFullscreen = true;
     private ControllerAgent controllerAgent;
     private View projectStartPage;
     private final Handler projectHandler = new Handler(Looper.getMainLooper());
@@ -762,6 +763,217 @@ public final class MainActivity extends Activity
                 else finish();
                 break;
         }
+    }
+
+    private static final String[] MESHY_WORKSPACE_NAMES = {
+            "Layout", "Modeling", "Sculpting", "UV Editing", "Texture Paint",
+            "Shading", "Animation", "Rendering", "Compositing", "Geometry Nodes"
+    };
+
+    public void showMeshyWindowMenu(View anchor) {
+        android.widget.PopupMenu popup = new android.widget.PopupMenu(this, anchor);
+        String[] entries = {"New Window", "New Main Window", "Toggle Window Fullscreen",
+                "Toggle System Console", "Workspaces", "Save Workspace", "Revert Workspace",
+                "Next Workspace", "Previous Workspace"};
+        for (String entry : entries) popup.getMenu().add(entry);
+        popup.setOnMenuItemClickListener(item -> {
+            performMeshyWindowAction(item.getTitle().toString());
+            return true;
+        });
+        popup.show();
+    }
+
+    private void performMeshyWindowAction(String action) {
+        switch (action) {
+            case "New Window":
+                launchMeshyWindow(true);
+                break;
+            case "New Main Window":
+                launchMeshyWindow(false);
+                break;
+            case "Toggle Window Fullscreen":
+                meshyWindowFullscreen = !meshyWindowFullscreen;
+                applyMeshyWindowFullscreen();
+                break;
+            case "Toggle System Console":
+                showMeshySystemConsole();
+                break;
+            case "Workspaces":
+                if (manualSculptWorkspace != null) manualSculptWorkspace.showWorkspaceChooser();
+                break;
+            case "Save Workspace":
+                saveMeshyWorkspace();
+                break;
+            case "Revert Workspace":
+                revertMeshyWorkspace();
+                break;
+            case "Next Workspace":
+                changeMeshyWorkspace(1);
+                break;
+            case "Previous Workspace":
+                changeMeshyWorkspace(-1);
+                break;
+        }
+    }
+
+    private void launchMeshyWindow(boolean separateDocument) {
+        try {
+            Intent intent = new Intent(this, MainActivity.class);
+            if (separateDocument) {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
+            } else {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
+            }
+            startActivity(intent);
+        } catch (Exception error) {
+            new AlertDialog.Builder(this).setTitle("New Window")
+                    .setMessage("Android could not open another Meshy3D activity: " + error.getMessage())
+                    .setPositiveButton("OK", null).show();
+        }
+    }
+
+    private void applyMeshyWindowFullscreen() {
+        int flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE;
+        if (meshyWindowFullscreen) {
+            flags |= View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION;
+        } else {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        }
+        getWindow().getDecorView().setSystemUiVisibility(flags);
+        if (meshyWindowFullscreen) getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        android.widget.Toast.makeText(this, meshyWindowFullscreen
+                ? "Meshy3D fullscreen enabled" : "System bars shown", android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+    private void showMeshySystemConsole() {
+        String project = activeProjectScene == null ? "No active project" : activeProjectScene.getAbsolutePath();
+        String workspace = manualSculptWorkspace == null ? "Meshy3D workspace not open"
+                : MESHY_WORKSPACE_NAMES[Math.max(0, Math.min(MESHY_WORKSPACE_NAMES.length - 1,
+                        manualSculptWorkspace.getActiveWorkspaceIndex()))];
+        String details = "MESHY3D SYSTEM CONSOLE\\n"
+                + "Application: Novaingine / Meshy3D\\n"
+                + "Workspace: " + workspace + "\\n"
+                + "Project: " + project + "\\n"
+                + "Device: " + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL + "\\n"
+                + "Android: " + android.os.Build.VERSION.RELEASE + " (API " + android.os.Build.VERSION.SDK_INT + ")\\n"
+                + "This panel shows editor diagnostics. It is not a live Android logcat stream.";
+        TextView output = new TextView(this);
+        output.setText(details);
+        output.setTextIsSelectable(true);
+        output.setTextColor(0xFFE4EAF0);
+        output.setTextSize(12);
+        output.setPadding(dp(16), dp(14), dp(16), dp(14));
+        output.setBackgroundColor(0xFF15191F);
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(output);
+        new AlertDialog.Builder(this).setTitle("System Console")
+                .setView(scroll).setPositiveButton("Close", null).show();
+    }
+
+    private void saveMeshyWorkspace() {
+        int index = manualSculptWorkspace == null ? 0 : manualSculptWorkspace.getActiveWorkspaceIndex();
+        getSharedPreferences("meshy3d_editor", MODE_PRIVATE).edit()
+                .putInt("saved_workspace_index", index)
+                .putBoolean("saved_workspace_fullscreen", meshyWindowFullscreen).apply();
+        android.widget.Toast.makeText(this, "Workspace layout saved.", android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+    private void revertMeshyWorkspace() {
+        android.content.SharedPreferences prefs = getSharedPreferences("meshy3d_editor", MODE_PRIVATE);
+        int index = prefs.getInt("saved_workspace_index", 0);
+        if (manualSculptWorkspace != null) manualSculptWorkspace.setActiveWorkspaceIndex(index);
+        meshyWindowFullscreen = prefs.getBoolean("saved_workspace_fullscreen", true);
+        applyMeshyWindowFullscreen();
+        android.widget.Toast.makeText(this, "Saved workspace restored.", android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+    private void changeMeshyWorkspace(int direction) {
+        if (manualSculptWorkspace == null) {
+            android.widget.Toast.makeText(this, "Open Meshy3D to switch workspaces.", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        int count = MESHY_WORKSPACE_NAMES.length;
+        int next = (manualSculptWorkspace.getActiveWorkspaceIndex() + direction + count) % count;
+        manualSculptWorkspace.setActiveWorkspaceIndex(next);
+    }
+
+    public void showMeshyHelpMenu(View anchor) {
+        android.widget.PopupMenu popup = new android.widget.PopupMenu(this, anchor);
+        String[] topics = {
+                "Welcome to Meshy3D", "Getting Started", "Viewport Guide", "Modeling Guide",
+                "Sculpting Guide", "Materials & Textures Guide", "Lighting Guide",
+                "Animation Guide", "AI Modeling Guide", "Keyboard Shortcuts",
+                "Mouse & Navigation Controls", "Tool Reference", "Troubleshooting",
+                "Performance & Optimization", "Project Recovery Guide", "What's New",
+                "Send Feedback", "Check for Updates", "System Information", "About Meshy3D"
+        };
+        for (String topic : topics) popup.getMenu().add(topic);
+        popup.setOnMenuItemClickListener(item -> {
+            showMeshyDocumentation(item.getTitle().toString());
+            return true;
+        });
+        popup.show();
+    }
+
+    private void showMeshyDocumentation(String topic) {
+        String[] titles = {
+                "Welcome to Meshy3D", "Getting Started", "Viewport Guide", "Modeling Guide",
+                "Sculpting Guide", "Materials & Textures Guide", "Lighting Guide",
+                "Animation Guide", "AI Modeling Guide", "Keyboard Shortcuts",
+                "Mouse & Navigation Controls", "Tool Reference", "Troubleshooting",
+                "Performance & Optimization", "Project Recovery Guide", "What's New",
+                "Send Feedback", "Check for Updates", "System Information", "About Meshy3D"
+        };
+        String[] docs = {
+                "Meshy3D is the 3D creation workspace inside Novaingine. It combines a real-time 3D viewport, object and mesh editing, sculpting, project management, and engine tools.\n\nThe editor is designed around a scene: objects are placed in 3D space, selected, transformed, modeled, shaded, and previewed. The top application bar contains File, Edit, Render, Window, and Help. Workspace tabs organize tasks such as Layout, Modeling, Sculpting, UV Editing, Texture Paint, Shading, Animation, Rendering, Compositing, and Geometry Nodes.\n\nUse File for project operations, Edit for editor history and mesh commands, Window for workspace/window controls, and Help for this documentation.",
+                "1. Create a project from the Novaingine project start page.\n2. Give the project a name and create an empty scene.\n3. Use the viewport to inspect the scene and select an object.\n4. Use the transform controls and numeric fields to position, rotate, and scale.\n5. Open Modeling or Sculpting for geometry work.\n6. Save from File > Save or use the automatic project save.\n\nProjects use Novaingine's .nova scene format. Imported GLB assets can be brought into the scene through File > Import.",
+                "The viewport is the main 3D viewing area. It displays the active scene from the editor camera. Drag to orbit/look around, use the navigation controls to move the view, and use pinch/zoom gestures where supported. The viewport header contains the mode selector plus View, Select, Add, and Object menus. The XYZ transform gizmo indicates the selected object's axes. Keep the viewport clear while editing; use the docks for tools and object information.",
+                "Modeling changes mesh geometry. Select a mesh object, enter Edit Mode, then choose an operation from Edit or the modeling tool controls. Available mesh operations include Extrude, Inset, Bevel, Loop Cut, Subdivide, Merge by Distance, and Knife Split. Operation dialogs expose parameters such as element index and amount where supported. Use Undo/Redo if an operation produces an unwanted result. Some operations require a supported editable mesh and a valid selection.",
+                "Sculpting is for shaping a mesh directly with brush strokes. Switch the mode selector to Sculpt Mode to show the brush dock and brush controls. Choose a brush, adjust radius, strength, falloff, pressure, symmetry, and additive/subtractive behavior where available, then drag over the mesh. Sculpt results depend on mesh density and the selected brush implementation. Use Undo to return to an earlier editor state.",
+                "Materials describe how a surface responds to light; textures provide image or procedural surface detail. The Shading workspace is the place for material and shader workflows as they become available in the editor. Inspect roughness, metallic response, base color, and texture inputs when those controls are exposed. Imported geometry may carry material data only to the extent supported by the current importer.",
+                "Lighting controls the illumination of the scene. The Rendering workspace is used to inspect the final look, while the viewport provides a real-time preview. Direction, intensity, color, and shadow quality affect readability and surface appearance. Keep lighting simple while modeling, then refine it for presentation. Not every offline-rendering feature of desktop 3D packages is currently implemented in Meshy3D.",
+                "Animation uses time-based changes to object transforms. The Animation workspace provides the intended area for timeline and keyframe work. The current editor includes transform keyframe/timeline foundations; available playback and keyframe controls depend on the active build. Save the project after important animation edits.",
+                "AI Modeling is intended to turn a text description into editable 3D scene content. Describe the object, its parts, proportions, and materials clearly. Review the generated result in the viewport and continue editing it with Meshy3D's modeling or sculpting tools. AI availability depends on the configured provider and network connection; generated output should be checked before use.",
+                "Meshy3D supports touch-first interaction. The Edit menu exposes its commands and Menu Search can filter available editor commands. The Android build does not assume a physical keyboard, so a complete desktop-style shortcut map may not be available on every device. When a keyboard is connected, use the shortcut hints shown by individual controls if present.",
+                "Touch the viewport and drag to look around or manipulate the selected tool, depending on the active mode. Use pinch gestures for zoom where enabled. Drag a visible XYZ gizmo axis to transform along that axis. Use the on-screen navigation controls for camera movement. If a gesture edits the mesh instead of moving the camera, check whether Sculpt Mode is active.",
+                "Core editor commands include object selection, transform editing, scene import/export, and mesh operations. Modeling operations: Extrude adds geometry from selected elements; Inset creates an inner region; Bevel rounds or chamfers edges; Loop Cut inserts edge loops; Subdivide adds topology; Merge by Distance welds nearby vertices; Knife Split cuts geometry. Sculpt brushes include Draw, Smooth, Grab, Inflate, Pinch, Flatten, Crease, Mask, Clay, Scrape, Layer, Unmask, Blob, Clay Strips, Elastic Deform, Snake Hook, Thumb, Pose, Boundary, Slide Relax, Multiplane Scrape, Fill, Deepen, Nudge, and Simplify.",
+                "If a menu does not open, close another dialog and tap the menu again. If an operation reports that no editable mesh is available, select a supported mesh object. If sculpting has no visible effect, confirm Sculpt Mode is active, a brush is selected, and the mesh supports sculpt deformation. If a project fails to load, try File > Recover. If the app closes unexpectedly, reopen the project and inspect the recovery file before overwriting it.",
+                "Close unused workspaces and dialogs, reduce unnecessary scene complexity, and use simpler meshes while sculpting on mobile hardware. Large meshes and many high-resolution assets increase memory and rendering cost. Save regularly. If the viewport slows down, test with fewer objects and simpler materials before changing project content.",
+                "Novaingine periodically saves the active project and writes a recovery scene alongside the project file. Use File > Recover to inspect and restore a recovery snapshot. Use File > Revert only when you intentionally want to reload the last saved scene and discard current unsaved changes. Keep a separate Save Copy before major edits.",
+                "This section describes the current Meshy3D feature set included in the installed build. New commands may appear as the editor evolves. Check the project release notes or update information distributed with your Novaingine build for changes. A menu item is considered available only when its action is connected in the running app.",
+                "Use Send Feedback to describe the screen, action, and result. Include the steps that led to the issue, what you expected, and what happened instead. Avoid sharing passwords, access tokens, or private project content. Feedback submission requires a configured feedback destination; if none is configured, use your project support channel.",
+                "Check for Updates checks the app's configured update source when one is available. If no update service is configured in this build, the app will explain that automatic update checking is unavailable. Install updates only from the official Novaingine distribution channel.",
+                "System Information shows the Android device model, Android version, and editor context. Use this information when reporting rendering or compatibility issues. It does not expose private credentials or account passwords.",
+                "Meshy3D is the 3D editor workspace inside Novaingine. This page identifies the editor and its current build context. Creator credit: MESH. Project and feature availability can vary by Novaingine version."
+        };
+        int index = 0;
+        for (int i = 0; i < titles.length; i++) if (titles[i].equals(topic)) { index = i; break; }
+        TextView body = new TextView(this);
+        body.setText(docs[index]);
+        body.setTextSize(13);
+        body.setTextColor(0xFFE2E7ED);
+        body.setTextIsSelectable(true);
+        body.setPadding(dp(18), dp(14), dp(18), dp(14));
+        body.setBackgroundColor(0xFF202832);
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(body);
+        new AlertDialog.Builder(this).setTitle(titles[index])
+                .setView(scroll).setPositiveButton("Close", null).show();
+    }
+
+    public void showMeshyRenderMenu(View anchor) {
+        android.widget.PopupMenu popup = new android.widget.PopupMenu(this, anchor);
+        String[] entries = {"Render Image", "Render Animation", "Viewport Render", "Render Settings"};
+        for (String entry : entries) popup.getMenu().add(entry);
+        popup.setOnMenuItemClickListener(item -> {
+            new AlertDialog.Builder(this).setTitle(item.getTitle())
+                    .setMessage("This render command is listed for the Meshy3D workflow. The current Android renderer provides real-time viewport rendering; offline image and animation rendering are not yet implemented.")
+                    .setPositiveButton("OK", null).show();
+            return true;
+        });
+        popup.show();
     }
 
     public void showMeshyEditMenu(View anchor) {
