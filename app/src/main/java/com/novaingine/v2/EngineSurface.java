@@ -41,6 +41,9 @@ public final class EngineSurface extends GLSurfaceView
     private volatile int terrainBrushMode;
     private volatile float terrainBrushRadius = 5.0f;
     private volatile float terrainBrushStrength = 0.35f;
+    private volatile boolean terrainPaintMode;
+    private volatile boolean terrainHoleMode;
+    private volatile int terrainMaterial = 0;
 
     public EngineSurface(Context context) {
         super(context);
@@ -344,6 +347,63 @@ public final class EngineSurface extends GLSurfaceView
                 x, y, radius, strength, mode, phase));
     }
 
+    public void setTerrainPaintMode(boolean enabled, int material, float radius, float strength) {
+        terrainPaintMode = enabled;
+        terrainHoleMode = false;
+        terrainMaterial = Math.max(0, Math.min(3, material));
+        terrainBrushRadius = Math.max(0.5f, Math.min(24.0f, radius));
+        terrainBrushStrength = Math.max(0.0f, Math.min(1.0f, strength));
+    }
+
+    public void setTerrainHoleMode(boolean enabled) {
+        terrainHoleMode = enabled;
+        terrainPaintMode = false;
+        terrainSculptMode = false;
+    }
+
+    public void runTerrainErosion(int type, int iterations, float strength, java.util.function.Consumer<Boolean> callback) {
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeRunTerrainErosion(type, iterations, strength);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
+    }
+
+    public void addLandscapeLayer(String name, java.util.function.IntConsumer callback) {
+        queueEvent(() -> {
+            int index = NativeBridge.nativeAddLandscapeLayer(name);
+            if (callback != null) post(() -> callback.accept(index));
+        });
+    }
+
+    public void setLandscapeLayerState(int index, boolean visible, boolean locked, float heightAlpha, float paintAlpha, java.util.function.Consumer<Boolean> callback) {
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeSetLandscapeLayerState(index, visible, locked, heightAlpha, paintAlpha);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
+    }
+
+    public void addLandscapeSpline(float[] points, java.util.function.Consumer<Boolean> callback) {
+        float[] copy = points.clone();
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeAddLandscapeSpline(copy);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
+    }
+
+    public void setLandscapeChunkSize(int size, java.util.function.Consumer<Boolean> callback) {
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeSetLandscapeChunkSize(size);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
+    }
+
+    private void terrainPaintStroke(float x, float y, int phase) {
+        final int material = terrainMaterial;
+        final float radius = terrainBrushRadius;
+        final float strength = terrainBrushStrength;
+        queueEvent(() -> NativeBridge.nativePaintTerrainAtScreen(x, y, radius, strength, material, phase));
+    }
+
     public void createTerrain(java.util.function.Consumer<Boolean> callback) {
         queueEvent(() -> {
             boolean created = NativeBridge.nativeCreateTerrain();
@@ -532,6 +592,30 @@ public final class EngineSurface extends GLSurfaceView
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
+
+        if (terrainHoleMode) {
+            if (event.getActionMasked() == MotionEvent.ACTION_UP) {
+                final float x = event.getX(), y = event.getY();
+                queueEvent(() -> NativeBridge.nativeSetTerrainHoleAtScreen(x, y, true));
+            }
+            return true;
+        }
+
+        if (terrainPaintMode) {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    terrainPaintStroke(event.getX(), event.getY(), 1);
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    if (event.getPointerCount() == 1) terrainPaintStroke(event.getX(), event.getY(), 0);
+                    return true;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    terrainPaintStroke(-1.0f, -1.0f, 2);
+                    return true;
+                default: return true;
+            }
+        }
 
         if (terrainSculptMode) {
             switch (event.getActionMasked()) {
