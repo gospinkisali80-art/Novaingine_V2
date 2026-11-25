@@ -1014,6 +1014,52 @@ Java_com_novaingine_v2_NativeBridge_nativeSetExposure(
 }
 
 JNIEXPORT void JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetWorldEnvironment(
+    JNIEnv* env, jclass, jfloatArray values
+) {
+    if (values == nullptr || env->GetArrayLength(values) < 28) return;
+    jfloat data[28];
+    env->GetFloatArrayRegion(values, 0, 28, data);
+    if (env->ExceptionCheck()) { env->ExceptionClear(); return; }
+
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized) return;
+
+    RendererSettings settings = gRenderer.getSettings();
+    nova::Vec3 sunDirection(data[0], data[1], data[2]);
+    sunDirection = nova::normalize(sunDirection);
+    if (nova::length(sunDirection) > 0.0001f) {
+        settings.directionalLightDirection[0] = sunDirection.x;
+        settings.directionalLightDirection[1] = sunDirection.y;
+        settings.directionalLightDirection[2] = sunDirection.z;
+    }
+    for (int i = 0; i < 3; ++i) {
+        settings.directionalLightColor[i] = data[3 + i];
+        settings.fogColor[i] = data[21 + i];
+    }
+    settings.directionalLightIntensity = data[6];
+    settings.directionalLightEnabled = data[7] >= 0.5f;
+    settings.skyLightEnabled = data[8] >= 0.5f;
+    settings.skyLightIntensity = data[9];
+    settings.skyAtmosphereEnabled = data[10] >= 0.5f;
+    settings.atmosphereRayleigh = data[11];
+    settings.atmosphereMie = data[12];
+    settings.volumetricCloudsEnabled = data[13] >= 0.5f;
+    settings.cloudCoverage = data[14];
+    settings.cloudDensity = data[15];
+    settings.cloudSpeed = data[16];
+    settings.heightFogEnabled = data[17] >= 0.5f;
+    settings.fogDensity = data[18];
+    settings.fogHeight = data[19];
+    settings.fogFalloff = data[20];
+    settings.bloomEnabled = data[24] >= 0.5f;
+    settings.bloomIntensity = data[25];
+    settings.colorContrast = data[26];
+    settings.colorSaturation = data[27];
+    gRenderer.setSettings(settings);
+}
+
+JNIEXPORT void JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeSetPhysicsEnabled(
     JNIEnv*,
     jclass,
