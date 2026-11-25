@@ -3039,6 +3039,49 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateTerrain(
 }
 
 JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeCreateLandscapeWorldTile(
+    JNIEnv* env, jclass, jint tileX, jint tileZ, jfloatArray heightArray
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized || !heightArray || env->GetArrayLength(heightArray) != 129 * 129)
+        return JNI_FALSE;
+    std::vector<float> heights(129u * 129u);
+    env->GetFloatArrayRegion(heightArray, 0, static_cast<jsize>(heights.size()), heights.data());
+    if (env->ExceptionCheck()) { env->ExceptionClear(); return JNI_FALSE; }
+    for (float& value : heights) {
+        if (!std::isfinite(value)) return JNI_FALSE;
+        value = std::clamp(value, -12.0f, 24.0f);
+    }
+    recordUndo(true);
+    return createLandscapeWorldTile(static_cast<int>(tileX), static_cast<int>(tileZ), heights)
+        ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeRemoveLandscapeWorldTile(
+    JNIEnv*, jclass, jint tileX, jint tileZ
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized || (tileX == 0 && tileZ == 0)) return JNI_FALSE;
+    const uint64_t key = landscapeTileKey(static_cast<int>(tileX), static_cast<int>(tileZ));
+    auto found = gLandscapeWorldTiles.find(key);
+    if (found == gLandscapeWorldTiles.end()) return JNI_FALSE;
+    recordUndo(true);
+    const uint32_t id = found->second.objectId;
+    gRenderer.releaseMesh(id);
+    gCustomMeshes.erase(id);
+    gScene.removeObject(id);
+    gLandscapeWorldTiles.erase(found);
+    return JNI_TRUE;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeGetLandscapeWorldTileCount(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    return static_cast<jint>(gLandscapeWorldTiles.size());
+}
+
+JNIEXPORT jboolean JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeSculptTerrain(
     JNIEnv*, jclass, jfloat centerXValue, jfloat centerZValue,
     jfloat radiusValue, jfloat strengthValue, jint modeValue
