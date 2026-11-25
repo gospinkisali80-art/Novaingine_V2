@@ -1111,10 +1111,29 @@ public final class MainActivity extends Activity
                         android.widget.Toast.makeText(this, "Enter a valid element index and amount.", android.widget.Toast.LENGTH_LONG).show();
                         return;
                     }
-                    Runnable apply = () -> runMeshyMeshOperation(action, operation, elementIndex, value);
+                    Runnable apply = () -> {
+                        if (adjusting) {
+                            if (meshyUndo.isEmpty()) {
+                                android.widget.Toast.makeText(this, "The original operation checkpoint is unavailable.", android.widget.Toast.LENGTH_SHORT).show();
+                                return;
+                            }
+                            File originalState = meshyUndo.peekLast();
+                            engineSurface.loadSceneAsync(originalState.getAbsolutePath(), loaded -> {
+                                if (!loaded) {
+                                    android.widget.Toast.makeText(this, "Could not restore the mesh before adjusting.", android.widget.Toast.LENGTH_LONG).show();
+                                    return;
+                                }
+                                meshyUndo.removeLast();
+                                meshyRedo.clear();
+                                runMeshyMeshOperation(action, operation, elementIndex, value);
+                            });
+                        } else runMeshyMeshOperation(action, operation, elementIndex, value);
+                    };
                     boolean confirm = getSharedPreferences("meshy3d_editor", MODE_PRIVATE).getBoolean("confirm_ops", true);
-                    if (confirm) new AlertDialog.Builder(this).setTitle("Confirm " + action)
-                            .setMessage("Apply this operation to the active mesh? Meshy3D will create an editor undo checkpoint first.")
+                    if (confirm) new AlertDialog.Builder(this).setTitle("Confirm " + (adjusting ? "adjustment" : action))
+                            .setMessage(adjusting
+                                    ? "Restore the mesh before the previous operation, then apply the updated settings?"
+                                    : "Apply this operation to the active mesh? Meshy3D will create an editor undo checkpoint first.")
                             .setNegativeButton("Cancel", null).setPositiveButton("Apply", (d, w) -> apply.run()).show();
                     else apply.run();
                 }).show();
