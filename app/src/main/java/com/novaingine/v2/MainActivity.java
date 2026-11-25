@@ -2074,6 +2074,7 @@ public final class MainActivity extends Activity
                         if (centeredStatisticsText != null) centeredStatisticsText.setVisibility(View.GONE);
                         if (editorPanels != null) editorPanels.setVisibility(View.GONE);
                         openManualSculpting();
+                        saveMeshyDocument();
                         android.widget.Toast.makeText(this, "Created independent Meshy3D project: " + name, android.widget.Toast.LENGTH_SHORT).show();
                     } catch (Exception e) {
                         android.widget.Toast.makeText(this, "Could not create Meshy3D document: " + e.getMessage(), android.widget.Toast.LENGTH_LONG).show();
