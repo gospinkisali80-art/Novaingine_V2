@@ -467,6 +467,15 @@ public final class EngineSurface extends GLSurfaceView
         });
     }
 
+    public void setTerrainTexture(int layer, int mapType, int width, int height, int[] argbPixels,
+                                  java.util.function.Consumer<Boolean> callback) {
+        int[] copy = argbPixels.clone();
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeSetTerrainTexture(layer, mapType, width, height, copy);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
+    }
+
     public void setTerrainHeights(float[] heights, java.util.function.Consumer<Boolean> callback) {
         float[] copy = heights.clone();
         queueEvent(() -> {
