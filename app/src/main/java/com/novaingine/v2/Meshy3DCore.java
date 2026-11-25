@@ -169,6 +169,7 @@ public final class Meshy3DCore {
         else {selectedFaces.set(0,faces.size());for(Face f:faces)f.selected=true;}
         revision++;
     }
+    public void selectLinkedFromCurrent(){int seed=selectedFaces.nextSetBit(0);if(seed>=0)selectLinked(seed);}
     public void selectLinked(int seedFace){
         if(seedFace<0||seedFace>=faces.size())return;
         clearSelection();ArrayDeque<Integer> q=new ArrayDeque<>();q.add(seedFace);selectedFaces.set(seedFace);
