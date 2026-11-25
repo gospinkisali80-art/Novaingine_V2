@@ -38,7 +38,11 @@ public final class Meshy3DViewport extends View {
 
 
     public Meshy3DCore getDocumentCore(){return document;}
-    public android.graphics.Bitmap renderFinalImage(int width,int height){syncCoreFromViewport();return Meshy3DSoftwareRenderer.render(vertices,faces,width,height,yaw,pitch,meshTint,metallic,roughness);}
+    public android.graphics.Bitmap renderFinalImage(int width,int height){
+        syncCoreFromViewport();
+        return Meshy3DSoftwareRenderer.render(vertices,faces,width,height,yaw,pitch,meshTint,metallic,roughness,
+                document.getTexturePixels(),document.getTextureWidth(),document.getTextureHeight(),document.copyFaceUvs());
+    }
     public void refreshFromDocument(){syncViewportFromCore();}
     private void syncCoreFromViewport(){document.replaceGeometry(vertices,faces);}
     private void syncViewportFromCore(){
