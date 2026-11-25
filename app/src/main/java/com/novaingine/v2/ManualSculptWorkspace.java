@@ -410,13 +410,13 @@ public final class ManualSculptWorkspace extends FrameLayout {
         switch (activeWorkspaceIndex) {
             case 0:
                 if ("Hide / Show Objects".equals(item)) {
-                    meshyViewport.toggleMeshVisible();
+                    checkpointMeshEdit(); meshyViewport.toggleMeshVisible();
                     status.setText("Layout | Cube visibility toggled");
                 } else if ("Camera View".equals(item)) {
                     meshyViewport.resetView();
                     status.setText("Layout | View framed on Cube");
                 } else if ("Show Grid".equals(item) || "Grid".equals(item)) {
-                    meshyViewport.toggleFloorGrid();
+                    checkpointMeshEdit(); meshyViewport.toggleFloorGrid();
                 } else if ("Move".equals(item) || "Rotate".equals(item) || "Scale".equals(item)
                         || "Transform".equals(item)) showTransformDialog(item.equals("Transform") ? "Move" : item);
                 else if ("Hide Object".equals(item)) meshyViewport.setMeshVisible(false);
@@ -474,9 +474,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 break;
             case 6:
                 if ("Insert Keyframe".equals(item) || "Keyframes".equals(item)) {
-                    meshyViewport.storeMeshKeyframe(1); status.setText("Animation | Mesh keyframe stored at frame 1");
+                    checkpointMeshEdit(); meshyViewport.storeMeshKeyframe(1); status.setText("Animation | Mesh keyframe stored at frame 1");
                 } else if ("Delete Keyframe".equals(item)) {
-                    meshyViewport.deleteMeshKeyframe(1); status.setText("Animation | Keyframe at frame 1 deleted");
+                    checkpointMeshEdit(); meshyViewport.deleteMeshKeyframe(1); status.setText("Animation | Keyframe at frame 1 deleted");
                 } else showWorkspaceActionInfo(item);
                 break;
             case 7:
@@ -572,7 +572,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 if (!bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, stream))
                     throw new java.io.IOException("PNG export failed");
             }
-            bitmap.recycle(); status.setText("Rendering | Saved viewport image: " + output.getAbsolutePath());
+            bitmap.recycle(); status.setText("Rendering | Viewport capture saved (not a final render): " + output.getAbsolutePath());
         } catch (Exception error) { status.setText("Rendering | Export failed: " + error.getMessage()); }
     }
 
