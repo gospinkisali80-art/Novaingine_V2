@@ -393,6 +393,8 @@ public final class MainActivity extends Activity
         addDrawerItem("Terrain Sculpting", "Sculpt the generated terrain surface", this::showTerrainSculptor);
         addDrawerItem("Import Heightmap PNG", "Replace terrain heights from a grayscale image", this::openTerrainHeightmapImport);
         addDrawerItem("Export Heightmap PNG", "Save the current terrain height data as a grayscale image", this::openTerrainHeightmapExport);
+        addDrawerItem("Import 16-bit RAW Heightmap", "Import a 129 x 129 little-endian .r16 file", this::openTerrainHeightmap16Import);
+        addDrawerItem("Export 16-bit RAW Heightmap", "Export full 16-bit terrain height precision", this::openTerrainHeightmap16Export);
         addDrawerItem("Manual Sculpting", "Open the landscape sculpt editor with brush browser, scene tools and viewport controls", this::showMeshSculptor);
         addDrawerItem("Foliage Painting", "Paint trees and bushes into the scene", this::showFoliagePainter);
         addDrawerItem("Import Blender Model (.glb)", "Import a Blender-exported glTF binary model", this::openGlbPicker);
@@ -838,6 +840,8 @@ public final class MainActivity extends Activity
     private static final int REQUEST_IMPORT_GLB = 7412;
     private static final int REQUEST_IMPORT_HEIGHTMAP = 7413;
     private static final int REQUEST_EXPORT_HEIGHTMAP = 7414;
+    private static final int REQUEST_IMPORT_HEIGHTMAP16 = 7415;
+    private static final int REQUEST_EXPORT_HEIGHTMAP16 = 7416;
 
     public void openSculptAssetPicker() {
         openGlbPicker();
@@ -860,6 +864,23 @@ public final class MainActivity extends Activity
         startActivityForResult(intent, REQUEST_IMPORT_HEIGHTMAP);
     }
 
+    private void openTerrainHeightmap16Import() {
+        closeToolsDrawer();
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        startActivityForResult(intent, REQUEST_IMPORT_HEIGHTMAP16);
+    }
+
+    private void openTerrainHeightmap16Export() {
+        closeToolsDrawer();
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/octet-stream");
+        intent.putExtra(Intent.EXTRA_TITLE, "Novaingine_Heightmap_129x129.r16");
+        startActivityForResult(intent, REQUEST_EXPORT_HEIGHTMAP16);
+    }
+
     private void openTerrainHeightmapExport() {
         closeToolsDrawer();
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
@@ -874,6 +895,65 @@ public final class MainActivity extends Activity
         super.onActivityResult(requestCode, resultCode, data);
         if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
         Uri uri = data.getData();
+
+        if (requestCode == REQUEST_IMPORT_HEIGHTMAP16) {
+            new Thread(() -> {
+                try (InputStream input = getContentResolver().openInputStream(uri);
+                     java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream()) {
+                    if (input == null) throw new IllegalStateException("Could not open RAW16 file.");
+                    byte[] buffer = new byte[8192]; int read;
+                    while ((read = input.read(buffer)) != -1) {
+                        if (bytes.size() + read > 100000) throw new IllegalArgumentException("Heightmap file is too large.");
+                        bytes.write(buffer, 0, read);
+                    }
+                    byte[] raw = bytes.toByteArray();
+                    if (raw.length != 129 * 129 * 2) throw new IllegalArgumentException(
+                            "Expected exactly 33,282 bytes: 129 x 129 unsigned 16-bit little-endian samples.");
+                    float[] heights = new float[129 * 129];
+                    for (int i = 0; i < heights.length; i++) {
+                        int value = (raw[i * 2] & 0xFF) | ((raw[i * 2 + 1] & 0xFF) << 8);
+                        heights[i] = -12.0f + (value / 65535.0f) * 36.0f;
+                    }
+                    runOnUiThread(() -> engineSurface.setTerrainHeights(heights, ok ->
+                            android.widget.Toast.makeText(this, ok ? "16-bit RAW heightmap imported" :
+                                    "Create a landscape first", android.widget.Toast.LENGTH_LONG).show()));
+                } catch (Exception error) {
+                    runOnUiThread(() -> android.widget.Toast.makeText(this,
+                            "RAW16 import failed: " + error.getMessage(), android.widget.Toast.LENGTH_LONG).show());
+                }
+            }, "Nova-Heightmap16-Import").start();
+            return;
+        }
+
+        if (requestCode == REQUEST_EXPORT_HEIGHTMAP16) {
+            if (engineSurface == null) return;
+            engineSurface.getTerrainHeights(heights -> {
+                if (heights == null || heights.length != 129 * 129) {
+                    android.widget.Toast.makeText(this, "Create a landscape before exporting.",
+                            android.widget.Toast.LENGTH_LONG).show(); return;
+                }
+                new Thread(() -> {
+                    try (java.io.OutputStream output = getContentResolver().openOutputStream(uri)) {
+                        if (output == null) throw new IllegalStateException("Could not write RAW16 file.");
+                        byte[] raw = new byte[heights.length * 2];
+                        for (int i = 0; i < heights.length; i++) {
+                            int value = Math.max(0, Math.min(65535,
+                                    Math.round(((heights[i] + 12.0f) / 36.0f) * 65535.0f)));
+                            raw[i * 2] = (byte) (value & 0xFF);
+                            raw[i * 2 + 1] = (byte) ((value >>> 8) & 0xFF);
+                        }
+                        output.write(raw);
+                        runOnUiThread(() -> android.widget.Toast.makeText(this,
+                                "Exported 129 x 129 unsigned 16-bit little-endian RAW heightmap",
+                                android.widget.Toast.LENGTH_LONG).show());
+                    } catch (Exception error) {
+                        runOnUiThread(() -> android.widget.Toast.makeText(this,
+                                "RAW16 export failed: " + error.getMessage(), android.widget.Toast.LENGTH_LONG).show());
+                    }
+                }, "Nova-Heightmap16-Export").start();
+            });
+            return;
+        }
 
         if (requestCode == REQUEST_IMPORT_HEIGHTMAP) {
             new Thread(() -> {
