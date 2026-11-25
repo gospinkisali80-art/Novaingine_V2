@@ -74,7 +74,7 @@ public final class Meshy3DViewport extends View {
     public void extrudeSelected(float amount){document.extrudeSelected(amount);syncViewportFromCore();}
     public void mergeSelected(float distance){document.mergeSelectedByDistance(distance);syncViewportFromCore();}
     public void smoothTopology(float amount,int iterations){document.smooth(amount,iterations);syncViewportFromCore();}
-    public void markSeams(boolean clear){syncCoreFromViewport();document.markSelectedSeams(clear);invalidate();}
+    public void markSeams(boolean clear){document.markSelectedSeams(clear);invalidate();}
     public void unwrapMesh(){syncCoreFromViewport();document.unwrapPlanar();generatePlanarUv();invalidate();}
     public void createPaintTexture(int width,int height,int color){document.createTexture(width,height,color);}
     public void paintTexturePixel(int x,int y,int color,float radius,float opacity){
@@ -368,22 +368,8 @@ public final class Meshy3DViewport extends View {
 
 
     /** Apply a geometric transform to every vertex of the active Meshy3D object. */
-    public void transformMesh(int operation, float x, float y, float z) {
-        for (float[] v : vertices) {
-            if (operation == 0) { v[0]+=x; v[1]+=y; v[2]+=z; }
-            else if (operation == 1) {
-                double rx=Math.toRadians(x), ry=Math.toRadians(y), rz=Math.toRadians(z);
-                float yy=(float)(v[1]*Math.cos(rx)-v[2]*Math.sin(rx));
-                float zz=(float)(v[1]*Math.sin(rx)+v[2]*Math.cos(rx));
-                float xx=(float)(v[0]*Math.cos(ry)+zz*Math.sin(ry));
-                float z2=(float)(-v[0]*Math.sin(ry)+zz*Math.cos(ry));
-                v[0]=(float)(xx*Math.cos(rz)-yy*Math.sin(rz));
-                v[1]=(float)(xx*Math.sin(rz)+yy*Math.cos(rz));
-                v[2]=z2;
-            } else if (operation == 2) { v[0]*=x; v[1]*=y; v[2]*=z; }
-        }
-        syncCoreFromViewport();
-        invalidate();
+    public void transformMesh(int operation,float x,float y,float z){
+        document.transformSelected(x,y,z,operation);syncViewportFromCore();
     }
 
     /** Laplacian relaxation over each cube-grid surface patch. */
@@ -419,9 +405,9 @@ public final class Meshy3DViewport extends View {
     public void toggleFloorGrid(){showFloorGrid=!showFloorGrid;invalidate();}
     public void setShowTopology(boolean visible){showTopology=visible;invalidate();}
     public void toggleTopology(){showTopology=!showTopology;invalidate();}
-    public void setMeshTint(int color){meshTint=color|0xFF000000;invalidate();}
+    public void setMeshTint(int color){meshTint=color|0xFF000000;document.setMaterial(meshTint,metallic,roughness);invalidate();}
     public void setMaterialParameters(float metallicValue,float roughnessValue){
-        metallic=Math.max(0f,Math.min(1f,metallicValue));roughness=Math.max(0.02f,Math.min(1f,roughnessValue));invalidate();
+        metallic=Math.max(0f,Math.min(1f,metallicValue));roughness=Math.max(0.02f,Math.min(1f,roughnessValue));document.setMaterial(meshTint,metallic,roughness);invalidate();
     }
     public float getMetallic(){return metallic;}
     public float getRoughness(){return roughness;}
