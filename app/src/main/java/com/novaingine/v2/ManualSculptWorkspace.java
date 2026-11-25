@@ -446,67 +446,67 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 bottomItems = new String[]{"Brush Preview", "Stroke Method", "Dyntopo / Remesh options"};
                 break;
             case 3:
-                tools = new String[]{"Select", "Move UV", "Rotate UV", "Scale UV", "Pin", "Unpin", "Pack Islands"};
+                tools = new String[]{"Select", "Select Linked", "Select Pinned", "Move UV", "Rotate UV", "Scale UV", "Mirror X", "Mirror Y", "Pin", "Unpin", "Mark Seam", "Clear Seam", "Unwrap", "Smart UV Project", "Lightmap Pack", "Follow Active Quads", "Minimize Stretch", "Average Islands Scale", "Pack Islands", "Align X", "Align Y", "Straighten", "Stitch", "Weld", "Export UV Layout"};
                 leftTitle = "UV Tools";
-                leftItems = new String[]{"Select", "Move", "Rotate", "Scale", "Pin", "Unpin", "Pack Islands"};
+                leftItems = new String[]{"SELECT", "Select", "Select Linked", "Select Pinned", "Select Overlapping", "Select Boundary", "TRANSFORM", "Move", "Rotate", "Scale", "Mirror X", "Mirror Y", "Align X", "Align Y", "Straighten", "Straighten X", "Straighten Y", "PIN & SEAMS", "Pin", "Unpin", "Mark Seam", "Clear Seam", "Mark Sharp", "UNWRAP", "Unwrap", "Smart UV Project", "Lightmap Pack", "Follow Active Quads", "Minimize Stretch", "UV TOOLS", "Average Islands Scale", "Pack Islands", "Stitch", "Weld", "Split", "Export UV Layout"};
                 rightTitle = "UV Properties";
-                rightItems = new String[]{"UV Maps", "Island Transform", "Unwrap Options", "Image Settings"};
+                rightItems = new String[]{"UV Maps", "Active UV Map", "New UV Map", "Remove UV Map", "Island Transform", "Pivot Point", "Proportional Editing", "Snap to Pixels", "Snap to Vertex", "Unwrap Method", "Angle Limit", "Margin", "Correct Aspect", "Stretch Display", "Overlap Display", "Image Settings", "Image Selection", "UDIM Tiles"};
                 bottomTitle = "UV Editor";
-                bottomItems = new String[]{"UV workspace panel", "Image / UV canvas area", "UV island controls"};
+                bottomItems = new String[]{"UV Canvas", "Image / UV View", "UV Islands", "Vertex / Edge / Face Selection", "UV Sync Selection", "UV Statistics", "Image Menu", "View Menu", "UV Menu"};
                 break;
             case 4:
-                tools = new String[]{"Draw", "Soften", "Smear", "Clone", "Fill", "Mask"};
+                tools = new String[]{"Draw", "Soften", "Smear", "Clone", "Fill", "Mask", "Erase Alpha", "Line", "Polyline", "Airbrush", "Gradient", "Sample Color", "Set Clone"};
                 leftTitle = "Paint Tools";
-                leftItems = new String[]{"Draw", "Soften", "Smear", "Clone", "Fill", "Mask"};
+                leftItems = new String[]{"DRAW", "Draw", "Soften", "Smear", "Clone", "Fill", "Mask", "Erase Alpha", "Line", "Polyline", "Airbrush", "Gradient", "Sample Color", "Set Clone", "BRUSH CONTROLS", "Brush Asset", "Brush Texture", "Stroke Method", "Stroke Spacing", "Jitter", "Stabilize Stroke", "Symmetry X", "Symmetry Y", "Symmetry Z"};
                 rightTitle = "Texture Properties";
-                rightItems = new String[]{"Active Texture", "Brush Color", "Brush Radius", "Strength", "Blend Mode", "Texture Slots"};
+                rightItems = new String[]{"Active Texture", "Texture Slots", "New Texture", "Open Image", "Save Image", "Image Format", "Image Size", "Color Space", "Alpha", "Brush Color", "Secondary Color", "Brush Radius", "Strength", "Blend Mode", "Falloff", "Texture Mask", "Stencil", "UV Map", "Canvas"};
                 bottomTitle = "Image Editor";
-                bottomItems = new String[]{"Texture image area", "Image Slots", "Paint Layers"};
+                bottomItems = new String[]{"Texture Image Canvas", "Image Slots", "Paint Layers", "Image Channels", "Image Metadata", "Image Save / Reload", "UDIM Tiles", "Texture Paint Slots"};
                 break;
             case 5:
-                tools = new String[]{"New Material", "Preview", "Add Node", "Connect", "Frame", "Search"};
+                tools = new String[]{"New Material", "Material Slots", "Preview", "Add Node", "Connect", "Disconnect", "Reroute", "Frame", "Group", "Ungroup", "Search", "Node Sidebar"};
                 leftTitle = "Material Browser";
-                leftItems = new String[]{"Scene Materials", "Material Preview", "Surface", "Principled Shader"};
+                leftItems = new String[]{"Scene Materials", "Material Slots", "New Material", "Duplicate Material", "Assign Material", "Material Preview", "Surface", "Volume", "Displacement", "Principled BSDF", "World Materials"};
                 rightTitle = "Shader Properties";
-                rightItems = new String[]{"Base Color", "Metallic", "Roughness", "Normal", "Alpha", "Emission"};
+                rightItems = new String[]{"Material", "Base Color", "Metallic", "Roughness", "IOR", "Alpha", "Emission Color", "Emission Strength", "Normal", "Coat", "Sheen", "Transmission", "Subsurface", "Anisotropic", "Thin Film", "Volume", "Displacement", "Viewport Display", "Material Preview Settings"};
                 bottomTitle = "Shader Editor";
-                bottomItems = new String[]{"Material Node Graph", "Add Node", "Connect Node Sockets"};
+                bottomItems = new String[]{"Material Node Graph", "Shader Nodes", "Input Nodes", "Output Nodes", "Texture Nodes", "Color Nodes", "Vector Nodes", "Converter Nodes", "Script Nodes", "Group Nodes", "Layout Nodes", "Node Search", "Node Sidebar", "Node Properties"};
                 break;
             case 6:
-                tools = new String[]{"Select", "Move", "Rotate", "Scale", "Insert Keyframe", "Play"};
+                tools = new String[]{"Select", "Move", "Rotate", "Scale", "Insert Keyframe", "Delete Keyframe", "Duplicate Keyframes", "Snap", "Mirror", "Bake Action", "Play", "Pause", "Reverse", "Jump to First", "Jump to Last"};
                 leftTitle = "Animation Channels";
-                leftItems = new String[]{"Scene", "Object Transforms", "Location", "Rotation", "Scale", "Keyframes"};
+                leftItems = new String[]{"Scene", "Object Transforms", "Location", "Rotation", "Scale", "Delta Transforms", "Object Properties", "Visibility", "Custom Properties", "Shape Keys", "Armature", "Pose Bones", "Constraints", "Modifiers", "Materials", "Cameras", "Lights", "World", "Action Editor", "NLA Tracks"};
                 rightTitle = "Keyframe Properties";
-                rightItems = new String[]{"Frame", "Interpolation", "Handle Type", "Playback Range"};
+                rightItems = new String[]{"Active Action", "Action Slots", "Frame", "Interpolation", "Bezier", "Linear", "Constant", "Handle Type", "Automatic Handles", "Aligned Handles", "Free Handles", "Easing", "Keyframe Type", "Extrapolation", "Playback Range", "Frame Rate", "Motion Paths"};
                 bottomTitle = "Dope Sheet / Timeline";
-                bottomItems = new String[]{"Frame 1", "Keyframe Track", "Play / Pause", "Start / End"};
+                bottomItems = new String[]{"Dope Sheet", "Action Editor", "Timeline", "Graph Editor", "NLA Editor", "Keyframe Tracks", "Markers", "Playback Controls", "Start Frame", "End Frame", "Current Frame", "Preview Range", "Keying Sets"};
                 break;
             case 7:
-                tools = new String[]{"Render Image", "Render Animation", "Preview", "Camera View", "Settings"};
+                tools = new String[]{"Render Image", "Render Animation", "Render Viewport", "Cancel Render", "Pause Render", "Resume Render", "Camera View", "Render Region", "Clear Render Region", "Settings"};
                 leftTitle = "Render Settings";
-                leftItems = new String[]{"Render Engine", "Sampling", "Resolution", "Frame Range", "Output Format"};
+                leftItems = new String[]{"Render Engine", "Sampling", "Viewport Samples", "Render Samples", "Denoising", "Light Paths", "Shadows", "Ray Tracing", "Ambient Occlusion", "Motion Blur", "Film", "Simplify", "Freestyle", "Performance", "Bake", "Color Management", "View Transform", "Look", "Exposure", "Gamma"};
                 rightTitle = "Output Properties";
-                rightItems = new String[]{"Resolution", "Frame Rate", "File Format", "Output Path", "Color Management"};
+                rightItems = new String[]{"Resolution X", "Resolution Y", "Percentage", "Aspect Ratio", "Frame Rate", "Frame Start", "Frame End", "Frame Step", "File Format", "Color Mode", "Color Depth", "Compression", "Output Path", "File Extensions", "Color Management", "Metadata", "Multiview"};
                 bottomTitle = "Render Status";
-                bottomItems = new String[]{"Viewport Preview", "Render Queue", "Last Render"};
+                bottomItems = new String[]{"Viewport Preview", "Render Queue", "Render Progress", "Current Sample", "Denoising Status", "Last Render", "Render Result", "Render Slots", "Render Layers", "Render Passes"};
                 break;
             case 8:
-                tools = new String[]{"Add Node", "Connect", "Reroute", "Frame", "Search", "Preview"};
+                tools = new String[]{"Add Node", "Connect", "Disconnect", "Reroute", "Frame", "Group", "Ungroup", "Mute", "Bypass", "Search", "Preview", "Backdrop", "Fit View"};
                 leftTitle = "Compositor Nodes";
-                leftItems = new String[]{"Input", "Output", "Color", "Filter", "Distort", "Utilities"};
+                leftItems = new String[]{"INPUT", "Render Layers", "Image", "Texture", "Mask", "Movie Clip", "OUTPUT", "Composite", "Viewer", "File Output", "COLOR", "Mix Color", "RGB Curves", "Hue Saturation Value", "Color Balance", "Color Correction", "FILTER", "Blur", "Bilateral Blur", "Glare", "Defocus", "Denoise", "Filter", "Distort", "Lens Distortion", "Displace", "Map UV", "Transform", "Corner Pin", "Vector Blur", "KEYING", "Keying", "Cryptomatte", "Matte", "MASK", "Box Mask", "Ellipse Mask", "Polygon Mask", "UTILITIES", "Alpha Over", "Convert Color Space", "Math", "Time", "Switch", "Group"};
                 rightTitle = "Node Properties";
-                rightItems = new String[]{"Selected Node", "Inputs", "Outputs", "Properties", "Preview"};
+                rightItems = new String[]{"Selected Node", "Node Label", "Inputs", "Outputs", "Properties", "Node Color", "Mute", "Hide", "Preview", "Execution Settings"};
                 bottomTitle = "Compositor Node Editor";
-                bottomItems = new String[]{"Node Graph Canvas", "Connect Sockets", "Backdrop Preview"};
+                bottomItems = new String[]{"Node Graph Canvas", "Connect Sockets", "Backdrop Preview", "Viewer Node", "Composite Output", "Node Sidebar", "Node Search", "Node Groups"};
                 break;
             default:
-                tools = new String[]{"Add Node", "Search", "Connect", "Group", "Reroute", "Preview"};
+                tools = new String[]{"Add Node", "Search", "Connect", "Disconnect", "Group", "Ungroup", "Reroute", "Frame", "Duplicate", "Mute", "Preview", "Viewer", "Bake"};
                 leftTitle = "Geometry Node Library";
-                leftItems = new String[]{"Input", "Geometry", "Mesh", "Curve", "Instances", "Utilities", "Output"};
+                leftItems = new String[]{"INPUT", "Group Input", "Object Info", "Collection Info", "Scene Time", "Index", "Named Attribute", "GEOMETRY", "Join Geometry", "Transform Geometry", "Delete Geometry", "Separate Geometry", "Set Position", "Set ID", "Set Material", "MESH", "Mesh Cube", "Mesh UV Sphere", "Mesh Ico Sphere", "Mesh Cylinder", "Mesh Cone", "Mesh Grid", "Mesh Circle", "Mesh Line", "Mesh to Curve", "Curve to Mesh", "Subdivide Mesh", "Triangulate", "Subdivision Surface", "Extrude Mesh", "Flip Faces", "Set Shade Smooth", "CURVE", "Curve Circle", "Curve Line", "Resample Curve", "Curve to Points", "Trim Curve", "Fillet Curve", "Set Curve Radius", "INSTANCES", "Instance on Points", "Realize Instances", "Rotate Instances", "Scale Instances", "UTILITIES", "Math", "Vector Math", "Boolean Math", "Random Value", "Map Range", "Switch", "Compare", "Repeat Zone", "Simulation Zone", "OUTPUT", "Group Output", "Viewer"};
                 rightTitle = "Modifier Properties";
-                rightItems = new String[]{"Geometry Nodes Modifier", "Group Inputs", "Attributes", "Output Geometry"};
+                rightItems = new String[]{"Geometry Nodes Modifier", "Node Group", "Group Inputs", "Input Defaults", "Attributes", "Bake", "Simulation Cache", "Performance", "Output Geometry"};
                 bottomTitle = "Geometry Node Editor";
-                bottomItems = new String[]{"Node Graph Canvas", "Group Inputs", "Group Outputs"};
+                bottomItems = new String[]{"Node Graph Canvas", "Group Inputs", "Group Outputs", "Node Search", "Node Sidebar", "Spreadsheet", "Viewer", "Simulation Zone", "Repeat Zone", "Bake Nodes"};
                 break;
         }
         for (String tool : tools) {
