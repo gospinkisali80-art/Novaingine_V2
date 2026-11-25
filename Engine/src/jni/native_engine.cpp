@@ -1100,6 +1100,10 @@ bool decodeGray16Png(const uint8_t* data, size_t size,
         if (length > size - offset - 8) return false;
         const uint8_t* type = data + offset;
         const uint8_t* payload = data + offset + 4;
+        const uint32_t storedCrc = readBE32(payload + length);
+        uLong calculatedCrc = crc32(0L, Z_NULL, 0);
+        calculatedCrc = crc32(calculatedCrc, type, static_cast<uInt>(length + 4u));
+        if (static_cast<uint32_t>(calculatedCrc) != storedCrc) return false;
         if (std::memcmp(type, "IHDR", 4) == 0) {
             if (length != 13) return false;
             const uint32_t w = readBE32(payload), h = readBE32(payload + 4);
