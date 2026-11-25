@@ -329,7 +329,7 @@ public final class Meshy3DCore {
         for(Node n:shaderNodes){
             if("Metallic".equals(n.type))metallic=Math.max(0,Math.min(1,n.value));
             else if("Roughness".equals(n.type))roughness=Math.max(.02f,Math.min(1,n.value));
-            else if("Base Color".equals(n.type))baseColor=(int)n.value;
+            else if("Base Color".equals(n.type))baseColor=0xFF000000|((int)n.value&0xFFFFFF);
         }revision++;
     }
     public void evaluateCompositorTexture(){
