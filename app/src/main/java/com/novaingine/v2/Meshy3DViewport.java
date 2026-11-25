@@ -184,6 +184,19 @@ public final class Meshy3DViewport extends View {
         for(int i=0;i<vertices.length;i++){
             float[] q=project(vertices[i][0],vertices[i][1],vertices[i][2],cx,cy,unit);
             float dx=q[0]-x, dy=q[1]-y, dist=(float)Math.sqrt(dx*dx+dy*dy);
+            if (sculptSymmetry == 1) {
+                float[] mirror=project(-vertices[i][0],vertices[i][1],vertices[i][2],cx,cy,unit);
+                float mdx=mirror[0]-x, mdy=mirror[1]-y;
+                dist=Math.min(dist,(float)Math.sqrt(mdx*mdx+mdy*mdy));
+            } else if (sculptSymmetry == 2) {
+                float[] mirror=project(vertices[i][0],-vertices[i][1],vertices[i][2],cx,cy,unit);
+                float mdx=mirror[0]-x, mdy=mirror[1]-y;
+                dist=Math.min(dist,(float)Math.sqrt(mdx*mdx+mdy*mdy));
+            } else if (sculptSymmetry == 3) {
+                float[] mirror=project(vertices[i][0],vertices[i][1],-vertices[i][2],cx,cy,unit);
+                float mdx=mirror[0]-x, mdy=mirror[1]-y;
+                dist=Math.min(dist,(float)Math.sqrt(mdx*mdx+mdy*mdy));
+            }
             if(dist>brushPx || vertexMask[i]>0.95f) continue;
             float t=1f-dist/brushPx;
             float weight=(float)Math.pow(Math.max(0f,t),0.5f+sculptFalloff*3f)*(1f-vertexMask[i]);
@@ -203,9 +216,11 @@ public final class Meshy3DViewport extends View {
                     vertices[i][0]+=dragX/Math.max(1f,unit)*a*4f;
                     vertices[i][1]-=dragY/Math.max(1f,unit)*a*4f;
                     vertices[i][2]+=a*0.35f; break;
-                case 3: case 11:
+                case 3:
                     vertices[i][0]+=nx/len*a*1.2f; vertices[i][1]+=ny/len*a*1.2f;
                     vertices[i][2]+=nz/len*a*1.2f; break;
+                case 11:
+                    vertexMask[i]=Math.max(0f,vertexMask[i]-weight*0.75f); break;
                 case 4:
                     vertices[i][0]+=(meanX-nx)*a*1.8f;
                     vertices[i][2]+=(meanZ-nz)*a*1.8f; break;
@@ -221,7 +236,6 @@ public final class Meshy3DViewport extends View {
                 default: vertices[i][0]+=a*0.25f; break;
             }
         }
-        if(sculptBrush==11) for(int i=0;i<vertexMask.length;i++) vertexMask[i]=Math.max(0f,vertexMask[i]-0.2f);
         invalidate();
     }
 
@@ -263,7 +277,7 @@ public final class Meshy3DViewport extends View {
                 }
                 return true;
             case MotionEvent.ACTION_UP:
-                if(!moved){
+                if(!moved && !sculpting){
                     float gx=getWidth()-190*d, gy=150*d, radius=35*d;
                     float dx=event.getX()-gx,dy=event.getY()-gy;
                     if(dx*dx+dy*dy<=radius*radius){
