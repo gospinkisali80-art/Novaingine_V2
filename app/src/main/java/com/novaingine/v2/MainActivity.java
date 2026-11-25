@@ -44,6 +44,17 @@ public final class MainActivity extends Activity
     private LinearLayout editorPanels;
     private TextView playStopButton;
     private boolean playMode;
+    // World environment values are mirrored to the native renderer.
+    private final float[] worldEnvironment = {
+            -0.45f, -0.80f, -0.35f,
+            1.0f, 0.96f, 0.88f,
+            3.0f, 1.0f, 1.0f, 0.45f,
+            1.0f, 1.0f, 0.12f,
+            1.0f, 0.55f, 0.75f, 0.002f,
+            0.0f, 0.0f, 0.0f, 0.2f,
+            0.70f, 0.76f, 0.82f,
+            1.0f, 0.15f, 1.0f, 1.0f
+    };
 
     private boolean viewportMaximized;
     private View toolsScrim;
@@ -381,6 +392,7 @@ public final class MainActivity extends Activity
         addDrawerItem("Import Blender Model (.glb)", "Import a Blender-exported glTF binary model", this::openGlbPicker);
 
         addDrawerSection("RENDERING");
+        addDrawerItem("World Environment", "Directional light, sky light, atmosphere, clouds, height fog and post-processing", this::showWorldEnvironment);
         addDrawerItem("Global Illumination", "Indirect lighting controls", () -> showToolStatus("Global Illumination"));
         addDrawerItem("Reflections", "Environment and surface reflections", () -> showToolStatus("Reflections"));
 
@@ -517,6 +529,180 @@ public final class MainActivity extends Activity
                     engineSurface.setCameraView(which);
                     closeToolsDrawer();
                 }).setNegativeButton("Cancel", null).show();
+    }
+
+    private void applyWorldEnvironment() {
+        if (engineSurface != null) {
+            engineSurface.setWorldEnvironment(worldEnvironment);
+        }
+    }
+
+    private void addEnvironmentToggle(LinearLayout panel, String title, int index) {
+        CheckBox check = new CheckBox(this);
+        check.setText(title);
+        check.setTextColor(Color.WHITE);
+        check.setChecked(worldEnvironment[index] >= 0.5f);
+        panel.addView(check);
+        check.setOnCheckedChangeListener((button, checked) -> {
+            worldEnvironment[index] = checked ? 1.0f : 0.0f;
+            applyWorldEnvironment();
+        });
+    }
+
+    private void addEnvironmentSlider(LinearLayout panel, String title,
+                                      float minimum, float maximum, float initial,
+                                      java.util.function.Consumer<Float> changed) {
+        TextView label = new TextView(this);
+        label.setTextColor(0xFFE2E8F0);
+        label.setTextSize(12);
+        label.setText(title + ": " + String.format(java.util.Locale.US, "%.2f", initial));
+        label.setPadding(0, dp(8), 0, dp(2));
+        panel.addView(label);
+
+        android.widget.SeekBar slider = new android.widget.SeekBar(this);
+        slider.setMax(1000);
+        slider.setProgress(Math.max(0, Math.min(1000,
+                Math.round((initial - minimum) / Math.max(0.0001f, maximum - minimum) * 1000.0f))));
+        panel.addView(slider);
+        slider.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(android.widget.SeekBar bar, int progress, boolean fromUser) {
+                float value = minimum + (maximum - minimum) * progress / 1000.0f;
+                label.setText(title + ": " + String.format(java.util.Locale.US, "%.2f", value));
+                if (fromUser) changed.accept(value);
+            }
+            @Override public void onStartTrackingTouch(android.widget.SeekBar bar) {}
+            @Override public void onStopTrackingTouch(android.widget.SeekBar bar) {}
+        });
+    }
+
+    private void showWorldEnvironment() {
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(18), dp(8), dp(18), dp(18));
+        panel.setBackgroundColor(0xFF202630);
+        scroll.addView(panel);
+
+        TextView note = new TextView(this);
+        note.setText("Mobile renderer environment controls. Changes update the viewport immediately.");
+        note.setTextColor(0xFFB9C4D0);
+        note.setTextSize(11);
+        panel.addView(note);
+
+        addDrawerSectionTo(panel, "DIRECTIONAL LIGHT");
+        addEnvironmentToggle(panel, "Enable directional sun", 7);
+        float azimuth = (float)Math.toDegrees(Math.atan2(-worldEnvironment[2], -worldEnvironment[0]));
+        if (azimuth < 0) azimuth += 360.0f;
+        float elevation = (float)Math.toDegrees(Math.asin(Math.max(-1.0f, Math.min(1.0f, -worldEnvironment[1]))));
+        final float[] sunAngles = {azimuth, elevation};
+        addEnvironmentSlider(panel, "Sun azimuth", 0.0f, 360.0f, azimuth, value -> {
+            sunAngles[0] = value;
+            updateEnvironmentSunDirection(sunAngles[0], sunAngles[1]);
+        });
+        addEnvironmentSlider(panel, "Sun elevation", -10.0f, 89.0f, elevation, value -> {
+            sunAngles[1] = value;
+            updateEnvironmentSunDirection(sunAngles[0], sunAngles[1]);
+        });
+        addEnvironmentSlider(panel, "Sun intensity", 0.0f, 10.0f, worldEnvironment[6], value -> {
+            worldEnvironment[6] = value; applyWorldEnvironment();
+        });
+        addEnvironmentSlider(panel, "Sun red", 0.0f, 1.0f, worldEnvironment[3], value -> {
+            worldEnvironment[3] = value; applyWorldEnvironment();
+        });
+        addEnvironmentSlider(panel, "Sun green", 0.0f, 1.0f, worldEnvironment[4], value -> {
+            worldEnvironment[4] = value; applyWorldEnvironment();
+        });
+        addEnvironmentSlider(panel, "Sun blue", 0.0f, 1.0f, worldEnvironment[5], value -> {
+            worldEnvironment[5] = value; applyWorldEnvironment();
+        });
+
+        addDrawerSectionTo(panel, "SKY LIGHT");
+        addEnvironmentToggle(panel, "Enable sky light", 8);
+        addEnvironmentSlider(panel, "Sky light intensity", 0.0f, 2.0f, worldEnvironment[9], value -> {
+            worldEnvironment[9] = value; applyWorldEnvironment();
+        });
+
+        addDrawerSectionTo(panel, "SKY ATMOSPHERE");
+        addEnvironmentToggle(panel, "Enable sky atmosphere", 10);
+        addEnvironmentSlider(panel, "Rayleigh scattering", 0.0f, 3.0f, worldEnvironment[11], value -> {
+            worldEnvironment[11] = value; applyWorldEnvironment();
+        });
+        addEnvironmentSlider(panel, "Mie scattering", 0.0f, 1.0f, worldEnvironment[12], value -> {
+            worldEnvironment[12] = value; applyWorldEnvironment();
+        });
+
+        addDrawerSectionTo(panel, "CLOUD LAYER");
+        addEnvironmentToggle(panel, "Enable procedural clouds", 13);
+        addEnvironmentSlider(panel, "Cloud coverage", 0.0f, 1.0f, worldEnvironment[14], value -> {
+            worldEnvironment[14] = value; applyWorldEnvironment();
+        });
+        addEnvironmentSlider(panel, "Cloud density", 0.0f, 1.0f, worldEnvironment[15], value -> {
+            worldEnvironment[15] = value; applyWorldEnvironment();
+        });
+        addEnvironmentSlider(panel, "Cloud movement speed", 0.0f, 0.02f, worldEnvironment[16], value -> {
+            worldEnvironment[16] = value; applyWorldEnvironment();
+        });
+
+        addDrawerSectionTo(panel, "EXPONENTIAL HEIGHT FOG");
+        addEnvironmentToggle(panel, "Enable height fog", 17);
+        addEnvironmentSlider(panel, "Fog density", 0.0f, 0.05f, worldEnvironment[18], value -> {
+            worldEnvironment[18] = value; applyWorldEnvironment();
+        });
+        addEnvironmentSlider(panel, "Fog base height", -20.0f, 50.0f, worldEnvironment[19], value -> {
+            worldEnvironment[19] = value; applyWorldEnvironment();
+        });
+        addEnvironmentSlider(panel, "Fog height falloff", 0.001f, 2.0f, worldEnvironment[20], value -> {
+            worldEnvironment[20] = value; applyWorldEnvironment();
+        });
+        addEnvironmentSlider(panel, "Fog red", 0.0f, 1.0f, worldEnvironment[21], value -> {
+            worldEnvironment[21] = value; applyWorldEnvironment();
+        });
+        addEnvironmentSlider(panel, "Fog green", 0.0f, 1.0f, worldEnvironment[22], value -> {
+            worldEnvironment[22] = value; applyWorldEnvironment();
+        });
+        addEnvironmentSlider(panel, "Fog blue", 0.0f, 1.0f, worldEnvironment[23], value -> {
+            worldEnvironment[23] = value; applyWorldEnvironment();
+        });
+
+        addDrawerSectionTo(panel, "POST PROCESSING");
+        addEnvironmentToggle(panel, "Enable bloom", 24);
+        addEnvironmentSlider(panel, "Bloom intensity", 0.0f, 1.5f, worldEnvironment[25], value -> {
+            worldEnvironment[25] = value; applyWorldEnvironment();
+        });
+        addEnvironmentSlider(panel, "Color contrast", 0.0f, 2.0f, worldEnvironment[26], value -> {
+            worldEnvironment[26] = value; applyWorldEnvironment();
+        });
+        addEnvironmentSlider(panel, "Color saturation", 0.0f, 2.0f, worldEnvironment[27], value -> {
+            worldEnvironment[27] = value; applyWorldEnvironment();
+        });
+
+        applyWorldEnvironment();
+        new AlertDialog.Builder(this).setTitle("WORLD ENVIRONMENT")
+                .setView(scroll)
+                .setPositiveButton("Done", (dialog, which) -> closeToolsDrawer())
+                .setNegativeButton("Close", null)
+                .show();
+    }
+
+    private void addDrawerSectionTo(LinearLayout panel, String title) {
+        TextView section = new TextView(this);
+        section.setText(title);
+        section.setTextColor(0xFFFFB45C);
+        section.setTextSize(11);
+        section.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        section.setPadding(0, dp(14), 0, dp(4));
+        panel.addView(section);
+    }
+
+    private void updateEnvironmentSunDirection(float azimuthDegrees, float elevationDegrees) {
+        double azimuth = Math.toRadians(azimuthDegrees);
+        double elevation = Math.toRadians(elevationDegrees);
+        float horizontal = (float)Math.cos(elevation);
+        worldEnvironment[0] = -horizontal * (float)Math.cos(azimuth);
+        worldEnvironment[1] = -(float)Math.sin(elevation);
+        worldEnvironment[2] = -horizontal * (float)Math.sin(azimuth);
+        applyWorldEnvironment();
     }
 
     private void showDrawerRenderModes() {
