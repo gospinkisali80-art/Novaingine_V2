@@ -322,7 +322,33 @@ public final class Meshy3DCore {
     public int getTextureWidth(){return textureWidth;} public int getTextureHeight(){return textureHeight;}
     public void setMaterial(int color,float metal,float rough){baseColor=color;metallic=Math.max(0,Math.min(1,metal));roughness=Math.max(.02f,Math.min(1,rough));revision++;}
     public int getBaseColor(){return baseColor;}public float getMetallic(){return metallic;}public float getRoughness(){return roughness;}
-    public void addShaderNode(String type){shaderNodes.add(new Node(type));revision++;}
+    public void addShaderNode(String type){addShaderNode(type,0f);}
+    public void addShaderNode(String type,float value){Node n=new Node(type);n.value=value;shaderNodes.add(n);revision++;}
+    public void evaluateShaderGraph(){
+        for(Node n:shaderNodes){
+            if("Metallic".equals(n.type))metallic=Math.max(0,Math.min(1,n.value));
+            else if("Roughness".equals(n.type))roughness=Math.max(.02f,Math.min(1,n.value));
+            else if("Base Color".equals(n.type))baseColor=(int)n.value;
+        }revision++;
+    }
+    public void evaluateCompositorTexture(){
+        if(texturePixels==null)return;
+        texturePixels=evaluateCompositor(texturePixels,textureWidth,textureHeight);revision++;
+    }
+    public String[] getGraphNodeLabels(int graph){
+        ArrayList<Node> list=graph==0?geometryNodes:graph==1?shaderNodes:compositorNodes;
+        String[] names=new String[list.size()];for(int i=0;i<list.size();i++)names[i]=list.get(i).type;return names;
+    }
+    public void addNodeToGraph(int graph,String type,float value){
+        if(graph==0)addGeometryNode(type,0,0,0,value);
+        else if(graph==1)addShaderNode(type,value);
+        else addCompositorNode(type,value);
+    }
+    public void evaluateGraph(int graph){
+        if(graph==0)evaluateGeometryNodes();
+        else if(graph==1)evaluateShaderGraph();
+        else evaluateCompositorTexture();
+    }
     public int getShaderNodeCount(){return shaderNodes.size();}
     public void addGeometryNode(String type,float x,float y,float z,float value){Node n=new Node(type);n.x=x;n.y=y;n.z=z;n.value=value;geometryNodes.add(n);revision++;}
     public void clearGeometryNodes(){geometryNodes.clear();revision++;}
@@ -341,6 +367,9 @@ public final class Meshy3DCore {
         for(Node n:compositorNodes){
             if("Grayscale".equals(n.type)){for(int i=0;i<out.length;i++){int c=out[i],g=(int)(.2126*((c>>16)&255)+.7152*((c>>8)&255)+.0722*(c&255));out[i]=0xFF000000|g<<16|g<<8|g;}}
             else if("Brightness".equals(n.type)){for(int i=0;i<out.length;i++){int c=out[i],r=clamp(((c>>16)&255)+n.value),g=clamp(((c>>8)&255)+n.value),b=clamp((c&255)+n.value);out[i]=0xFF000000|r<<16|g<<8|b;}}
+            else if("Invert".equals(n.type)){for(int i=0;i<out.length;i++){int c=out[i];out[i]=0xFF000000|((255-((c>>16)&255))<<16)|((255-((c>>8)&255))<<8)|(255-(c&255));}}
+            else if("Contrast".equals(n.type)){float f=(float)((259*(n.value+255))/(255*(259-n.value)));for(int i=0;i<out.length;i++){int c=out[i],r=clamp(f*(((c>>16)&255)-128)+128),g=clamp(f*(((c>>8)&255)-128)+128),b=clamp(f*((c&255)-128)+128);out[i]=0xFF000000|r<<16|g<<8|b;}}
+            else if("Blur".equals(n.type)&&width>2&&height>2){int[] src=out.clone();int radius=Math.max(1,Math.min(8,Math.round(n.value)));for(int y=0;y<height;y++)for(int x=0;x<width;x++){int rr=0,gg=0,bb=0,count=0;for(int oy=-radius;oy<=radius;oy++)for(int ox=-radius;ox<=radius;ox++){int xx=x+ox,yy=y+oy;if(xx<0||yy<0||xx>=width||yy>=height)continue;int q=src[yy*width+xx];rr+=(q>>16)&255;gg+=(q>>8)&255;bb+=q&255;count++;}out[y*width+x]=0xFF000000|(rr/count)<<16|(gg/count)<<8|(bb/count);}}
         }return out;
     }
     private int clamp(float v){return Math.max(0,Math.min(255,Math.round(v)));}
