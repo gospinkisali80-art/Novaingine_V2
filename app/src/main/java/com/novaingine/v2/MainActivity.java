@@ -1151,7 +1151,7 @@ public final class MainActivity extends Activity
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
 
         TextView fingerSculpt = new TextView(this);
-        fingerSculpt.setText("START FINGER SCULPTING");
+        fingerSculpt.setText(terrainViewportSculpting ? "STOP FINGER SCULPTING" : "START FINGER SCULPTING");
         fingerSculpt.setTextColor(Color.WHITE);
         fingerSculpt.setTextSize(12);
         fingerSculpt.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
@@ -1193,7 +1193,17 @@ public final class MainActivity extends Activity
             content.addView(action, params);
             action.setOnClickListener(v -> {
                 terrainBrushPicker.setSelection(brushMode);
-                applyTerrainBrush(fields, brushMode);
+                if (terrainViewportSculpting) {
+                    engineSurface.setTerrainSculptMode(true, brushMode,
+                            terrainValue(fields[2], 6.0f),
+                            terrainValue(fields[3], 0.35f));
+                    dialog.dismiss();
+                    android.widget.Toast.makeText(this,
+                            brushNames[brushMode] + " brush selected • drag on terrain",
+                            android.widget.Toast.LENGTH_SHORT).show();
+                } else {
+                    applyTerrainBrush(fields, brushMode);
+                }
             });
         }
         dialog.show();
