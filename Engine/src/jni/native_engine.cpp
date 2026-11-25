@@ -3158,6 +3158,18 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateLandscapeWorldTile(
 }
 
 JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeCopyMainLandscapeTile(
+    JNIEnv*, jclass, jint tileX, jint tileZ
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized || !gLandscape.valid()) return JNI_FALSE;
+    const std::vector<float> heights = gLandscape.heights();
+    recordUndo(true);
+    return createLandscapeWorldTile(static_cast<int>(tileX), static_cast<int>(tileZ), heights)
+        ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeRemoveLandscapeWorldTile(
     JNIEnv*, jclass, jint tileX, jint tileZ
 ) {
