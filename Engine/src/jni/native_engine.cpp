@@ -3164,9 +3164,14 @@ Java_com_novaingine_v2_NativeBridge_nativeCopyMainLandscapeTile(
     std::lock_guard<std::mutex> lock(engineMutex);
     if (!gInitialized || !gLandscape.valid()) return JNI_FALSE;
     const std::vector<float> heights = gLandscape.heights();
+    const std::vector<std::array<float,4>> weights = gLandscape.weights();
     recordUndo(true);
-    return createLandscapeWorldTile(static_cast<int>(tileX), static_cast<int>(tileZ), heights)
-        ? JNI_TRUE : JNI_FALSE;
+    if (!createLandscapeWorldTile(static_cast<int>(tileX), static_cast<int>(tileZ), heights))
+        return JNI_FALSE;
+    auto found = gLandscapeWorldTiles.find(landscapeTileKey(static_cast<int>(tileX), static_cast<int>(tileZ)));
+    if (found == gLandscapeWorldTiles.end()) return JNI_FALSE;
+    found->second.data.setBaseWeights(weights);
+    return syncWorldTileMeshFromData(found->second) ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jboolean JNICALL
