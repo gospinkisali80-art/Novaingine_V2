@@ -1433,10 +1433,12 @@ Java_com_novaingine_v2_NativeBridge_nativeFly(
 
         // Landscape collision samples the actual editable heightfield instead of
         // treating the terrain as a flat primitive plane.
+        const bool cameraInsideCave = insideVoxelCave(gCamera.position);
+        if (cameraInsideCave) resolveVoxelCaveCollision(gCamera.position, 0.42f);
         bool hasLandscapeGround = false;
-        const float landscapeGround = terrainHeightAt(
+        const float landscapeGround = cameraInsideCave ? 0.0f : terrainHeightAt(
             gCamera.position.x, gCamera.position.z, hasLandscapeGround);
-        if (hasLandscapeGround) {
+        if (!cameraInsideCave && hasLandscapeGround) {
             const float minimumCameraY =
                 landscapeGround + nova::PhysicsWorld::PLAYER_HEIGHT;
             if (gCamera.position.y < minimumCameraY) {
@@ -2477,6 +2479,7 @@ Java_com_novaingine_v2_NativeBridge_nativeEnterSculptMode(JNIEnv*, jclass) {
     gScene.clear();
     gLandscape = nova::LandscapeSystem();
     gLandscapeWorldTiles.clear();
+    gVoxelCaves.clear();
     gCustomMeshes.clear();
     gSculptMasks.clear();
     { std::lock_guard<std::mutex> qlock(gSculptQueueMutex); gSculptQueue.clear(); }
@@ -3092,6 +3095,7 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateTerrain(
         }
     }
     gLandscapeWorldTiles.clear();
+    gVoxelCaves.clear();
     for (uint32_t id : oldTerrain) {
         gRenderer.releaseMesh(id);
         gCustomMeshes.erase(id);
@@ -3517,66 +3521,68 @@ Java_com_novaingine_v2_NativeBridge_nativeSetSelectedRigidBody(
 
 JNIEXPORT jboolean JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeCreateLandscapeCave(
-    JNIEnv* env,jclass,jfloatArray pathArray,jfloat radiusValue
+    JNIEnv* env, jclass, jfloatArray pathArray, jfloat radiusValue
 ) {
     std::lock_guard<std::mutex> lock(engineMutex);
-    if(!gInitialized||!gLandscape.valid()||!pathArray)return JNI_FALSE;
-    const jsize count=env->GetArrayLength(pathArray);
-    if(count<6||count%3!=0||count>3072)return JNI_FALSE;
+    if (!gInitialized || (!gLandscape.valid() && gLandscapeWorldTiles.empty()) || !pathArray)
+        return JNI_FALSE;
+    const jsize count = env->GetArrayLength(pathArray);
+    if (count < 6 || count % 3 != 0 || count > 3072) return JNI_FALSE;
     std::vector<jfloat> raw(static_cast<size_t>(count));
-    env->GetFloatArrayRegion(pathArray,0,count,raw.data());
-    if(env->ExceptionCheck()){env->ExceptionClear();return JNI_FALSE;}
-    std::vector<nova::Vec3> path;
-    for(jsize i=0;i<count;i+=3)path.emplace_back(raw[i],raw[i+1],raw[i+2]);
-    const float radius=std::clamp(static_cast<float>(radiusValue),0.5f,8.0f);
-    recordUndo(true);
-    constexpr int sides=16;
-    std::vector<nova::Vertex> vertices;
-    std::vector<uint32_t> indices;
-    vertices.reserve(path.size()*sides);
-    for(size_t i=0;i<path.size();++i){
-        nova::Vec3 tangent;
-        if(i==0)tangent=nova::normalize(path[1]-path[0]);
-        else if(i+1==path.size())tangent=nova::normalize(path[i]-path[i-1]);
-        else tangent=nova::normalize(path[i+1]-path[i-1]);
-        nova::Vec3 reference=std::fabs(tangent.y)<0.92f?nova::Vec3(0,1,0):nova::Vec3(1,0,0);
-        nova::Vec3 right=nova::normalize(nova::cross(tangent,reference));
-        nova::Vec3 up=nova::normalize(nova::cross(right,tangent));
-        for(int side=0;side<sides;++side){
-            const float angle=6.28318530718f*side/sides;
-            nova::Vec3 offset=(right*std::cos(angle)+up*std::sin(angle))*radius;
-            vertices.emplace_back(path[i]+offset,nova::Vec3(0,1,0),
-                static_cast<float>(side)/sides,static_cast<float>(i)/(path.size()-1));
-        }
-    }
-    for(size_t i=0;i+1<path.size();++i)for(int side=0;side<sides;++side){
-        const uint32_t a=static_cast<uint32_t>(i*sides+side);
-        const uint32_t b=static_cast<uint32_t>(i*sides+(side+1)%sides);
-        const uint32_t c=a+sides,d=b+sides;
-        indices.insert(indices.end(),{a,c,b,b,c,d});
-    }
-    nova::Mesh caveMesh(std::move(vertices),std::move(indices));
-    caveMesh.recalculateNormals();if(!caveMesh.isValid())return JNI_FALSE;
-    nova::Transform transform;
-    const nova::Color caveColor(0.16f,0.14f,0.12f,1.0f);
-    const uint32_t caveId=gScene.addObject("Landscape Cave Tunnel",nova::PrimitiveType::Sphere,transform,caveColor);
-    nova::SceneObject* cave=gScene.find(caveId);if(!cave)return JNI_FALSE;
-    cave->material.baseColor=nova::Vec3(caveColor.r,caveColor.g,caveColor.b);
-    cave->material.roughness=0.98f;cave->material.metallic=0.0f;
-    gCustomMeshes[caveId]=std::move(caveMesh);
-    if(!gRenderer.uploadMesh(caveId,gCustomMeshes[caveId])){gCustomMeshes.erase(caveId);gScene.removeObject(caveId);return JNI_FALSE;}
+    env->GetFloatArrayRegion(pathArray, 0, count, raw.data());
+    if (env->ExceptionCheck()) { env->ExceptionClear(); return JNI_FALSE; }
 
-    for(const nova::Vec3& endPoint:{path.front(),path.back()}){
-        const int cx=std::clamp(static_cast<int>((endPoint.x+32.0f)/0.5f),0,127);
-        const int cz=std::clamp(static_cast<int>((endPoint.z+36.0f)/0.5f),0,127);
-        const int cells=std::max(1,static_cast<int>(std::ceil(radius/0.5f)));
-        for(int z=std::max(0,cz-cells);z<=std::min(127,cz+cells);++z)
-            for(int x=std::max(0,cx-cells);x<=std::min(127,cx+cells);++x){
-                const float dx=(x-cx)*0.5f,dz=(z-cz)*0.5f;
-                if(dx*dx+dz*dz<=radius*radius)gLandscape.setHole(x,z,true);
-            }
+    std::vector<nova::Vec3> path;
+    path.reserve(static_cast<size_t>(count / 3));
+    for (jsize i = 0; i < count; i += 3) {
+        if (!std::isfinite(raw[i]) || !std::isfinite(raw[i+1]) || !std::isfinite(raw[i+2]))
+            return JNI_FALSE;
+        path.emplace_back(raw[i], raw[i+1], raw[i+2]);
     }
-    syncLandscapeMeshFromData();
+    const float radius = std::clamp(static_cast<float>(radiusValue), 0.5f, 8.0f);
+    nova::VoxelCaveSystem caveVolume;
+    if (!caveVolume.build(path, radius, 0.5f)) return JNI_FALSE;
+    nova::Mesh caveMesh = caveVolume.buildSurfaceMesh();
+    if (!caveMesh.isValid() || caveMesh.getVertices().empty()) return JNI_FALSE;
+
+    recordUndo(true);
+    const nova::Color caveColor(0.20f, 0.18f, 0.16f, 1.0f);
+    nova::Transform transform;
+    const uint32_t caveId = gScene.addObject("Landscape Voxel Cave",
+        nova::PrimitiveType::Sphere, transform, caveColor);
+    nova::SceneObject* caveObject = gScene.find(caveId);
+    if (!caveObject) return JNI_FALSE;
+    caveObject->material.baseColor = nova::Vec3(caveColor.r, caveColor.g, caveColor.b);
+    caveObject->material.roughness = 0.96f;
+    caveObject->material.metallic = 0.0f;
+    caveObject->isStatic = false;
+    gCustomMeshes[caveId] = std::move(caveMesh);
+    if (!gRenderer.uploadMesh(caveId, gCustomMeshes[caveId])) {
+        gCustomMeshes.erase(caveId);
+        gScene.removeObject(caveId);
+        return JNI_FALSE;
+    }
+    VoxelCaveRecord record;
+    record.objectId = caveId;
+    record.volume = std::move(caveVolume);
+    gVoxelCaves.push_back(std::move(record));
+
+    // Open the terrain at both cave portals; the SDF volume supplies the internal walls.
+    for (const nova::Vec3& portal : {path.front(), path.back()}) {
+        nova::LandscapeSystem* target = landscapeAtWorld(portal.x, portal.z);
+        if (!target) continue;
+        const int centerX = static_cast<int>((portal.x - target->originX()) / target->spacing());
+        const int centerZ = static_cast<int>((portal.z - target->originZ()) / target->spacing());
+        const int cells = std::max(1, static_cast<int>(std::ceil(radius / target->spacing())));
+        for (int z = std::max(0, centerZ - cells); z <= std::min(target->height()-2, centerZ + cells); ++z) {
+            for (int x = std::max(0, centerX - cells); x <= std::min(target->width()-2, centerX + cells); ++x) {
+                const float dx = (x - centerX) * target->spacing();
+                const float dz = (z - centerZ) * target->spacing();
+                if (dx*dx + dz*dz <= radius*radius) target->setHole(x, z, true);
+            }
+        }
+        syncLandscapeAtWorld(portal.x, portal.z);
+    }
     return JNI_TRUE;
 }
 
