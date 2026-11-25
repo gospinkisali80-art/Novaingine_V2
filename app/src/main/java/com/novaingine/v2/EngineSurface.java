@@ -353,6 +353,13 @@ public final class EngineSurface extends GLSurfaceView
         });
     }
 
+    public void renameObject(int objectId, String name, java.util.function.Consumer<Boolean> callback) {
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeRenameObject(objectId, name);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
+    }
+
     public void selectObjectById(int objectId) {
         queueEvent(() -> NativeBridge.nativeSelectObjectById(objectId));
     }
