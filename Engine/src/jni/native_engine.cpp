@@ -523,6 +523,86 @@ void updateTerrainLod() {
     gTerrainChunksDirty=false;
 }
 
+void stepLandscapeRigidBodies(float dt) {
+    dt = std::clamp(dt, 0.0f, 0.05f);
+    if (dt <= 0.0f || gLandscapeRigidBodies.empty()) return;
+
+    for (auto it = gLandscapeRigidBodies.begin(); it != gLandscapeRigidBodies.end();) {
+        nova::SceneObject* object = gScene.find(it->first);
+        if (!object || !object->visible) {
+            it = gLandscapeRigidBodies.erase(it);
+            continue;
+        }
+
+        LandscapeRigidBody& body = it->second;
+        const float halfX = std::max(0.05f, std::fabs(object->transform.scale.x) * 0.5f);
+        const float halfY = std::max(0.05f, std::fabs(object->transform.scale.y) * 0.5f);
+        const float halfZ = std::max(0.05f, std::fabs(object->transform.scale.z) * 0.5f);
+        const float previousBottom = object->transform.position.y - halfY;
+
+        body.velocity.y -= 9.81f * dt;
+        object->transform.position = object->transform.position + body.velocity * dt;
+
+        bool foundGround = false;
+        const float ground = terrainHeightAt(object->transform.position.x,
+                                             object->transform.position.z, foundGround);
+        if (foundGround && object->transform.position.y - halfY < ground) {
+            object->transform.position.y = ground + halfY;
+            if (body.velocity.y < 0.0f) body.velocity.y = -body.velocity.y * body.restitution;
+            if (std::fabs(body.velocity.y) < 0.35f) body.velocity.y = 0.0f;
+            const float frictionStep = std::clamp(body.friction * dt, 0.0f, 1.0f);
+            body.velocity.x *= 1.0f - frictionStep;
+            body.velocity.z *= 1.0f - frictionStep;
+        }
+
+        for (const nova::SceneObject& other : gScene.getObjects()) {
+            if (other.id == object->id || !other.visible || !other.isStatic ||
+                other.name == "Landscape Terrain" ||
+                other.name.rfind("Landscape Chunk ", 0) == 0) continue;
+            const auto box = nova::PhysicsWorld::boundsFor(other);
+            if (!box.valid) continue;
+            const nova::Vec3 position = object->transform.position;
+            if (position.x + halfX <= box.min.x || position.x - halfX >= box.max.x ||
+                position.z + halfZ <= box.min.z || position.z - halfZ >= box.max.z) continue;
+            if (previousBottom >= box.max.y - 0.12f &&
+                position.y - halfY <= box.max.y) {
+                object->transform.position.y = box.max.y + halfY;
+                if (body.velocity.y < 0.0f) body.velocity.y = -body.velocity.y * body.restitution;
+                if (std::fabs(body.velocity.y) < 0.35f) body.velocity.y = 0.0f;
+            }
+        }
+
+        for (const auto& otherBody : gLandscapeRigidBodies) {
+            if (otherBody.first <= object->id) continue;
+            nova::SceneObject* other = gScene.find(otherBody.first);
+            if (!other || !other->visible) continue;
+            const float otherHalfX = std::max(0.05f, std::fabs(other->transform.scale.x) * 0.5f);
+            const float otherHalfY = std::max(0.05f, std::fabs(other->transform.scale.y) * 0.5f);
+            const float otherHalfZ = std::max(0.05f, std::fabs(other->transform.scale.z) * 0.5f);
+            const float dx = object->transform.position.x - other->transform.position.x;
+            const float dz = object->transform.position.z - other->transform.position.z;
+            const float overlapX = halfX + otherHalfX - std::fabs(dx);
+            const float overlapZ = halfZ + otherHalfZ - std::fabs(dz);
+            const float bottomA = object->transform.position.y - halfY;
+            const float bottomB = other->transform.position.y - otherHalfY;
+            const float overlapY = halfY + otherHalfY -
+                std::fabs(object->transform.position.y - other->transform.position.y);
+            if (overlapX <= 0.0f || overlapZ <= 0.0f || overlapY <= 0.0f) continue;
+            if (previousBottom >= other->transform.position.y - otherHalfY - 0.12f &&
+                bottomA < other->transform.position.y + otherHalfY) {
+                object->transform.position.y = other->transform.position.y + otherHalfY + halfY;
+                if (body.velocity.y < 0.0f)
+                    body.velocity.y = -body.velocity.y * std::min(body.restitution, otherBody.second.restitution);
+                if (std::fabs(body.velocity.y) < 0.35f) body.velocity.y = 0.0f;
+            } else if (bottomB >= object->transform.position.y - halfY - 0.12f &&
+                       bottomB < object->transform.position.y + halfY) {
+                other->transform.position.y = object->transform.position.y + halfY + otherHalfY;
+            }
+        }
+        ++it;
+    }
+}
+
 // Transform helpers use the same Rz * Ry * Rx order as Renderer::makeModelMatrix.
 nova::Vec3 rotateByObject(const nova::Vec3& v, const nova::Vec3& degrees) {
     const float k=3.14159265358979323846f/180.0f;
