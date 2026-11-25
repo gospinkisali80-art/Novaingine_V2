@@ -325,15 +325,22 @@ public final class EngineSurface extends GLSurfaceView
         return NativeBridge.nativeClearFoliage();
     }
 
-    public boolean createTerrain() {
-        return NativeBridge.nativeCreateTerrain();
+    public void createTerrain(java.util.function.Consumer<Boolean> callback) {
+        queueEvent(() -> {
+            boolean created = NativeBridge.nativeCreateTerrain();
+            if (callback != null) post(() -> callback.accept(created));
+        });
     }
 
-    public boolean sculptTerrain(
-            float centerX, float centerZ, float radius, float strength, int mode) {
-        return NativeBridge.nativeSculptTerrain(
-                centerX, centerZ, radius, strength, mode
-        );
+    public void sculptTerrain(
+            float centerX, float centerZ, float radius, float strength, int mode,
+            java.util.function.Consumer<Boolean> callback) {
+        queueEvent(() -> {
+            boolean changed = NativeBridge.nativeSculptTerrain(
+                    centerX, centerZ, radius, strength, mode
+            );
+            if (callback != null) post(() -> callback.accept(changed));
+        });
     }
 
     public String[] getSceneObjects() {
