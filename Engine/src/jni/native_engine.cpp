@@ -326,6 +326,8 @@ bool makeScreenRay(float screenX, float screenY, nova::Vec3& ray) {
     return nova::length(ray)>0.0001f;
 }
 
+float terrainHeightAt(float worldX, float worldZ, bool& found);
+
 bool syncLandscapeMeshFromData() {
     nova::SceneObject* terrain = nullptr;
     for (nova::SceneObject& object : gScene.getObjects()) {
@@ -386,6 +388,8 @@ float terrainHeightAt(float worldX, float worldZ, bool& found) {
         const float gz = (worldZ + 36.0f) / spacing;
         if (gx < 0.0f || gz < 0.0f || gx > 128.0f || gz > 128.0f ||
             vertices.size() != static_cast<size_t>(resolution * resolution)) return 0.0f;
+        if (gLandscape.valid() && gLandscape.isHole(std::min(127, static_cast<int>(gx)),
+                std::min(127, static_cast<int>(gz)))) return 0.0f;
         const int x0 = std::min(127, static_cast<int>(std::floor(gx)));
         const int z0 = std::min(127, static_cast<int>(std::floor(gz)));
         const int x1 = x0 + 1, z1 = z0 + 1;
