@@ -326,7 +326,7 @@ bool makeScreenRay(float screenX, float screenY, nova::Vec3& ray) {
     return nova::length(ray)>0.0001f;
 }
 
-float terrainHeightAt(float worldX, float worldZ, bool& found);
+float terrainHeightAt(float worldX, float worldZ, bool& found, bool allowHole = false);
 
 bool syncLandscapeMeshFromData() {
     nova::SceneObject* terrain = nullptr;
@@ -362,7 +362,7 @@ bool syncLandscapeMeshFromData() {
     return ok;
 }
 
-bool terrainScreenHit(float screenX, float screenY, float& hitX, float& hitZ, float& hitY) {
+bool terrainScreenHit(float screenX, float screenY, float& hitX, float& hitZ, float& hitY, bool allowHole = false) {
     nova::Vec3 ray;
     if (!makeScreenRay(screenX, screenY, ray)) return false;
     const nova::Vec3 origin=gCamera.position;
@@ -375,7 +375,7 @@ bool terrainScreenHit(float screenX, float screenY, float& hitX, float& hitZ, fl
     return false;
 }
 
-float terrainHeightAt(float worldX, float worldZ, bool& found) {
+float terrainHeightAt(float worldX, float worldZ, bool& found, bool allowHole) {
     found = false;
     for (const nova::SceneObject& object : gScene.getObjects()) {
         if (object.name != "Landscape Terrain") continue;
@@ -388,7 +388,7 @@ float terrainHeightAt(float worldX, float worldZ, bool& found) {
         const float gz = (worldZ + 36.0f) / spacing;
         if (gx < 0.0f || gz < 0.0f || gx > 128.0f || gz > 128.0f ||
             vertices.size() != static_cast<size_t>(resolution * resolution)) return 0.0f;
-        if (gLandscape.valid() && gLandscape.isHole(std::min(127, static_cast<int>(gx)),
+        if (!allowHole && gLandscape.valid() && gLandscape.isHole(std::min(127, static_cast<int>(gx)),
                 std::min(127, static_cast<int>(gz)))) return 0.0f;
         const int x0 = std::min(127, static_cast<int>(std::floor(gx)));
         const int z0 = std::min(127, static_cast<int>(std::floor(gz)));
@@ -2838,7 +2838,7 @@ Java_com_novaingine_v2_NativeBridge_nativeSetTerrainHoleAtScreen(
 ) {
     std::lock_guard<std::mutex> lock(engineMutex);
     if(!gInitialized||!gLandscape.valid())return JNI_FALSE;
-    float x=0,z=0,y=0;if(!terrainScreenHit(screenX,screenY,x,z,y))return JNI_FALSE;
+    float x=0,z=0,y=0;if(!terrainScreenHit(screenX,screenY,x,z,y,true))return JNI_FALSE;
     const int gx=std::clamp(static_cast<int>((x+32.0f)/0.5f),0,127);
     const int gz=std::clamp(static_cast<int>((z+36.0f)/0.5f),0,127);
     recordUndo(true);
