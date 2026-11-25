@@ -173,7 +173,7 @@ public final class Meshy3DViewport extends View {
             path.moveTo(p[face[0]][0],p[face[0]][1]);
             for(int k=1;k<4;k++) path.lineTo(p[face[k]][0],p[face[k]][1]);
             path.close();
-            paint.setStyle(Paint.Style.FILL); paint.setColor(FACE_COLORS[f]); canvas.drawPath(path,paint);
+            paint.setStyle(Paint.Style.FILL); paint.setColor(FACE_COLORS[f / (MESH_SUBDIVISIONS * MESH_SUBDIVISIONS)]); canvas.drawPath(path,paint);
             paint.setStyle(Paint.Style.STROKE); paint.setColor(0xAA303840);
             paint.setStrokeWidth(0.65f); canvas.drawPath(path,paint);
         }
