@@ -131,6 +131,12 @@ public final class EngineSurface extends GLSurfaceView
         });
     }
 
+    public void setWorldEnvironment(float[] values) {
+        if (values == null || values.length < 28) return;
+        float[] copy = java.util.Arrays.copyOf(values, 28);
+        queueEvent(() -> NativeBridge.nativeSetWorldEnvironment(copy));
+    }
+
     public void setManualSculptWorkspace(boolean enabled) {
         queueEvent(() -> NativeBridge.nativeSetManualSculptWorkspace(enabled));
     }
