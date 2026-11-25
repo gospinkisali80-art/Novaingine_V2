@@ -99,6 +99,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private final ArrayList<TextView> workspaceTabs = new ArrayList<>();
     private int activeWorkspaceIndex;
     private int workspaceTransitionToken;
+    private boolean viewportFocusMode;
     private FrameLayout workspaceLayoutLayer;
     private LinearLayout workspaceToolbar;
     private LinearLayout workspaceLeftDock;
@@ -119,7 +120,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
         setClickable(false);
 
         // Meshy3D owns this viewport and its starter cube; it is not the Novaingine GL scene.
-        Meshy3DViewport meshyViewport = new Meshy3DViewport(activity);
+        Meshy3DViewport meshyViewport = new Meshy3DViewport(activity, this::toggleViewportFocus);
         addView(meshyViewport, new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
         // Meshy3D is being rebuilt from the Blender reference one section at a time.
@@ -270,6 +271,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
     public void setActiveWorkspaceIndex(int index) {
         if (index < 0 || index >= WORKSPACE_NAMES.length) return;
         int previousIndex = activeWorkspaceIndex;
+        viewportFocusMode = false;
         boolean shouldSlide = workspaceLayoutLayer != null && previousIndex != index;
         activeWorkspaceIndex = index;
         for (int i = 0; i < workspaceTabs.size(); i++) {
@@ -370,6 +372,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private void renderWorkspaceLayout(int index) {
         if (workspaceLayoutLayer == null) return;
         workspaceLayoutLayer.removeAllViews();
+        viewportFocusMode = false;
         workspaceToolbar = new LinearLayout(activity);
         workspaceToolbar.setGravity(Gravity.CENTER_VERTICAL);
         workspaceToolbar.setBackgroundColor(0xE02B333D);
@@ -516,6 +519,18 @@ public final class ManualSculptWorkspace extends FrameLayout {
             workspaceRightDock.setVisibility(sculptEnabled ? View.VISIBLE : View.GONE);
         }
         status.setText("Meshy3D  |  " + WORKSPACE_NAMES[index] + " Workspace");
+    }
+
+    private void toggleViewportFocus() {
+        viewportFocusMode = !viewportFocusMode;
+        int visibility = viewportFocusMode ? View.GONE : View.VISIBLE;
+        if (workspaceLeftDock != null) workspaceLeftDock.setVisibility(visibility);
+        if (workspaceRightDock != null) workspaceRightDock.setVisibility(visibility);
+        if (workspaceBottomDock != null) workspaceBottomDock.setVisibility(visibility);
+        if (workspaceToolbar != null) workspaceToolbar.setVisibility(visibility);
+        if (status != null) status.setText(viewportFocusMode
+                ? "Meshy3D  |  Viewport Focus  •  Tap viewport to restore panels"
+                : "Meshy3D  |  " + WORKSPACE_NAMES[activeWorkspaceIndex] + " Workspace");
     }
 
     public int getActiveWorkspaceIndex() { return activeWorkspaceIndex; }
