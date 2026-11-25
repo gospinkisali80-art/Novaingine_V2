@@ -842,7 +842,7 @@ public final class MainActivity extends Activity
         captureMeshyState(meshyRedo, "redo", () ->
                 engineSurface.loadSceneAsync(target.getAbsolutePath(), ok -> {
                     if (!ok) meshyUndo.addLast(target);
-                    else if (statisticsText != null) statisticsText.setText("MESHY3D  |  EDIT UNDO");
+                    else { persistMeshyHistory(); if (statisticsText != null) statisticsText.setText("MESHY3D  |  EDIT UNDO"); }
                 }));
     }
 
@@ -855,7 +855,7 @@ public final class MainActivity extends Activity
         captureMeshyState(meshyUndo, "undo", () ->
                 engineSurface.loadSceneAsync(target.getAbsolutePath(), ok -> {
                     if (!ok) meshyRedo.addLast(target);
-                    else if (statisticsText != null) statisticsText.setText("MESHY3D  |  EDIT REDO");
+                    else { persistMeshyHistory(); if (statisticsText != null) statisticsText.setText("MESHY3D  |  EDIT REDO"); }
                 }));
     }
 
@@ -1021,6 +1021,7 @@ public final class MainActivity extends Activity
         meshyEditHistory.add(action);
         if (meshyEditHistory.size() > 50) meshyEditHistory.remove(0);
         meshyLastOperation = action;
+        persistMeshyHistory();
     }
 
     private void performMeshyEditAction(String action) {
@@ -1110,7 +1111,12 @@ public final class MainActivity extends Activity
                         android.widget.Toast.makeText(this, "Enter a valid element index and amount.", android.widget.Toast.LENGTH_LONG).show();
                         return;
                     }
-                    runMeshyMeshOperation(action, operation, elementIndex, value);
+                    Runnable apply = () -> runMeshyMeshOperation(action, operation, elementIndex, value);
+                    boolean confirm = getSharedPreferences("meshy3d_editor", MODE_PRIVATE).getBoolean("confirm_ops", true);
+                    if (confirm) new AlertDialog.Builder(this).setTitle("Confirm " + action)
+                            .setMessage("Apply this operation to the active mesh? Meshy3D will create an editor undo checkpoint first.")
+                            .setNegativeButton("Cancel", null).setPositiveButton("Apply", (d, w) -> apply.run()).show();
+                    else apply.run();
                 }).show();
     }
 
