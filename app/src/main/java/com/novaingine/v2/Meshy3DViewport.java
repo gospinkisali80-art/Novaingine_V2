@@ -15,11 +15,66 @@ public final class Meshy3DViewport extends View {
     private float pitch = 0.42f;
     private float lastX, lastY, lastPinchDistance;
     private float zoom = 1.0f;
-    private final float[][] vertices = {
-        {-1,-1,-1},{1,-1,-1},{1,1,-1},{-1,1,-1},
-        {-1,-1,1},{1,-1,1},{1,1,1},{-1,1,1}
-    };
-    private final float[] vertexMask = new float[8];
+    // Each cube side is subdivided into a 24 x 24 quad grid.
+    // Six independent side grids give 3,750 editable vertices and 3,456 quads.
+    // Matching border vertices receive the same screen-space brush dabs.
+    private static final int MESH_SUBDIVISIONS = 24;
+    private final float[][] vertices = createDenseCubeVertices();
+    private final int[][] faces = createDenseCubeFaces();
+    private final float[] vertexMask = new float[vertices.length];
+
+    private static float[][] createDenseCubeVertices() {
+        int n = MESH_SUBDIVISIONS + 1;
+        float[][] result = new float[6 * n * n][3];
+        int index = 0;
+        // For each side, uAxis x vAxis points outwards.
+        int[][] side = {
+            {0, 1, 2,  1}, // +X: y x z
+            {0, 2, 1, -1}, // -X: z x y
+            {1, 2, 0,  1}, // +Y: z x x
+            {1, 0, 2, -1}, // -Y: x x z
+            {2, 0, 1,  1}, // +Z: x x y
+            {2, 1, 0, -1}  // -Z: y x x
+        };
+        for (int s = 0; s < 6; s++) {
+            int fixedAxis = side[s][0];
+            int uAxis = side[s][1];
+            int vAxis = side[s][2];
+            int sign = side[s][3];
+            for (int v = 0; v <= MESH_SUBDIVISIONS; v++) {
+                for (int u = 0; u <= MESH_SUBDIVISIONS; u++) {
+                    float fu = -1f + 2f * u / MESH_SUBDIVISIONS;
+                    float fv = -1f + 2f * v / MESH_SUBDIVISIONS;
+                    result[index][fixedAxis] = (s % 2 == 0) ? 1f : -1f;
+                    result[index][uAxis] = fu;
+                    result[index][vAxis] = fv;
+                    // Reverse one parameter when required to keep the side winding outward.
+                    if (sign < 0) result[index][uAxis] = -fu;
+                    index++;
+                }
+            }
+        }
+        return result;
+    }
+
+    private static int[][] createDenseCubeFaces() {
+        int n = MESH_SUBDIVISIONS + 1;
+        int[][] result = new int[6 * MESH_SUBDIVISIONS * MESH_SUBDIVISIONS][4];
+        int face = 0;
+        for (int side = 0; side < 6; side++) {
+            int base = side * n * n;
+            for (int v = 0; v < MESH_SUBDIVISIONS; v++) {
+                for (int u = 0; u < MESH_SUBDIVISIONS; u++) {
+                    int a = base + v * n + u;
+                    int b = a + 1;
+                    int d = a + n;
+                    int cc = d + 1;
+                    result[face++] = new int[]{a, b, cc, d};
+                }
+            }
+        }
+        return result;
+    }
     private boolean sculpting;
     private int sculptBrush;
     private float sculptRadius = 0.18f, sculptStrength = 0.40f, sculptFalloff = 0.5f, sculptPressure = 1.0f;
@@ -30,14 +85,6 @@ public final class Meshy3DViewport extends View {
     private boolean moved;
     private float downX, downY;
 
-    private static final float[][] V = {
-        {-1,-1,-1},{1,-1,-1},{1,1,-1},{-1,1,-1},
-        {-1,-1,1},{1,-1,1},{1,1,1},{-1,1,1}
-    };
-    private static final int[][] FACES = {
-        {0,3,2,1},{4,5,6,7},{0,1,5,4},
-        {3,7,6,2},{0,4,7,3},{1,2,6,5}
-    };
     private static final int[] FACE_COLORS = {
         0xFF9DAAB7,0xFF66798C,0xFF7D8FA1,
         0xFFB7C2CC,0xFF596D80,0xFF8999A8
@@ -97,16 +144,16 @@ public final class Meshy3DViewport extends View {
         float[] y1=project(0,-1.11f,-6,cx,cy,unit), y2=project(0,-1.11f,6,cx,cy,unit);
         canvas.drawLine(y1[0],y1[1],y2[0],y2[1],paint);
 
-        float[][] p=new float[8][3];
-        for(int i=0;i<8;i++) p[i]=project(vertices[i][0],vertices[i][1],vertices[i][2],cx,cy,unit);
+        float[][] p=new float[vertices.length][3];
+        for(int i=0;i<vertices.length;i++) p[i]=project(vertices[i][0],vertices[i][1],vertices[i][2],cx,cy,unit);
 
         // Draw only outward-facing faces, sorted far-to-near. This prevents the
         // previous see-through/inverted-looking cube caused by drawing all six sides.
-        int[] order=new int[FACES.length];
-        float[] depth=new float[FACES.length];
+        int[] order=new int[faces.length];
+        float[] depth=new float[faces.length];
         int count=0;
-        for(int f=0;f<FACES.length;f++){
-            int[] face=FACES[f];
+        for(int f=0;f<faces.length;f++){
+            int[] face=faces[f];
             float[] a=cameraPoint(vertices[face[0]][0],vertices[face[0]][1],vertices[face[0]][2]);
             float[] b=cameraPoint(vertices[face[1]][0],vertices[face[1]][1],vertices[face[1]][2]);
             float[] c=cameraPoint(vertices[face[2]][0],vertices[face[2]][1],vertices[face[2]][2]);
@@ -123,14 +170,14 @@ public final class Meshy3DViewport extends View {
             int t=order[i]; order[i]=order[j]; order[j]=t;
         }
         for(int n=0;n<count;n++){
-            int f=order[n]; int[] face=FACES[f];
+            int f=order[n]; int[] face=faces[f];
             Path path=new Path();
             path.moveTo(p[face[0]][0],p[face[0]][1]);
             for(int k=1;k<4;k++) path.lineTo(p[face[k]][0],p[face[k]][1]);
             path.close();
             paint.setStyle(Paint.Style.FILL); paint.setColor(FACE_COLORS[f]); canvas.drawPath(path,paint);
-            paint.setStyle(Paint.Style.STROKE); paint.setColor(0xFFFFA33A);
-            paint.setStrokeWidth(2.4f); canvas.drawPath(path,paint);
+            paint.setStyle(Paint.Style.STROKE); paint.setColor(0xAA303840);
+            paint.setStrokeWidth(0.65f); canvas.drawPath(path,paint);
         }
         paint.setStyle(Paint.Style.FILL);
         drawNavigationGizmo(canvas, width, 18f*getResources().getDisplayMetrics().density);
@@ -176,7 +223,6 @@ public final class Meshy3DViewport extends View {
         float unit=Math.min(getWidth(),getHeight())*0.235f*zoom;
         float brushPx=Math.max(5f, Math.min(getWidth(),getHeight())*sculptRadius*0.55f);
         float amount=sculptStrength*sculptPressure*(sculptSubtract?-1f:1f)*0.075f;
-        float[] center = cameraPoint(0,0,0);
         float meanY=0f; for(float[] v:vertices) meanY+=v[1]; meanY/=vertices.length;
         float meanX=0f, meanZ=0f;
         for(float[] v:vertices){meanX+=v[0];meanZ+=v[2];}
