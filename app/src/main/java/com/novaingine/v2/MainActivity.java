@@ -396,6 +396,7 @@ public final class MainActivity extends Activity
         addDrawerItem("Export Heightmap PNG", "Save the current terrain height data as a grayscale image", this::openTerrainHeightmapExport);
         addDrawerItem("Import 16-bit RAW Heightmap", "Import a 129 x 129 little-endian .r16 file", this::openTerrainHeightmap16Import);
         addDrawerItem("Import 16-bit PNG Heightmap", "Import a 129 x 129 16-bit grayscale PNG without reducing precision", this::openTerrainHeightmap16PngImport);
+        addDrawerItem("Export 16-bit PNG Heightmap", "Export a 129 x 129 16-bit grayscale PNG", this::openTerrainHeightmap16PngExport);
         addDrawerItem("Export 16-bit RAW Heightmap", "Export full 16-bit terrain height precision", this::openTerrainHeightmap16Export);
         addDrawerItem("Manual Sculpting", "Open the landscape sculpt editor with brush browser, scene tools and viewport controls", this::showMeshSculptor);
         addDrawerItem("Foliage Painting", "Paint trees and bushes into the scene", this::showFoliagePainter);
@@ -845,6 +846,7 @@ public final class MainActivity extends Activity
     private static final int REQUEST_EXPORT_HEIGHTMAP = 7414;
     private static final int REQUEST_IMPORT_HEIGHTMAP16 = 7415;
     private static final int REQUEST_IMPORT_HEIGHTMAP16_PNG = 7418;
+    private static final int REQUEST_EXPORT_HEIGHTMAP16_PNG = 7419;
     private static final int REQUEST_EXPORT_HEIGHTMAP16 = 7416;
     private static final int REQUEST_IMPORT_TERRAIN_TEXTURE = 7417;
     private int pendingTerrainTextureLayer = 0;
@@ -887,6 +889,15 @@ public final class MainActivity extends Activity
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("*/*");
         startActivityForResult(intent, REQUEST_IMPORT_HEIGHTMAP16);
+    }
+
+    private void openTerrainHeightmap16PngExport() {
+        closeToolsDrawer();
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("image/png");
+        intent.putExtra(Intent.EXTRA_TITLE, "Novaingine_Heightmap_129x129_16bit.png");
+        startActivityForResult(intent, REQUEST_EXPORT_HEIGHTMAP16_PNG);
     }
 
     private void openTerrainHeightmap16PngImport() {
@@ -969,6 +980,34 @@ public final class MainActivity extends Activity
                             android.widget.Toast.LENGTH_LONG).show());
                 }
             }, "Nova-Terrain-Texture-Import").start();
+            return;
+        }
+
+        if (requestCode == REQUEST_EXPORT_HEIGHTMAP16_PNG) {
+            if (engineSurface == null) return;
+            engineSurface.getTerrainHeights(heights -> {
+                if (heights == null || heights.length != 129 * 129) {
+                    android.widget.Toast.makeText(this, "Create a landscape before exporting.",
+                            android.widget.Toast.LENGTH_LONG).show();
+                    return;
+                }
+                new Thread(() -> {
+                    try {
+                        byte[] png = encodeTerrainHeightmap16Png(heights);
+                        try (java.io.OutputStream output = getContentResolver().openOutputStream(uri)) {
+                            if (output == null) throw new IllegalStateException("Could not write 16-bit PNG.");
+                            output.write(png);
+                        }
+                        runOnUiThread(() -> android.widget.Toast.makeText(this,
+                                "Exported 129 x 129 16-bit grayscale PNG.",
+                                android.widget.Toast.LENGTH_LONG).show());
+                    } catch (Exception error) {
+                        runOnUiThread(() -> android.widget.Toast.makeText(this,
+                                "16-bit PNG export failed: " + error.getMessage(),
+                                android.widget.Toast.LENGTH_LONG).show());
+                    }
+                }, "Nova-Heightmap16-PNG-Export").start();
+            });
             return;
         }
 
