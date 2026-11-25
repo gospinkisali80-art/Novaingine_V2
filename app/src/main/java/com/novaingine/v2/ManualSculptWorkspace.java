@@ -626,6 +626,30 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 : "Meshy3D  |  " + WORKSPACE_NAMES[activeWorkspaceIndex] + " Workspace");
     }
 
+    /** Return the live document state owned by this Meshy3D workspace. */
+    public org.json.JSONObject exportMeshyDocumentState() {
+        org.json.JSONObject document = new org.json.JSONObject();
+        try {
+            document.put("format", "Meshy3D");
+            document.put("version", 2);
+            document.put("workspace", activeWorkspaceIndex);
+            document.put("mesh", meshyViewport.exportDocumentState());
+            return document;
+        } catch (org.json.JSONException error) {
+            throw new IllegalStateException("Could not serialize Meshy3D document", error);
+        }
+    }
+
+    /** Restore a saved Meshy3D document into this workspace's own viewport. */
+    public boolean importMeshyDocumentState(org.json.JSONObject document) {
+        if (document == null || !"Meshy3D".equals(document.optString("format"))) return false;
+        org.json.JSONObject mesh = document.optJSONObject("mesh");
+        if (mesh == null || meshyViewport == null || !meshyViewport.importDocumentState(mesh)) return false;
+        int savedWorkspace = document.optInt("workspace", activeWorkspaceIndex);
+        if (savedWorkspace >= 0 && savedWorkspace < WORKSPACE_NAMES.length) setActiveWorkspaceIndex(savedWorkspace);
+        return true;
+    }
+
     public int getActiveWorkspaceIndex() { return activeWorkspaceIndex; }
 
     public void showWorkspaceChooser() {
