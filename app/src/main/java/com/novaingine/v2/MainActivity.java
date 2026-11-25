@@ -755,7 +755,7 @@ public final class MainActivity extends Activity
                 break;
             case "External Data":
                 new AlertDialog.Builder(this).setTitle("External Data")
-                        .setMessage("Meshy3D stores scene objects and sculpt mesh data inside the .nova project. Imported GLB files are converted into scene meshes; there are no live external .blend links to pack.")
+                        .setMessage("Meshy3D documents are stored separately as .meshy3d files in the Meshy3DProjects folder. External linked .blend data is not supported yet.")
                         .setPositiveButton("OK", null).show();
                 break;
             case "Clean Up":
@@ -1693,6 +1693,7 @@ public final class MainActivity extends Activity
         if (editorToolbar != null) editorToolbar.setVisibility(View.VISIBLE);
         if (viewportInput != null) viewportInput.setVisibility(View.VISIBLE);
         if (statisticsText != null) statisticsText.setVisibility(View.VISIBLE);
+        if (centeredStatisticsText != null) centeredStatisticsText.setVisibility(centeredStatisticsVisible ? View.VISIBLE : View.GONE);
         if (editorPanels != null) editorPanels.setVisibility(View.VISIBLE);
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
     }
