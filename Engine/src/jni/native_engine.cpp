@@ -397,16 +397,16 @@ float terrainHeightAt(float worldX, float worldZ, bool& found, bool allowHole) {
     for (const nova::SceneObject& object : gScene.getObjects()) {
         if (object.name != "Landscape Terrain") continue;
         auto meshIt = gCustomMeshes.find(object.id);
-        if (meshIt == gCustomMeshes.end()) return 0.0f;
+        if (meshIt == gCustomMeshes.end()) continue;
         const auto& vertices = meshIt->second.getVertices();
         constexpr int resolution = 129;
         constexpr float spacing = 0.5f;
         const float gx = (worldX + 32.0f) / spacing;
         const float gz = (worldZ + 36.0f) / spacing;
         if (gx < 0.0f || gz < 0.0f || gx > 128.0f || gz > 128.0f ||
-            vertices.size() != static_cast<size_t>(resolution * resolution)) return 0.0f;
+            vertices.size() != static_cast<size_t>(resolution * resolution)) continue;
         if (!allowHole && gLandscape.valid() && gLandscape.isHole(std::min(127, static_cast<int>(gx)),
-                std::min(127, static_cast<int>(gz)))) return 0.0f;
+                std::min(127, static_cast<int>(gz)))) continue;
         const int x0 = std::min(127, static_cast<int>(std::floor(gx)));
         const int z0 = std::min(127, static_cast<int>(std::floor(gz)));
         const int x1 = x0 + 1, z1 = z0 + 1;
@@ -489,6 +489,81 @@ bool syncWorldTileMeshFromData(LandscapeWorldTile& tile) {
     nova::SceneObject* object = gScene.find(tile.objectId);
     if (object) object->visible = true;
     return gRenderer.uploadMesh(tile.objectId, gCustomMeshes[tile.objectId]);
+}
+
+LandscapeWorldTile* findLandscapeWorldTileAt(float worldX, float worldZ) {
+    for (auto& entry : gLandscapeWorldTiles) {
+        LandscapeWorldTile& tile = entry.second;
+        const float gx = (worldX - landscapeTileOriginX(tile.tileX)) / tile.data.spacing();
+        const float gz = (worldZ - landscapeTileOriginZ(tile.tileZ)) / tile.data.spacing();
+        if (gx >= 0.0f && gz >= 0.0f && gx <= 128.0f && gz <= 128.0f) return &tile;
+    }
+    return nullptr;
+}
+
+const nova::LandscapeSystem* landscapeDataForTile(int tileX, int tileZ) {
+    if (tileX == 0 && tileZ == 0) return gLandscape.valid() ? &gLandscape : nullptr;
+    auto found = gLandscapeWorldTiles.find(landscapeTileKey(tileX, tileZ));
+    return found == gLandscapeWorldTiles.end() ? nullptr : &found->second.data;
+}
+
+bool createLandscapeWorldTile(int tileX, int tileZ, const std::vector<float>& sourceHeights) {
+    if (!gInitialized || !gLandscape.valid() || (tileX == 0 && tileZ == 0) ||
+        std::abs(tileX) > 10000 || std::abs(tileZ) > 10000 ||
+        sourceHeights.size() != 129u * 129u || gLandscapeWorldTiles.size() >= 256u) return false;
+    const uint64_t key = landscapeTileKey(tileX, tileZ);
+    if (gLandscapeWorldTiles.count(key)) return false;
+
+    LandscapeWorldTile tile;
+    tile.tileX = tileX;
+    tile.tileZ = tileZ;
+    const float originX = landscapeTileOriginX(tileX);
+    const float originZ = landscapeTileOriginZ(tileZ);
+    if (!tile.data.initialize(129, 129, 0.5f, originX, originZ)) return false;
+    std::vector<float> heights = sourceHeights;
+
+    auto neighborHeights = [&](int nx, int nz) -> std::vector<float> {
+        const nova::LandscapeSystem* neighbor = landscapeDataForTile(nx, nz);
+        return neighbor ? neighbor->heights() : std::vector<float>();
+    };
+    const std::vector<float> west = neighborHeights(tileX - 1, tileZ);
+    const std::vector<float> east = neighborHeights(tileX + 1, tileZ);
+    const std::vector<float> south = neighborHeights(tileX, tileZ - 1);
+    const std::vector<float> north = neighborHeights(tileX, tileZ + 1);
+    if (west.size() == heights.size())
+        for (int z = 0; z < 129; ++z) heights[static_cast<size_t>(z * 129)] = west[static_cast<size_t>(z * 129 + 128)];
+    if (east.size() == heights.size())
+        for (int z = 0; z < 129; ++z) heights[static_cast<size_t>(z * 129 + 128)] = east[static_cast<size_t>(z * 129)];
+    if (south.size() == heights.size())
+        for (int x = 0; x < 129; ++x) heights[static_cast<size_t>(x)] = south[static_cast<size_t>(128 * 129 + x)];
+    if (north.size() == heights.size())
+        for (int x = 0; x < 129; ++x) heights[static_cast<size_t>(128 * 129 + x)] = north[static_cast<size_t>(x)];
+    if (!tile.data.setBaseHeights(heights)) return false;
+
+    const nova::Color grass(0.28f, 0.40f, 0.19f, 1.0f);
+    nova::Transform transform;
+    const std::string name = "Landscape Tile " + std::to_string(tileX) + " " + std::to_string(tileZ);
+    tile.objectId = gScene.addObject(name, nova::PrimitiveType::Plane, transform, grass);
+    nova::SceneObject* object = gScene.find(tile.objectId);
+    if (!object) return false;
+    object->material.baseColor = nova::Vec3(grass.r, grass.g, grass.b);
+    object->material.roughness = 0.94f;
+    tile.fullMesh = buildWorldTileMesh(tile.data, tileX, tileZ, 1);
+    if (!tile.fullMesh.isValid()) {
+        gScene.removeObject(tile.objectId);
+        return false;
+    }
+    gCustomMeshes[tile.objectId] = tile.fullMesh;
+    if (!gRenderer.uploadMesh(tile.objectId, gCustomMeshes[tile.objectId])) {
+        gCustomMeshes.erase(tile.objectId);
+        gScene.removeObject(tile.objectId);
+        return false;
+    }
+    tile.loaded = true;
+    tile.lod = 0;
+    gLandscapeWorldTiles.emplace(key, std::move(tile));
+    gScene.select(object->id);
+    return true;
 }
 
 void updateLandscapeWorldStreaming() {
@@ -2895,6 +2970,7 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateTerrain(
             oldTerrain.push_back(object.id);
         }
     }
+    gLandscapeWorldTiles.clear();
     for (uint32_t id : oldTerrain) {
         gRenderer.releaseMesh(id);
         gCustomMeshes.erase(id);
