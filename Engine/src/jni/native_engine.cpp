@@ -472,6 +472,7 @@ void updateTerrainLod() {
     terrain->visible=false;
     auto rootIt=gCustomMeshes.find(terrain->id);
     if(rootIt==gCustomMeshes.end())return;
+    const nova::Mesh rootMesh=rootIt->second;
 
     const auto& chunks=gLandscape.chunks();
     for(size_t i=0;i<chunks.size();++i){
@@ -506,7 +507,7 @@ void updateTerrainLod() {
         }
         if(gTerrainChunksDirty||!wasLoaded||oldLod!=lod||!gCustomMeshes.count(chunkObject->id)){
             const int stride=lod==0?1:(lod==1?2:(lod==2?4:8));
-            nova::Mesh chunkMesh=buildLandscapeChunkMesh(rootIt->second,chunk,stride);
+            nova::Mesh chunkMesh=buildLandscapeChunkMesh(rootMesh,chunk,stride);
             if(chunkMesh.isValid()){
                 gCustomMeshes[chunkObject->id]=std::move(chunkMesh);
                 gRenderer.uploadMesh(chunkObject->id,gCustomMeshes[chunkObject->id]);
