@@ -11,6 +11,8 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import android.graphics.Color;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
@@ -388,6 +390,8 @@ public final class MainActivity extends Activity
 
         addDrawerSection("WORLD BUILDING");
         addDrawerItem("Terrain Sculpting", "Sculpt the generated terrain surface", this::showTerrainSculptor);
+        addDrawerItem("Import Heightmap PNG", "Replace terrain heights from a grayscale image", this::openTerrainHeightmapImport);
+        addDrawerItem("Export Heightmap PNG", "Save the current terrain height data as a grayscale image", this::openTerrainHeightmapExport);
         addDrawerItem("Manual Sculpting", "Open the landscape sculpt editor with brush browser, scene tools and viewport controls", this::showMeshSculptor);
         addDrawerItem("Foliage Painting", "Paint trees and bushes into the scene", this::showFoliagePainter);
         addDrawerItem("Import Blender Model (.glb)", "Import a Blender-exported glTF binary model", this::openGlbPicker);
@@ -831,6 +835,8 @@ public final class MainActivity extends Activity
     }
 
     private static final int REQUEST_IMPORT_GLB = 7412;
+    private static final int REQUEST_IMPORT_HEIGHTMAP = 7413;
+    private static final int REQUEST_EXPORT_HEIGHTMAP = 7414;
 
     public void openSculptAssetPicker() {
         openGlbPicker();
@@ -845,11 +851,99 @@ public final class MainActivity extends Activity
         startActivityForResult(intent, REQUEST_IMPORT_GLB);
     }
 
+    private void openTerrainHeightmapImport() {
+        closeToolsDrawer();
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("image/*");
+        startActivityForResult(intent, REQUEST_IMPORT_HEIGHTMAP);
+    }
+
+    private void openTerrainHeightmapExport() {
+        closeToolsDrawer();
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("image/png");
+        intent.putExtra(Intent.EXTRA_TITLE, "Novaingine_Heightmap.png");
+        startActivityForResult(intent, REQUEST_EXPORT_HEIGHTMAP);
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != REQUEST_IMPORT_GLB || resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
         Uri uri = data.getData();
+
+        if (requestCode == REQUEST_IMPORT_HEIGHTMAP) {
+            new Thread(() -> {
+                try (InputStream input = getContentResolver().openInputStream(uri)) {
+                    if (input == null) throw new IllegalStateException("Could not open heightmap.");
+                    Bitmap decoded = BitmapFactory.decodeStream(input);
+                    if (decoded == null) throw new IllegalArgumentException("Unsupported image. Choose a PNG or other readable image.");
+                    Bitmap scaled = Bitmap.createScaledBitmap(decoded, 129, 129, true);
+                    int[] pixels = new int[129 * 129];
+                    scaled.getPixels(pixels, 0, 129, 0, 0, 129, 129);
+                    float[] heights = new float[pixels.length];
+                    for (int i = 0; i < pixels.length; i++) {
+                        int gray = (Color.red(pixels[i]) + Color.green(pixels[i]) + Color.blue(pixels[i])) / 3;
+                        heights[i] = -12.0f + (gray / 255.0f) * 36.0f;
+                    }
+                    if (scaled != decoded) scaled.recycle();
+                    decoded.recycle();
+                    runOnUiThread(() -> {
+                        if (engineSurface == null) return;
+                        engineSurface.setTerrainHeights(heights, ok ->
+                                android.widget.Toast.makeText(this,
+                                        ok ? "Heightmap imported (129 x 129, 8-bit grayscale)" :
+                                                "Create a landscape first, then import the heightmap.",
+                                        android.widget.Toast.LENGTH_LONG).show());
+                    });
+                } catch (Exception error) {
+                    runOnUiThread(() -> android.widget.Toast.makeText(this,
+                            "Heightmap import failed: " + error.getMessage(),
+                            android.widget.Toast.LENGTH_LONG).show());
+                }
+            }, "Nova-Heightmap-Import").start();
+            return;
+        }
+
+        if (requestCode == REQUEST_EXPORT_HEIGHTMAP) {
+            if (engineSurface == null) return;
+            engineSurface.getTerrainHeights(heights -> {
+                if (heights == null || heights.length != 129 * 129) {
+                    android.widget.Toast.makeText(this, "Create a landscape before exporting.",
+                            android.widget.Toast.LENGTH_LONG).show();
+                    return;
+                }
+                Bitmap bitmap = Bitmap.createBitmap(129, 129, Bitmap.Config.ARGB_8888);
+                int[] pixels = new int[heights.length];
+                for (int i = 0; i < heights.length; i++) {
+                    int gray = Math.max(0, Math.min(255,
+                            Math.round(((heights[i] + 12.0f) / 36.0f) * 255.0f)));
+                    pixels[i] = Color.rgb(gray, gray, gray);
+                }
+                bitmap.setPixels(pixels, 0, 129, 0, 0, 129, 129);
+                new Thread(() -> {
+                    try (java.io.OutputStream output = getContentResolver().openOutputStream(uri)) {
+                        if (output == null || !bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
+                            throw new IllegalStateException("Could not write PNG.");
+                        }
+                        runOnUiThread(() -> android.widget.Toast.makeText(this,
+                                "Heightmap exported as 129 x 129 8-bit grayscale PNG.",
+                                android.widget.Toast.LENGTH_LONG).show());
+                    } catch (Exception error) {
+                        runOnUiThread(() -> android.widget.Toast.makeText(this,
+                                "Heightmap export failed: " + error.getMessage(),
+                                android.widget.Toast.LENGTH_LONG).show());
+                    } finally {
+                        bitmap.recycle();
+                    }
+                }, "Nova-Heightmap-Export").start();
+            });
+            return;
+        }
+
+        if (requestCode != REQUEST_IMPORT_GLB) return;
         new Thread(() -> {
             File modelFile = new File(getCacheDir(), "nova_import_" + System.currentTimeMillis() + ".glb");
             try (InputStream input = getContentResolver().openInputStream(uri);
