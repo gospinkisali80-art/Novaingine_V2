@@ -3577,6 +3577,30 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateLandscapeCave(
         path.emplace_back(raw[i], raw[i+1], raw[i+2]);
     }
     const float radius = std::clamp(static_cast<float>(radiusValue), 0.5f, 8.0f);
+    if (path.size() == 2) {
+        const nova::Vec3 requestedStart = path.front();
+        const nova::Vec3 requestedEnd = path.back();
+        bool startGroundFound = false, endGroundFound = false;
+        const float startGround = terrainHeightAt(requestedStart.x, requestedStart.z, startGroundFound);
+        const float endGround = terrainHeightAt(requestedEnd.x, requestedEnd.z, endGroundFound);
+        const float startY = startGroundFound ? startGround - 0.08f : requestedStart.y + radius;
+        const float endY = endGroundFound ? endGround - 0.08f : requestedEnd.y + radius;
+        const float tunnelDepth = std::min(std::min(requestedStart.y, requestedEnd.y),
+            std::min(startY, endY) - radius * 0.65f);
+        const nova::Vec3 control((requestedStart.x + requestedEnd.x) * 0.5f,
+            tunnelDepth, (requestedStart.z + requestedEnd.z) * 0.5f);
+        path.clear();
+        constexpr int curveSamples = 17;
+        for (int i = 0; i < curveSamples; ++i) {
+            const float t = static_cast<float>(i) / (curveSamples - 1);
+            const float oneMinus = 1.0f - t;
+            path.emplace_back(
+                oneMinus*oneMinus*requestedStart.x + 2.0f*oneMinus*t*control.x + t*t*requestedEnd.x,
+                oneMinus*oneMinus*startY + 2.0f*oneMinus*t*control.y + t*t*endY,
+                oneMinus*oneMinus*requestedStart.z + 2.0f*oneMinus*t*control.z + t*t*requestedEnd.z
+            );
+        }
+    }
     nova::VoxelCaveSystem caveVolume;
     if (!caveVolume.build(path, radius, 0.5f)) return JNI_FALSE;
     nova::Mesh caveMesh = caveVolume.buildSurfaceMesh();
