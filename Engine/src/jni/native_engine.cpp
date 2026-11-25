@@ -2020,7 +2020,7 @@ Java_com_novaingine_v2_NativeBridge_nativeSculptSelectedMesh(
     const float cz = std::clamp(static_cast<float>(czValue), -1000.0f, 1000.0f);
     const float radius = std::clamp(static_cast<float>(radiusValue), 0.01f, 100.0f);
     const float strength = std::clamp(static_cast<float>(strengthValue), 0.001f, 2.0f);
-    const int mode = std::clamp(static_cast<int>(modeValue), 0, 3);
+    const int mode = std::clamp(static_cast<int>(modeValue), 0, 6);
     const bool symmetry = symmetryValue == JNI_TRUE;
     const nova::Mesh& source = found->second;
     std::vector<nova::Vertex> vertices = source.getVertices();
@@ -2515,10 +2515,39 @@ Java_com_novaingine_v2_NativeBridge_nativeSculptTerrain(
                     const float average = sum / static_cast<float>(count);
                     height += (average - height) * std::clamp(strength, 0.0f, 1.0f) * falloff;
                 }
-            } else {
+            } else if (mode == 3) {
                 constexpr float flattenTarget = 0.0f;
                 height += (flattenTarget - height) *
                     std::clamp(strength, 0.0f, 1.0f) * falloff;
+            } else if (mode == 4) {
+                const float wave = std::sin(vertices[index].position.x * 2.37f +
+                                            vertices[index].position.z * 1.91f) *
+                                   std::cos(vertices[index].position.z * 2.73f -
+                                            vertices[index].position.x * 0.83f);
+                height += wave * strength * 0.35f * falloff;
+            } else if (mode == 5) {
+                const float targetHeight =
+                    ((vertices[index].position.z - centerZ) / radius) * strength * 2.0f;
+                height += (targetHeight - height) * falloff;
+            } else {
+                float sum = 0.0f;
+                int count = 0;
+                for (int oz = -1; oz <= 1; ++oz) {
+                    for (int ox = -1; ox <= 1; ++ox) {
+                        const int nx = x + ox, nz = z + oz;
+                        if (nx < 0 || nx >= resolution || nz < 0 || nz >= resolution) continue;
+                        sum += oldHeights[static_cast<size_t>(nz * resolution + nx)];
+                        ++count;
+                    }
+                }
+                if (count > 0) {
+                    const float average = sum / static_cast<float>(count);
+                    const float excess = height - average;
+                    if (excess > 0.10f) {
+                        height -= std::min(excess - 0.10f,
+                                           strength * 0.22f * falloff);
+                    }
+                }
             }
 
             height = std::clamp(height, -12.0f, 24.0f);
