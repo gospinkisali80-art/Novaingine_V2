@@ -50,11 +50,15 @@ public final class Meshy3DSoftwareRenderer {
         int maxX=Math.min(w-1,(int)Math.ceil(Math.max(a.sx,Math.max(b.sx,c.sx))));
         int minY=Math.max(0,(int)Math.floor(Math.min(a.sy,Math.min(b.sy,c.sy))));
         int maxY=Math.min(h-1,(int)Math.ceil(Math.max(a.sy,Math.max(b.sy,c.sy))));
-        float ndl=Math.max(0,dot(n,light));float[] half=normalize(new float[]{light[0]+view[0],light[1]+view[1],light[2]+view[2]});
-        float spec=(float)Math.pow(Math.max(0,dot(n,half)),Math.max(2,128*(1-rough)*(1-rough)));
-        float ambient=.18f,diffuse=ambient+(1-metal)*ndl*.82f;
-        float sr=.04f*(1-metal)+br*metal,sg=.04f*(1-metal)+bg*metal,sb=.04f*(1-metal)+bb*metal;
-        float specular=spec*(.12f+.88f*(1-rough));
+        float ndl=Math.max(0,dot(n,light)),ndv=Math.max(.001f,dot(n,view));
+        float[] half=normalize(new float[]{light[0]+view[0],light[1]+view[1],light[2]+view[2]});
+        float ndh=Math.max(0,dot(n,half)),vdh=Math.max(0,dot(view,half));
+        float alpha=rough*rough,alpha2=alpha*alpha;
+        float denom=ndh*ndh*(alpha2-1f)+1f;
+        float distribution=alpha2/(float)(Math.PI*denom*denom+1e-6);
+        float k=(rough+1f)*(rough+1f)/8f;
+        float geometryV=ndv/(ndv*(1-k)+k),geometryL=ndl/(ndl*(1-k)+k);
+        float geometry=geometryV*geometryL;
         for(int y=minY;y<=maxY;y++)for(int x=minX;x<=maxX;x++){
             float px=x+.5f,py=y+.5f;
             float wa=edge(b.sx,b.sy,c.sx,c.sy,px,py)/area;
@@ -69,10 +73,20 @@ public final class Meshy3DSoftwareRenderer {
                 int ty=Math.max(0,Math.min(th-1,(int)((1-v)*(th-1))));
                 int tex=texture[ty*tw+tx];texR=((tex>>16)&255)/255f;texG=((tex>>8)&255)/255f;texB=(tex&255)/255f;
             }
-            float fog=Math.max(.0f,Math.min(.35f,(z-3f)*.035f));
-            int r=clamp((br*texR*diffuse+sr*specular)*(1-fog)*255+fog*80);
-            int g=clamp((bg*texG*diffuse+sg*specular)*(1-fog)*255+fog*90);
-            int bl=clamp((bb*texB*diffuse+sb*specular)*(1-fog)*255+fog*105);
+            float cr=br*texR,cg=bg*texG,cb=bb*texB;
+            float fr=.04f*(1-metal)+cr*metal,fg=.04f*(1-metal)+cg*metal,fb=.04f*(1-metal)+cb*metal;
+            float fresnel=(float)Math.pow(1-vdh,5);
+            fr+=(1-fr)*fresnel;fg+=(1-fg)*fresnel;fb+=(1-fb)*fresnel;
+            float specScale=distribution*geometry/(4f*ndv*Math.max(.001f,ndl)+.001f);
+            float ambient=.12f;
+            float outR=(cr*(1-metal)*(1-fr)*(ndl*2.0f+ambient)/(float)Math.PI)+fr*specScale*ndl*2.0f;
+            float outG=(cg*(1-metal)*(1-fg)*(ndl*2.0f+ambient)/(float)Math.PI)+fg*specScale*ndl*2.0f;
+            float outB=(cb*(1-metal)*(1-fb)*(ndl*2.0f+ambient)/(float)Math.PI)+fb*specScale*ndl*2.0f;
+            float fog=Math.max(.0f,Math.min(.25f,(z-3f)*.025f));
+            // Simple filmic compression followed by display gamma.
+            int r=clamp((float)Math.pow(outR/(1f+outR),1f/2.2f)*(1-fog)*255+fog*80);
+            int g=clamp((float)Math.pow(outG/(1f+outG),1f/2.2f)*(1-fog)*255+fog*90);
+            int bl=clamp((float)Math.pow(outB/(1f+outB),1f/2.2f)*(1-fog)*255+fog*105);
             pixels[index]=0xFF000000|r<<16|g<<8|bl;
         }
     }
