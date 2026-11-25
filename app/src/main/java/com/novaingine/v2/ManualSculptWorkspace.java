@@ -280,6 +280,16 @@ public final class ManualSculptWorkspace extends FrameLayout {
         viewportFocusMode = false;
         boolean shouldSlide = workspaceLayoutLayer != null && previousIndex != index;
         activeWorkspaceIndex = index;
+        if (index == 2) {
+            sculptEnabled = true;
+            activeEditorMode = "Sculpt Mode";
+            if (modeButton != null) modeButton.setText(activeEditorMode);
+        } else if (previousIndex == 2) {
+            sculptEnabled = false;
+            activeEditorMode = "Object Mode";
+            if (modeButton != null) modeButton.setText(activeEditorMode);
+        }
+        updateSculptViewport();
         for (int i = 0; i < workspaceTabs.size(); i++) {
             TextView tab = workspaceTabs.get(i);
             boolean selected = i == index;
