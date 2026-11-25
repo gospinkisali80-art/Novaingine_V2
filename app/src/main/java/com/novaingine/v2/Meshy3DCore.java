@@ -492,22 +492,59 @@ public final class Meshy3DCore {
             }int[] f=new int[ring.size()];for(int i=0;i<f.length;i++)f[i]=ring.get(i);if(f.length>=3)out.add(new Face(f));
         }faces.clear();faces.addAll(out);clearSelection();rebuildEdges();revision++;
     }
+    public void setTexturePixels(int[] pixels,int width,int height){
+        if(pixels==null||width<1||height<1||pixels.length!=width*height)return;
+        textureWidth=width;textureHeight=height;texturePixels=pixels.clone();revision++;
+    }
     public JSONObject exportState(){
         JSONObject o=new JSONObject();JSONArray vs=new JSONArray(),fs=new JSONArray(),ss=new JSONArray();
-        try{for(float[] p:vertices){JSONArray a=new JSONArray();for(float v:p)a.put(v);vs.put(a);}
+        try{
+            for(float[] p:vertices){JSONArray a=new JSONArray();for(float v:p)a.put(v);vs.put(a);}
             for(Face f:faces){JSONArray a=new JSONArray();for(int v:f.vertices)a.put(v);fs.put(a);}
             for(long s:seams)ss.put(Long.toString(s));
             o.put("vertices",vs);o.put("faces",fs);o.put("seams",ss);o.put("selectMode",selectMode.name());
             o.put("baseColor",baseColor);o.put("metallic",metallic);o.put("roughness",roughness);
+            if(faceUvs!=null){JSONArray uvFaces=new JSONArray();for(float[][] face:faceUvs){JSONArray corners=new JSONArray();for(float[] uv:face){JSONArray pair=new JSONArray();pair.put(uv[0]);pair.put(uv[1]);corners.put(pair);}uvFaces.put(corners);}o.put("faceUvs",uvFaces);}
+            o.put("geometryNodes",writeNodes(geometryNodes));o.put("shaderNodes",writeNodes(shaderNodes));o.put("compositorNodes",writeNodes(compositorNodes));
+            JSONArray channels=new JSONArray();for(AnimationChannel channel:animation.values()){
+                JSONObject co=new JSONObject();co.put("property",channel.property);JSONArray keys=new JSONArray();
+                for(Key key:channel.keys){JSONObject ko=new JSONObject();ko.put("frame",key.frame);ko.put("value",key.value);keys.put(ko);}
+                co.put("keys",keys);channels.put(co);
+            }o.put("animation",channels);
         }catch(JSONException e){throw new IllegalStateException(e);}return o;
     }
+    private JSONArray writeNodes(ArrayList<Node> list)throws JSONException{
+        JSONArray array=new JSONArray();for(Node n:list){JSONObject o=new JSONObject();o.put("type",n.type);o.put("x",n.x);o.put("y",n.y);o.put("z",n.z);o.put("value",n.value);array.put(o);}return array;
+    }
+    private void readNodes(JSONArray array,ArrayList<Node> target)throws JSONException{
+        target.clear();if(array==null)return;for(int i=0;i<array.length();i++){JSONObject o=array.getJSONObject(i);Node n=new Node(o.optString("type",""));n.x=(float)o.optDouble("x",0);n.y=(float)o.optDouble("y",0);n.z=(float)o.optDouble("z",0);n.value=(float)o.optDouble("value",0);target.add(n);}
+    }
     public boolean importState(JSONObject o){
-        try{JSONArray vs=o.getJSONArray("vertices"),fs=o.getJSONArray("faces");if(vs.length()<4||fs.length()<4)return false;
-            ArrayList<float[]> nv=new ArrayList<>();for(int i=0;i<vs.length();i++){JSONArray p=vs.getJSONArray(i);if(p.length()!=3)return false;nv.add(new float[]{(float)p.getDouble(0),(float)p.getDouble(1),(float)p.getDouble(2)});}
-            ArrayList<Face> nf=new ArrayList<>();for(int i=0;i<fs.length();i++){JSONArray f=fs.getJSONArray(i);if(f.length()<3)return false;int[] ids=new int[f.length()];for(int j=0;j<ids.length;j++){ids[j]=f.getInt(j);if(ids[j]<0||ids[j]>=nv.size())return false;}nf.add(new Face(ids));}
-            vertices.clear();vertices.addAll(nv);faces.clear();faces.addAll(nf);seams.clear();JSONArray sm=o.optJSONArray("seams");if(sm!=null)for(int i=0;i<sm.length();i++)seams.add(Long.parseLong(sm.getString(i)));
-            selectMode=SelectMode.valueOf(o.optString("selectMode","FACE"));baseColor=o.optInt("baseColor",baseColor);metallic=(float)o.optDouble("metallic",metallic);roughness=(float)o.optDouble("roughness",roughness);
-            clearSelection();rebuildEdges();revision++;return true;
+        try{
+            JSONArray vs=o.getJSONArray("vertices"),fs=o.getJSONArray("faces");if(vs.length()<4||fs.length()<4)return false;
+            ArrayList<float[]> nv=new ArrayList<>();
+            for(int i=0;i<vs.length();i++){JSONArray p=vs.getJSONArray(i);if(p.length()!=3)return false;float[] v={(float)p.getDouble(0),(float)p.getDouble(1),(float)p.getDouble(2)};for(float q:v)if(Float.isNaN(q)||Float.isInfinite(q)||Math.abs(q)>100000)return false;nv.add(v);}
+            ArrayList<Face> nf=new ArrayList<>();
+            for(int i=0;i<fs.length();i++){JSONArray f=fs.getJSONArray(i);if(f.length()<3)return false;int[] ids=new int[f.length()];for(int j=0;j<ids.length;j++){ids[j]=f.getInt(j);if(ids[j]<0||ids[j]>=nv.size())return false;}nf.add(new Face(ids));}
+            vertices.clear();vertices.addAll(nv);faces.clear();faces.addAll(nf);seams.clear();
+            JSONArray sm=o.optJSONArray("seams");if(sm!=null)for(int i=0;i<sm.length();i++)seams.add(Long.parseLong(sm.getString(i)));
+            selectMode=SelectMode.valueOf(o.optString("selectMode","FACE"));
+            baseColor=o.optInt("baseColor",baseColor);metallic=(float)o.optDouble("metallic",metallic);roughness=(float)o.optDouble("roughness",roughness);
+            clearSelection();rebuildEdges();
+            JSONArray uv=o.optJSONArray("faceUvs");
+            if(uv!=null&&uv.length()==faces.size()){
+                faceUvs=new float[uv.length()][][];
+                for(int i=0;i<uv.length();i++){JSONArray corners=uv.getJSONArray(i);if(corners.length()!=faces.get(i).vertices.length)return false;
+                    faceUvs[i]=new float[corners.length()][2];for(int j=0;j<corners.length();j++){JSONArray pair=corners.getJSONArray(j);faceUvs[i][j][0]=(float)pair.getDouble(0);faceUvs[i][j][1]=(float)pair.getDouble(1);}}
+                rebuildIslands();
+            }else{faceUvs=null;islands.clear();}
+            readNodes(o.optJSONArray("geometryNodes"),geometryNodes);readNodes(o.optJSONArray("shaderNodes"),shaderNodes);readNodes(o.optJSONArray("compositorNodes"),compositorNodes);
+            animation.clear();JSONArray channels=o.optJSONArray("animation");if(channels!=null)for(int i=0;i<channels.length();i++){
+                JSONObject co=channels.getJSONObject(i);String property=co.optString("property","");AnimationChannel channel=new AnimationChannel(property);
+                JSONArray keys=co.optJSONArray("keys");if(keys!=null)for(int j=0;j<keys.length();j++){JSONObject ko=keys.getJSONObject(j);channel.put(ko.optInt("frame",0),(float)ko.optDouble("value",0));}
+                animation.put(property,channel);
+            }
+            revision++;return true;
         }catch(Exception e){return false;}
     }
 }
