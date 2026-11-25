@@ -441,12 +441,25 @@ public final class Meshy3DCore {
         faces.clear();faces.addAll(out);clearSelection();rebuildEdges();revision++;
     }
     public void mergeSelectedByDistance(float threshold){
-        if(selectedVertices.cardinality()<2)return;int[] map=new int[vertices.size()];for(int i=0;i<map.length;i++)map[i]=i;
-        for(int a=selectedVertices.nextSetBit(0);a>=0;a=selectedVertices.nextSetBit(a+1))for(int b=selectedVertices.nextSetBit(a+1);b>=0;b=selectedVertices.nextSetBit(b+1)){
-            float[] p=vertices.get(a),q=vertices.get(b);if(Math.hypot(Math.hypot(p[0]-q[0],p[1]-q[1]),p[2]-q[2])<=threshold)map[b]=a;}
-        for(Face f:faces){for(int i=0;i<f.vertices.length;i++)f.vertices[i]=map[f.vertices[i]];}
-        for(Face f:faces){LinkedHashSet<Integer> unique=new LinkedHashSet<>();for(int v:f.vertices)unique.add(v);int[] arr=new int[unique.size()];int k=0;for(int v:unique)arr[k++]=v;f.vertices=arr;}
-        faces.removeIf(f->f.vertices.length<3);clearSelection();rebuildEdges();revision++;
+        if(selectedVertices.cardinality()<2)return;
+        int[] map=new int[vertices.size()];for(int i=0;i<map.length;i++)map[i]=i;
+        for(int a=selectedVertices.nextSetBit(0);a>=0;a=selectedVertices.nextSetBit(a+1))
+            for(int b=selectedVertices.nextSetBit(a+1);b>=0;b=selectedVertices.nextSetBit(b+1)){
+                float[] p=vertices.get(a),q=vertices.get(b);
+                if(Math.hypot(Math.hypot(p[0]-q[0],p[1]-q[1]),p[2]-q[2])<=threshold)map[b]=a;
+            }
+        for(Face face:faces){
+            ArrayList<Integer> ids=new ArrayList<>();
+            for(int id:face.vertices){int mapped=map[id];if(ids.isEmpty()||ids.get(ids.size()-1)!=mapped)ids.add(mapped);}
+            if(ids.size()>1&&ids.get(0).equals(ids.get(ids.size()-1)))ids.remove(ids.size()-1);
+            int[] result=new int[ids.size()];for(int i=0;i<result.length;i++)result[i]=ids.get(i);face.vertices=result;
+        }
+        faces.removeIf(face->face.vertices.length<3);
+        boolean[] used=new boolean[vertices.size()];for(Face face:faces)for(int id:face.vertices)used[id]=true;
+        int[] compact=new int[vertices.size()];Arrays.fill(compact,-1);ArrayList<float[]> kept=new ArrayList<>();
+        for(int i=0;i<vertices.size();i++)if(used[i]){compact[i]=kept.size();kept.add(vertices.get(i));}
+        for(Face face:faces)for(int i=0;i<face.vertices.length;i++)face.vertices[i]=compact[face.vertices[i]];
+        vertices.clear();vertices.addAll(kept);clearSelection();rebuildEdges();revision++;
     }
     public float[][] copyVertices(){float[][] out=new float[vertices.size()][3];for(int i=0;i<out.length;i++)System.arraycopy(vertices.get(i),0,out[i],0,3);return out;}
     public int[][] copyFaces(){int[][] out=new int[faces.size()][];for(int i=0;i<out.length;i++)out[i]=faces.get(i).vertices.clone();return out;}
