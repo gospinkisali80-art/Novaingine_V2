@@ -15,6 +15,8 @@
 #include <vector>
 #include <utility>
 #include <cstdio>
+#include <cstring>
+#include <zlib.h>
 #include <thread>
 
 #include "../Camera/Camera.h"
@@ -781,6 +783,92 @@ void moveSelected(
         transform.position.z =
             snapValue(transform.position.z, gGridSnap);
     }
+}
+
+
+bool decodeGray16Png(const uint8_t* data, size_t size,
+                     std::vector<uint16_t>& samples, int& width, int& height) {
+    static const uint8_t signature[8] = {137,80,78,71,13,10,26,10};
+    if (!data || size < 8 || std::memcmp(data, signature, 8) != 0) return false;
+    auto readBE32 = [](const uint8_t* p) -> uint32_t {
+        return (static_cast<uint32_t>(p[0]) << 24) |
+               (static_cast<uint32_t>(p[1]) << 16) |
+               (static_cast<uint32_t>(p[2]) << 8) |
+                static_cast<uint32_t>(p[3]);
+    };
+    width = height = 0;
+    int bitDepth = 0, colorType = -1, interlace = -1;
+    std::vector<uint8_t> compressed;
+    size_t offset = 8;
+    bool hasHeader = false, hasEnd = false;
+    while (offset + 12 <= size) {
+        const uint32_t length = readBE32(data + offset);
+        offset += 4;
+        if (length > size - offset - 8) return false;
+        const uint8_t* type = data + offset;
+        const uint8_t* payload = data + offset + 4;
+        if (std::memcmp(type, "IHDR", 4) == 0) {
+            if (length != 13) return false;
+            const uint32_t w = readBE32(payload), h = readBE32(payload + 4);
+            if (w != 129 || h != 129) return false;
+            width = static_cast<int>(w); height = static_cast<int>(h);
+            bitDepth = payload[8]; colorType = payload[9]; interlace = payload[12];
+            if (bitDepth != 16 || colorType != 0 || payload[10] != 0 ||
+                payload[11] != 0 || interlace != 0) return false;
+            hasHeader = true;
+        } else if (std::memcmp(type, "IDAT", 4) == 0) {
+            if (!hasHeader || compressed.size() + length > 8u * 1024u * 1024u) return false;
+            compressed.insert(compressed.end(), payload, payload + length);
+        } else if (std::memcmp(type, "IEND", 4) == 0) {
+            hasEnd = true;
+            break;
+        }
+        offset += static_cast<size_t>(length) + 8u;
+    }
+    if (!hasHeader || !hasEnd || compressed.empty()) return false;
+
+    constexpr size_t bytesPerPixel = 2;
+    const size_t rowBytes = static_cast<size_t>(width) * bytesPerPixel;
+    const size_t filteredSize = (rowBytes + 1u) * static_cast<size_t>(height);
+    std::vector<uint8_t> filtered(filteredSize);
+    uLongf outputSize = static_cast<uLongf>(filtered.size());
+    const int inflateResult = uncompress(filtered.data(), &outputSize,
+        compressed.data(), static_cast<uLong>(compressed.size()));
+    if (inflateResult != Z_OK || outputSize != filtered.size()) return false;
+
+    std::vector<uint8_t> decoded(rowBytes * static_cast<size_t>(height));
+    auto paeth = [](int a, int b, int c) -> int {
+        const int p = a + b - c;
+        const int pa = std::abs(p - a), pb = std::abs(p - b), pc = std::abs(p - c);
+        return pa <= pb && pa <= pc ? a : (pb <= pc ? b : c);
+    };
+    for (int y = 0; y < height; ++y) {
+        const size_t srcRow = static_cast<size_t>(y) * (rowBytes + 1u);
+        const uint8_t filter = filtered[srcRow];
+        if (filter > 4) return false;
+        for (size_t x = 0; x < rowBytes; ++x) {
+            const int raw = filtered[srcRow + 1u + x];
+            const int left = x >= bytesPerPixel ? decoded[static_cast<size_t>(y) * rowBytes + x - bytesPerPixel] : 0;
+            const int up = y > 0 ? decoded[static_cast<size_t>(y - 1) * rowBytes + x] : 0;
+            const int upperLeft = (y > 0 && x >= bytesPerPixel)
+                ? decoded[static_cast<size_t>(y - 1) * rowBytes + x - bytesPerPixel] : 0;
+            int predictor = 0;
+            if (filter == 1) predictor = left;
+            else if (filter == 2) predictor = up;
+            else if (filter == 3) predictor = (left + up) / 2;
+            else if (filter == 4) predictor = paeth(left, up, upperLeft);
+            decoded[static_cast<size_t>(y) * rowBytes + x] =
+                static_cast<uint8_t>((raw + predictor) & 0xFF);
+        }
+    }
+
+    samples.resize(static_cast<size_t>(width) * static_cast<size_t>(height));
+    for (size_t i = 0; i < samples.size(); ++i) {
+        const uint8_t high = decoded[i * 2u];
+        const uint8_t low = decoded[i * 2u + 1u];
+        samples[i] = static_cast<uint16_t>((static_cast<uint16_t>(high) << 8) | low);
+    }
+    return true;
 }
 
 } // namespace
