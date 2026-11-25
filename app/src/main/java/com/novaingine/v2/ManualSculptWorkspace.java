@@ -487,9 +487,16 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 break;
             case 3:
                 if ("Unwrap".equals(item) || "Smart UV Project".equals(item) || "Lightmap Pack".equals(item)) {
-                    checkpointMeshEdit(); meshyViewport.generatePlanarUv();
-                    status.setText("UV Editing | Planar UV coordinates generated for "
-                            + meshyViewport.getVertexCount() + " vertices");
+                    checkpointMeshEdit();meshyViewport.unwrapMesh();
+                    status.setText("UV Editing | Unwrap generated | " + meshyViewport.getUvIslandCount() + " UV islands");
+                } else if ("Mark Seam".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.markSeams(false);status.setText("UV Editing | Seams marked on selected edges");
+                } else if ("Clear Seam".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.markSeams(true);status.setText("UV Editing | Selected seams cleared");
+                } else if ("UV Canvas".equals(item) || "Image / UV View".equals(item)
+                        || "UV Islands".equals(item)) {
+                    if(meshyViewport.getUvIslandCount()==0)meshyViewport.unwrapMesh();
+                    showUvEditor(false);
                 } else if ("Export UV Layout".equals(item)) {
                     android.content.ClipboardManager clipboard = (android.content.ClipboardManager)
                             activity.getSystemService(Activity.CLIPBOARD_SERVICE);
@@ -499,9 +506,16 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 } else showWorkspaceActionInfo(item);
                 break;
             case 4:
-                if ("Brush Color".equals(item) || "New Texture".equals(item)
-                        || "Active Texture".equals(item) || "Draw".equals(item)) showPaintColorDialog();
-                else showWorkspaceActionInfo(item);
+                if ("New Texture".equals(item)) {
+                    meshyViewport.createPaintTexture(1024,1024,0xFFFFFFFF);
+                    showUvEditor(true);
+                    status.setText("Texture Paint | Created 1024 × 1024 RGBA image");
+                } else if ("Brush Color".equals(item)) showPaintColorDialog();
+                else if ("Active Texture".equals(item) || "Draw".equals(item) || "Texture Canvas".equals(item)) {
+                    if(meshyViewport.getDocumentCore().getTexturePixels()==null)
+                        meshyViewport.createPaintTexture(1024,1024,0xFFFFFFFF);
+                    showUvEditor(true);
+                } else showWorkspaceActionInfo(item);
                 break;
             case 5:
                 if ("Base Color".equals(item) || "Viewport Display".equals(item)
@@ -539,6 +553,41 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 break;
             default: showWorkspaceActionInfo(item);
         }
+    }
+
+    private void showUvEditor(boolean paintMode) {
+        Meshy3DUvEditorView editor=new Meshy3DUvEditorView(activity,meshyViewport.getDocumentCore(),paintMode);
+        LinearLayout root=new LinearLayout(activity);root.setOrientation(LinearLayout.VERTICAL);
+        HorizontalScrollView tools=new HorizontalScrollView(activity);tools.setHorizontalScrollBarEnabled(false);
+        LinearLayout buttons=new LinearLayout(activity);buttons.setOrientation(LinearLayout.HORIZONTAL);
+        String[] actions=paintMode?new String[]{"Orange","Blue","White","Smaller Brush","Larger Brush"}
+                :new String[]{"Move +","Move -","Rotate 15°","Rotate -15°","Scale Up","Scale Down"};
+        for(String action:actions){TextView b=dockItem(action,false);buttons.addView(b);
+            b.setOnClickListener(v->{
+                Meshy3DCore core=meshyViewport.getDocumentCore();
+                if(paintMode){
+                    if(action.equals("Orange"))editor.setBrush(0xFFFF6B35,18f,.9f);
+                    else if(action.equals("Blue"))editor.setBrush(0xFF368BFF,18f,.9f);
+                    else if(action.equals("White"))editor.setBrush(0xFFFFFFFF,18f,.9f);
+                    else if(action.equals("Smaller Brush"))editor.setBrush(0xFFFFFFFF,8f,.9f);
+                    else editor.setBrush(0xFFFFFFFF,36f,.9f);
+                }else{
+                    if(action.equals("Move +"))core.transformSelectedUv(.05f,0,1,0);
+                    else if(action.equals("Move -"))core.transformSelectedUv(-.05f,0,1,0);
+                    else if(action.equals("Rotate 15°"))core.transformSelectedUv(0,0,1,(float)Math.toRadians(15));
+                    else if(action.equals("Rotate -15°"))core.transformSelectedUv(0,0,1,(float)Math.toRadians(-15));
+                    else if(action.equals("Scale Up"))core.transformSelectedUv(0,0,1.1f,0);
+                    else core.transformSelectedUv(0,0,.9f,0);
+                    editor.invalidate();
+                }
+            });
+        }
+        tools.addView(buttons);root.addView(tools,new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT,dp(44)));
+        root.addView(editor,new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT,dp(420)));
+        new android.app.AlertDialog.Builder(activity).setTitle(paintMode?"Texture Paint Image":"UV Editor")
+                .setView(root).setPositiveButton("Done",(d,w)->status.setText(paintMode
+                        ?"Texture Paint | Pixel image updated":"UV Editing | UV island changes applied"))
+                .setNegativeButton("Close",null).show();
     }
 
     private void showWorkspaceActionInfo(String item) {
