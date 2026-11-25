@@ -79,6 +79,7 @@ bool gTerrainStrokeActive = false;
 bool gTerrainStrokeHasUndo = false;
 int gTerrainLodLevel = -1;
 bool gTerrainChunksDirty = true;
+int gLandscapeChunkSize = 32;
 bool gHasPreviousSculptHit = false;
 nova::Vec3 gPreviousSculptHit;
 nova::Vec3 gPreviousSculptNormal;
@@ -527,6 +528,7 @@ bool createLandscapeWorldTile(int tileX, int tileZ, const std::vector<float>& so
     const float originX = landscapeTileOriginX(tileX);
     const float originZ = landscapeTileOriginZ(tileZ);
     if (!tile.data.initialize(129, 129, 0.5f, originX, originZ)) return false;
+    tile.data.buildChunks(gLandscapeChunkSize);
     std::vector<float> heights = sourceHeights;
 
     auto neighborHeights = [&](int nx, int nz) -> std::vector<float> {
@@ -3076,6 +3078,7 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateTerrain(
     }
 
     gLandscape.initialize(129, 129, 0.5f, -32.0f, -36.0f);
+    gLandscape.buildChunks(gLandscapeChunkSize);
     constexpr int resolution = 129;
     constexpr float halfExtent = 32.0f;
     constexpr float spacing = (halfExtent * 2.0f) / (resolution - 1);
@@ -3435,14 +3438,25 @@ Java_com_novaingine_v2_NativeBridge_nativeGetLandscapeLayerState(JNIEnv* env,jcl
 
 JNIEXPORT jint JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeGetLandscapeChunkCount(JNIEnv*,jclass) {
-    std::lock_guard<std::mutex> lock(engineMutex);return static_cast<jint>(gLandscape.chunks().size());
+    std::lock_guard<std::mutex> lock(engineMutex);
+    size_t count = gLandscape.valid() ? gLandscape.chunks().size() : 0;
+    for (const auto& tile : gLandscapeWorldTiles) count += tile.second.data.chunks().size();
+    return static_cast<jint>(count);
 }
 
 JNIEXPORT jboolean JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeSetLandscapeChunkSize(JNIEnv*,jclass,jint size) {
     std::lock_guard<std::mutex> lock(engineMutex);
-    if(!gLandscape.valid())return JNI_FALSE;recordUndo(true);
-    removeLandscapeChunkObjects();gLandscape.buildChunks(std::clamp(static_cast<int>(size),8,128));gTerrainChunksDirty=true;return JNI_TRUE;
+    if(!gLandscape.valid() && gLandscapeWorldTiles.empty())return JNI_FALSE;
+    recordUndo(true);
+    gLandscapeChunkSize = std::clamp(static_cast<int>(size), 8, 128);
+    if (gLandscape.valid()) {
+        removeLandscapeChunkObjects();
+        gLandscape.buildChunks(gLandscapeChunkSize);
+    }
+    for (auto& tile : gLandscapeWorldTiles) tile.second.data.buildChunks(gLandscapeChunkSize);
+    gTerrainChunksDirty = true;
+    return JNI_TRUE;
 }
 
 JNIEXPORT jboolean JNICALL
