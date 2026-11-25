@@ -2645,6 +2645,21 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateEmptyScene(
         ground->material.roughness = 0.94f;
         ground->material.metallic = 0.0f;
     }
+
+    // Meshy3D starts each new project with a visible, selectable default cube.
+    nova::Transform cubeTransform;
+    cubeTransform.position = nova::Vec3(0.0f, 1.0f, 0.0f);
+    cubeTransform.scale = nova::Vec3(1.0f, 1.0f, 1.0f);
+    const nova::Color cubeColor(0.72f, 0.76f, 0.82f, 1.0f);
+    const uint32_t cubeId = gScene.addObject(
+        "Cube", nova::PrimitiveType::Cube, cubeTransform, cubeColor
+    );
+    if (nova::SceneObject* cube = gScene.find(cubeId)) {
+        cube->material.baseColor = nova::Vec3(cubeColor.r, cubeColor.g, cubeColor.b);
+        cube->material.roughness = 0.72f;
+        cube->material.metallic = 0.0f;
+    }
+
     gCustomMeshes.clear();
     gSculptMasks.clear();
     gVisualScript = nova::VisualScript();
