@@ -2007,6 +2007,7 @@ Java_com_novaingine_v2_NativeBridge_nativeLoadScene(
     std::lock_guard<std::mutex> sculptLock(gSculptDataMutex);
     recordUndo(true);
     gRenderer.releaseAllMeshes();
+    gRenderer.clearTerrainTextures();
     gScene = std::move(loadedScene);
     if (current && selectedId != 0) gScene.select(selectedId);
     gUndoStack.clear();
@@ -2455,6 +2456,8 @@ Java_com_novaingine_v2_NativeBridge_nativeEnterSculptMode(JNIEnv*, jclass) {
     gRenderer.setSculptCursor(false, nova::Vec3(), nova::Vec3(0,1,0), 0.18f);
     gRenderer.releaseAllMeshes();
     gScene.clear();
+    gLandscape = nova::LandscapeSystem();
+    gLandscapeWorldTiles.clear();
     gCustomMeshes.clear();
     gSculptMasks.clear();
     { std::lock_guard<std::mutex> qlock(gSculptQueueMutex); gSculptQueue.clear(); }
@@ -3684,6 +3687,7 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateEmptyScene(
     gUndoStack.clear();
     gRedoStack.clear();
     gRenderer.releaseAllMeshes();
+    gRenderer.clearTerrainTextures();
     gCamera.reset();
     gPhysicsEnabled = false;
     gVerticalVelocity = 0.0f;
@@ -3712,6 +3716,8 @@ Java_com_novaingine_v2_NativeBridge_nativeResetScene(
     gSculptMeshId = 0;
     gRenderer.setSculptCursor(false, nova::Vec3(), nova::Vec3(0,1,0), 0.18f);
     nova::SceneFactory::buildShowcaseScene(gScene);
+    gLandscape = nova::LandscapeSystem();
+    gLandscapeWorldTiles.clear();
     gCustomMeshes.clear();
     gSculptMasks.clear();
     gRenderer.releaseAllMeshes();
