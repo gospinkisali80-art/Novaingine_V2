@@ -1088,7 +1088,7 @@ public final class MainActivity extends Activity
         content.setPadding(dp(18), dp(8), dp(18), dp(8));
 
         TextView info = new TextView(this);
-        info.setText("LANDSCAPE • 129 x 129 connected heightfield\\nCreate a continuous terrain surface, then shape it with height brushes. Brush positions use world X/Z coordinates.");
+        info.setText("LANDSCAPE • 129 x 129 connected heightfield\nCreate a continuous terrain surface, then shape it with height brushes. Brush positions use world X/Z coordinates.");
         info.setTextColor(Color.DKGRAY);
         info.setTextSize(12);
         content.addView(info);
@@ -1136,7 +1136,7 @@ public final class MainActivity extends Activity
                         ok ? "129 x 129 landscape created" : "Landscape creation failed",
                         android.widget.Toast.LENGTH_SHORT).show()));
 
-        String[] brushNames = {"Raise", "Lower", "Smooth", "Flatten"};
+        String[] brushNames = {"Raise", "Lower", "Smooth", "Flatten", "Noise", "Ramp", "Erode"};
         for (int mode = 0; mode < brushNames.length; mode++) {
             final int brushMode = mode;
             TextView action = new TextView(this);
