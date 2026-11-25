@@ -210,17 +210,49 @@ public final class Meshy3DCore {
     }
     public void unwrapPlanar(){
         faceUvs=new float[faces.size()][];islands.clear();
-        // LSCM-ready corner UV storage. The current first solver pass uses a
-        // per-face least-distortion local projection and keeps seam-separated islands.
-        for(int fi=0;fi<faces.size();fi++){
-            int[] f=faces.get(fi).vertices;float[] normal=normal(f);
-            int drop=Math.abs(normal[0])>Math.abs(normal[1])?(Math.abs(normal[0])>Math.abs(normal[2])?0:2):(Math.abs(normal[1])>Math.abs(normal[2])?1:2);
-            float[][] uv=new float[f.length][2];float minU=Float.MAX_VALUE,minV=Float.MAX_VALUE,maxU=-Float.MAX_VALUE,maxV=-Float.MAX_VALUE;
-            for(int j=0;j<f.length;j++){float[] p=vertices.get(f[j]);uv[j][0]=p[(drop+1)%3];uv[j][1]=p[(drop+2)%3];minU=Math.min(minU,uv[j][0]);maxU=Math.max(maxU,uv[j][0]);minV=Math.min(minV,uv[j][1]);maxV=Math.max(maxV,uv[j][1]);}
-            for(int j=0;j<f.length;j++){uv[j][0]=(uv[j][0]-minU)/Math.max(.0001f,maxU-minU);uv[j][1]=(uv[j][1]-minV)/Math.max(.0001f,maxV-minV);}
-            faceUvs[fi]=uv;
+        // Create seams at hard normal discontinuities, preserving explicitly marked seams.
+        for(Edge edge:edges)if(edge.faces.size()==2){
+            float[] a=normal(faces.get(edge.faces.get(0)).vertices);
+            float[] b=normal(faces.get(edge.faces.get(1)).vertices);
+            float la=(float)Math.sqrt(a[0]*a[0]+a[1]*a[1]+a[2]*a[2]);
+            float lb=(float)Math.sqrt(b[0]*b[0]+b[1]*b[1]+b[2]*b[2]);
+            if(la>1e-6&&lb>1e-6){
+                float dot=(a[0]*b[0]+a[1]*b[1]+a[2]*b[2])/(la*lb);
+                if(dot<.985f)seams.add(edgeKey(edge.a,edge.b));
+            }
         }
-        rebuildIslands();revision++;
+        rebuildIslands();
+        int cols=Math.max(1,(int)Math.ceil(Math.sqrt(islands.size())));
+        int rows=Math.max(1,(int)Math.ceil(islands.size()/(float)cols));
+        float tileW=1f/cols,tileH=1f/rows,margin=.035f;
+        for(int islandIndex=0;islandIndex<islands.size();islandIndex++){
+            UvIsland island=islands.get(islandIndex);
+            float[] n={0,0,0};for(int fi:island.faces){float[] fn=normal(faces.get(fi).vertices);for(int k=0;k<3;k++)n[k]+=fn[k];}
+            float nl=(float)Math.sqrt(n[0]*n[0]+n[1]*n[1]+n[2]*n[2]);if(nl<1e-6)nl=1;
+            for(int k=0;k<3;k++)n[k]/=nl;
+            int[] first=faces.get(island.faces.get(0)).vertices;float[] p0=vertices.get(first[0]),p1=vertices.get(first[1]);
+            float[] u={p1[0]-p0[0],p1[1]-p0[1],p1[2]-p0[2]};
+            float dot=u[0]*n[0]+u[1]*n[1]+u[2]*n[2];for(int k=0;k<3;k++)u[k]-=dot*n[k];
+            float ul=(float)Math.sqrt(u[0]*u[0]+u[1]*u[1]+u[2]*u[2]);if(ul<1e-6){u=new float[]{1,0,0};ul=1;}
+            for(int k=0;k<3;k++)u[k]/=ul;
+            float[] v={n[1]*u[2]-n[2]*u[1],n[2]*u[0]-n[0]*u[2],n[0]*u[1]-n[1]*u[0]};
+            HashMap<Integer,float[]> projected=new HashMap<>();float minU=Float.MAX_VALUE,minV=Float.MAX_VALUE,maxU=-Float.MAX_VALUE,maxV=-Float.MAX_VALUE;
+            for(int fi:island.faces)for(int id:faces.get(fi).vertices)if(!projected.containsKey(id)){
+                float[] p=vertices.get(id);float pu=p[0]*u[0]+p[1]*u[1]+p[2]*u[2],pv=p[0]*v[0]+p[1]*v[1]+p[2]*v[2];
+                projected.put(id,new float[]{pu,pv});minU=Math.min(minU,pu);maxU=Math.max(maxU,pu);minV=Math.min(minV,pv);maxV=Math.max(maxV,pv);
+            }
+            float rangeU=Math.max(.0001f,maxU-minU),rangeV=Math.max(.0001f,maxV-minV);
+            float scale=Math.min((tileW-2*margin)/rangeU,(tileH-2*margin)/rangeV);
+            float usedW=rangeU*scale,usedH=rangeV*scale;
+            float ox=(islandIndex%cols)*tileW+(tileW-usedW)*.5f;
+            float oy=(islandIndex/cols)*tileH+(tileH-usedH)*.5f;
+            for(int fi:island.faces){int[] f=faces.get(fi).vertices;float[][] uv=new float[f.length][2];
+                for(int j=0;j<f.length;j++){float[] q=projected.get(f[j]);uv[j][0]=ox+(q[0]-minU)*scale;uv[j][1]=oy+(q[1]-minV)*scale;}
+                faceUvs[fi]=uv;
+            }
+            island.minU=ox;island.minV=oy;island.maxU=ox+usedW;island.maxV=oy+usedH;
+        }
+        revision++;
     }
     private float[] normal(int[] f){
         float[] a=vertices.get(f[0]),b=vertices.get(f[1]),c=vertices.get(f[2]);
