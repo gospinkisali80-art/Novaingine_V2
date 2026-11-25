@@ -2278,7 +2278,6 @@ public final class MainActivity extends Activity
 
     private void enterProject(String message) {
         loadTerrainTextureAssets();
-        loadLandscapeWorldTiles();
         if (projectStartPage != null) rootLayout.removeView(projectStartPage);
         projectStartPage = null;
         projectHandler.removeCallbacks(autoSaveTask);
