@@ -350,6 +350,11 @@ public final class EngineSurface extends GLSurfaceView
         queueEvent(() -> NativeBridge.nativeSelectObjectById(objectId));
     }
 
+    public void setSelectedMaterialColor(float red, float green, float blue) {
+        queueEvent(() -> NativeBridge.nativeSetSelectedMaterialColor(red, green, blue));
+        requestRender();
+    }
+
     public void setSelectedTransform(float[] values) {
         float[] copy = values.clone();
         queueEvent(() -> NativeBridge.nativeSetSelectedTransform(copy));
