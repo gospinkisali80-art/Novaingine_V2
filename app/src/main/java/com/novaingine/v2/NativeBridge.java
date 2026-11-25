@@ -139,6 +139,7 @@ public final class NativeBridge {
     public static native int nativeGetLandscapeChunkCount();
     public static native int nativeGetLandscapeLayerCount();
     public static native String nativeGetLandscapeLayerName(int index);
+    public static native float[] nativeGetLandscapeLayerState(int index);
     public static native boolean nativeSetLandscapeChunkSize(int quadsPerChunk);
     public static native float[] nativeGetTerrainHeights();
 
