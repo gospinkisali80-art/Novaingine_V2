@@ -126,7 +126,7 @@ public final class Meshy3DViewport extends View {
 
     private void drawNavigationGizmo(Canvas canvas,float width,float margin) {
         float d=getResources().getDisplayMetrics().density;
-        float gx=width-47*d, gy=150*d, r=23*d;
+        float gx=width-190*d, gy=150*d, r=23*d;
         paint.setStyle(Paint.Style.FILL); paint.setColor(0xFF20252C);
         canvas.drawCircle(gx,gy,r+8*d,paint);
         paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(1*d);
@@ -185,7 +185,7 @@ public final class Meshy3DViewport extends View {
                 return true;
             case MotionEvent.ACTION_UP:
                 if(!moved){
-                    float gx=getWidth()-47*d, gy=150*d, radius=35*d;
+                    float gx=getWidth()-190*d, gy=150*d, radius=35*d;
                     float dx=event.getX()-gx,dy=event.getY()-gy;
                     if(dx*dx+dy*dy<=radius*radius){
                         snapToNearestAxis(dx,dy);
