@@ -143,6 +143,7 @@ public:
     void endFrame();
 
     bool uploadMesh(uint32_t objectId, const Mesh& mesh);
+    bool setTerrainTexture(int layer, int mapType, int width, int height, const uint8_t* rgbaPixels);
     void releaseMesh(uint32_t objectId);
     void releaseAllMeshes();
 
@@ -330,6 +331,8 @@ private:
     float sculptCursorRadius_ = 0.18f;
 
     GLuint whiteTexture_ = 0;
+    GLuint terrainTextures_[4][3] = {};
+    unsigned int terrainTextureMask_[3] = {};
 
     float lightDirection_[3] = {
         -0.45f,
