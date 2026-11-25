@@ -2784,6 +2784,17 @@ Java_com_novaingine_v2_NativeBridge_nativeAddLandscapeSpline(
 }
 
 JNIEXPORT jint JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeGetLandscapeLayerCount(JNIEnv*,jclass) {
+    std::lock_guard<std::mutex> lock(engineMutex);return static_cast<jint>(gLandscape.layers().size());
+}
+JNIEXPORT jstring JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeGetLandscapeLayerName(JNIEnv* env,jclass,jint index) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    const auto& layers=gLandscape.layers();if(index<0||index>=static_cast<jint>(layers.size()))return nullptr;
+    return env->NewStringUTF(layers[static_cast<size_t>(index)].name.c_str());
+}
+
+JNIEXPORT jint JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeGetLandscapeChunkCount(JNIEnv*,jclass) {
     std::lock_guard<std::mutex> lock(engineMutex);return static_cast<jint>(gLandscape.chunks().size());
 }
