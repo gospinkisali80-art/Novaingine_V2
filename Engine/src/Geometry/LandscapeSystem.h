@@ -32,6 +32,30 @@ public:
     int width()const{return width_;} int height()const{return height_;}
     float spacing()const{return spacing_;} float originX()const{return originX_;} float originZ()const{return originZ_;}
     const std::vector<Layer>& layers()const{return layers_;}
+    const std::vector<float>& baseHeights() const { return baseHeight_; }
+    const std::vector<std::array<float,4>>& baseWeights() const { return baseWeights_; }
+    bool restoreLayers(const std::vector<Layer>& restored) {
+        if (!valid() || restored.empty() || restored.size() > 32) return false;
+        for (const Layer& layer : restored) {
+            if (layer.heightDelta.size() != baseHeight_.size() ||
+                layer.paintDelta.size() != baseHeight_.size()) return false;
+        }
+        layers_ = restored;
+        active_ = static_cast<int>(layers_.size()) - 1;
+        return true;
+    }
+    bool restoreSplines(const std::vector<std::vector<SplinePoint>>& restored) {
+        if (!valid() || restored.size() > 4096) return false;
+        for (const auto& spline : restored) {
+            if (spline.size() < 2 || spline.size() > 4096) return false;
+            for (const auto& point : spline)
+                if (!std::isfinite(point.x) || !std::isfinite(point.z) ||
+                    !std::isfinite(point.width) || point.width < 0.5f || point.width > 32.0f)
+                    return false;
+        }
+        splines_ = restored;
+        return true;
+    }
     const std::vector<Chunk>& chunks()const{return chunks_;}
     const std::vector<uint8_t>& holes()const{return holes_;}
     const std::vector<std::vector<SplinePoint>>& splines()const{return splines_;}
