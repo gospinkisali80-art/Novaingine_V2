@@ -31,6 +31,36 @@ struct RendererSettings {
     float outlineThickness = 2.0f;
 
     int shadowResolution = 1024;
+
+    // Mobile world-environment controls (OpenGL ES 3.x).
+    bool directionalLightEnabled = true;
+    bool skyLightEnabled = true;
+    bool skyAtmosphereEnabled = true;
+    bool volumetricCloudsEnabled = true;
+    bool heightFogEnabled = false;
+    bool bloomEnabled = true;
+
+    float directionalLightDirection[3] = {-0.45f, -0.80f, -0.35f};
+    float directionalLightColor[3] = {1.0f, 0.96f, 0.88f};
+    float directionalLightIntensity = 3.0f;
+
+    float skyLightColor[3] = {0.34f, 0.40f, 0.50f};
+    float skyLightIntensity = 0.45f;
+    float atmosphereRayleigh = 1.0f;
+    float atmosphereMie = 0.12f;
+
+    float cloudCoverage = 0.55f;
+    float cloudDensity = 0.75f;
+    float cloudSpeed = 0.002f;
+
+    float fogDensity = 0.0f;
+    float fogHeight = 0.0f;
+    float fogFalloff = 0.2f;
+    float fogColor[3] = {0.70f, 0.76f, 0.82f};
+
+    float bloomIntensity = 0.15f;
+    float colorContrast = 1.0f;
+    float colorSaturation = 1.0f;
 };
 
 struct RendererStatistics {
