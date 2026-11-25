@@ -19,19 +19,74 @@ public final class Meshy3DViewport extends View {
     // Six independent side grids give 3,750 editable vertices and 3,456 quads.
     // Matching border vertices receive the same screen-space brush dabs.
     private static final int MESH_SUBDIVISIONS = 24;
-    private final float[][] vertices = createDenseCubeVertices();
-    private final int[][] faces = createDenseCubeFaces();
-    private final float[] vertexMask = new float[vertices.length];
+    private final Meshy3DCore document = new Meshy3DCore();
+    private float[][] vertices = document.copyVertices();
+    private int[][] faces = document.copyFaces();
+    private float[] vertexMask = new float[vertices.length];
+    private boolean meshEditMode;
+    private Meshy3DCore.SelectMode selectionMode = Meshy3DCore.SelectMode.FACE;
     private boolean meshVisible = true;
     private boolean showFloorGrid = true;
     private boolean showTopology = true;
     private int meshTint = 0xFF9DAAB7;
     private float metallic = 0.0f;
     private float roughness = 0.65f;
-    private final float[][] originalVertices = createDenseCubeVertices();
+    private final float[][] originalVertices = document.copyVertices();
     private float[][] uvCoordinates;
     private final java.util.HashMap<Integer, float[][]> meshKeyframes = new java.util.HashMap<>();
 
+
+    public Meshy3DCore getDocumentCore(){return document;}
+    private void syncCoreFromViewport(){document.replaceGeometry(vertices,faces);}
+    private void syncViewportFromCore(){
+        vertices=document.copyVertices();faces=document.copyFaces();vertexMask=new float[vertices.length];
+        uvCoordinates=null;invalidate();
+    }
+    public void setMeshEditMode(boolean enabled){meshEditMode=enabled;invalidate();}
+    public boolean isMeshEditMode(){return meshEditMode;}
+    public void setSelectionMode(String mode){
+        if("Vertex".equalsIgnoreCase(mode))selectionMode=Meshy3DCore.SelectMode.VERTEX;
+        else if("Edge".equalsIgnoreCase(mode))selectionMode=Meshy3DCore.SelectMode.EDGE;
+        else selectionMode=Meshy3DCore.SelectMode.FACE;
+        document.setSelectMode(selectionMode);invalidate();
+    }
+    public String getSelectionMode(){return selectionMode.name();}
+    public int getSelectedElementCount(){return document.getSelectedCount();}
+    public void selectAllElements(){document.selectAll();invalidate();}
+    public void selectAt(float x,float y,boolean additive){
+        float cx=getWidth()*.5f,cy=getHeight()*.49f,unit=Math.min(getWidth(),getHeight())*.235f*zoom;
+        if(selectionMode==Meshy3DCore.SelectMode.VERTEX)document.selectNearestVertex(x,y,cx,cy,unit,yaw,pitch,additive);
+        else if(selectionMode==Meshy3DCore.SelectMode.EDGE)document.selectNearestEdge(x,y,cx,cy,unit,yaw,pitch,additive);
+        else document.selectNearestFace(x,y,cx,cy,unit,yaw,pitch,additive);
+        invalidate();
+    }
+    public void insetSelected(float amount){syncCoreFromViewport();document.insetSelected(amount);syncViewportFromCore();}
+    public void bevelSelected(float amount){syncCoreFromViewport();document.bevelSelectedEdges(amount);syncViewportFromCore();}
+    public void loopCutSelected(float factor){syncCoreFromViewport();document.loopCutSelected(factor);syncViewportFromCore();}
+    public void subdivideSelected(){syncCoreFromViewport();document.subdivide();syncViewportFromCore();}
+    public void extrudeSelected(float amount){syncCoreFromViewport();document.extrudeSelected(amount);syncViewportFromCore();}
+    public void mergeSelected(float distance){syncCoreFromViewport();document.mergeSelectedByDistance(distance);syncViewportFromCore();}
+    public void smoothTopology(float amount,int iterations){syncCoreFromViewport();document.smooth(amount,iterations);syncViewportFromCore();}
+    public void markSeams(boolean clear){syncCoreFromViewport();document.markSelectedSeams(clear);invalidate();}
+    public void unwrapMesh(){syncCoreFromViewport();document.unwrapPlanar();generatePlanarUv();invalidate();}
+    public void createPaintTexture(int width,int height,int color){document.createTexture(width,height,color);}
+    public void paintTexturePixel(int x,int y,int color,float radius,float opacity){
+        document.setBrush(color,radius,opacity);document.paintPixel(x,y);
+    }
+    public int getUvIslandCount(){return document.getUvIslandCount();}
+    public void addGeometryNode(String type,float x,float y,float z,float value){document.addGeometryNode(type,x,y,z,value);}
+    public void evaluateGeometryNodes(){syncCoreFromViewport();document.evaluateGeometryNodes();syncViewportFromCore();}
+    public void addCompositorNode(String type,float value){document.addCompositorNode(type,value);}
+    public int getCompositorNodeCount(){return document.getCompositorNodeCount();}
+    public void addShaderNode(String type){document.addShaderNode(type);}
+    public int getShaderNodeCount(){return document.getShaderNodeCount();}
+    public void insertAnimationKey(String property,int frame,float value){document.insertKeyframe(property,frame,value);}
+    public float evaluateAnimation(String property,float frame,float fallback){return document.evaluateAnimation(property,frame,fallback);}
+    public int getAnimationKeyCount(){return document.getAnimationKeyCount();}
+    public org.json.JSONObject exportCoreState(){syncCoreFromViewport();return document.exportState();}
+    public boolean importCoreState(org.json.JSONObject state){
+        if(!document.importState(state))return false;syncViewportFromCore();return true;
+    }
 
     private static float[][] createDenseCubeVertices() {
         int n = MESH_SUBDIVISIONS + 1;
@@ -191,11 +246,23 @@ public final class Meshy3DViewport extends View {
             path.close();
             int side = f / (MESH_SUBDIVISIONS * MESH_SUBDIVISIONS);
             int base = FACE_COLORS[side];
-            int shaded = blendColor(base, meshTint, 0.48f);
+            int shaded = document.isFaceSelected(f) ? 0xFFFFA52B : blendColor(base, meshTint, 0.48f);
             paint.setStyle(Paint.Style.FILL); paint.setColor(shaded); canvas.drawPath(path,paint);
             if (showTopology) {
                 paint.setStyle(Paint.Style.STROKE); paint.setColor(0xAA303840);
                 paint.setStrokeWidth(0.65f); canvas.drawPath(path,paint);
+            }
+        }
+        if(meshEditMode){
+            paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(2.2f);
+            for(int i=0;i<document.getEdges().size();i++)if(document.isEdgeSelected(i)){
+                Meshy3DCore.Edge e=document.getEdges().get(i);float[] a=p[e.a],b=p[e.b];
+                paint.setColor(0xFFFFA52B);canvas.drawLine(a[0],a[1],b[0],b[1],paint);
+            }
+            if(selectionMode==Meshy3DCore.SelectMode.VERTEX){
+                paint.setStyle(Paint.Style.FILL);paint.setColor(0xFFFFA52B);
+                for(int i=0;i<vertices.length;i++)if(document.isVertexSelected(i))
+                    canvas.drawCircle(p[i][0],p[i][1],5f*getResources().getDisplayMetrics().density,paint);
             }
         }
         paint.setStyle(Paint.Style.FILL);
@@ -280,6 +347,7 @@ public final class Meshy3DViewport extends View {
                 v[2]=z2;
             } else if (operation == 2) { v[0]*=x; v[1]*=y; v[2]*=z; }
         }
+        syncCoreFromViewport();
         invalidate();
     }
 
@@ -300,12 +368,14 @@ public final class Meshy3DViewport extends View {
             }
             for(int i=0;i<vertices.length;i++) System.arraycopy(next[i],0,vertices[i],0,3);
         }
+        syncCoreFromViewport();
         invalidate();
     }
 
     public void extrudeMesh(float distance) {
         for(float[] v:vertices){float length=(float)Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]);
             if(length>0.0001f){v[0]+=v[0]/length*distance;v[1]+=v[1]/length*distance;v[2]+=v[2]/length*distance;}}
+        syncCoreFromViewport();
         invalidate();
     }
     public void setMeshVisible(boolean visible){meshVisible=visible;invalidate();}
@@ -323,8 +393,9 @@ public final class Meshy3DViewport extends View {
     public int getVertexCount(){return vertices.length;}
     public int getFaceCount(){return faces.length;}
     public void resetMesh(){
-        for(int i=0;i<vertices.length;i++) System.arraycopy(originalVertices[i],0,vertices[i],0,3);
-        java.util.Arrays.fill(vertexMask,0f);meshVisible=true;showTopology=true;invalidate();
+        vertices=document.copyVertices();faces=document.copyFaces();
+        vertexMask=new float[vertices.length];meshVisible=true;showTopology=true;
+        document.clearSelection();invalidate();
     }
 
     public void setSculptSettings(boolean enabled, int brush, float radius, float strength,
@@ -460,12 +531,14 @@ public final class Meshy3DViewport extends View {
                 return true;
             case MotionEvent.ACTION_UP:
                 strokeActive=false;
+                if(!moved && sculpting){syncCoreFromViewport();}
                 if(!moved && !sculpting){
                     float gx=getWidth()-190*d, gy=150*d, radius=35*d;
                     float dx=event.getX()-gx,dy=event.getY()-gy;
                     if(dx*dx+dy*dy<=radius*radius){
                         snapToNearestAxis(dx,dy);
-                    } else if(onViewportTap!=null) onViewportTap.run();
+                    } else if(meshEditMode){selectAt(event.getX(),event.getY(),event.isShiftPressed());}
+                    else if(onViewportTap!=null) onViewportTap.run();
                 }
                 lastPinchDistance=0; performClick(); return true;
             case MotionEvent.ACTION_CANCEL:
