@@ -508,7 +508,7 @@ const nova::LandscapeSystem* landscapeDataForTile(int tileX, int tileZ) {
 }
 
 bool createLandscapeWorldTile(int tileX, int tileZ, const std::vector<float>& sourceHeights) {
-    if (!gInitialized || !gLandscape.valid() || (tileX == 0 && tileZ == 0) ||
+    if (!gInitialized || (tileX == 0 && tileZ == 0) ||
         std::abs(tileX) > 10000 || std::abs(tileZ) > 10000 ||
         sourceHeights.size() != 129u * 129u || gLandscapeWorldTiles.size() >= 256u) return false;
     const uint64_t key = landscapeTileKey(tileX, tileZ);
@@ -564,6 +564,24 @@ bool createLandscapeWorldTile(int tileX, int tileZ, const std::vector<float>& so
     gLandscapeWorldTiles.emplace(key, std::move(tile));
     gScene.select(object->id);
     return true;
+}
+
+nova::LandscapeSystem* landscapeAtWorld(float worldX, float worldZ) {
+    if (gLandscape.valid()) {
+        const float gx = (worldX - gLandscape.originX()) / gLandscape.spacing();
+        const float gz = (worldZ - gLandscape.originZ()) / gLandscape.spacing();
+        if (gx >= 0.0f && gz >= 0.0f && gx <= 128.0f && gz <= 128.0f) return &gLandscape;
+    }
+    LandscapeWorldTile* tile = findLandscapeWorldTileAt(worldX, worldZ);
+    return tile ? &tile->data : nullptr;
+}
+
+bool syncLandscapeAtWorld(float worldX, float worldZ) {
+    nova::LandscapeSystem* data = landscapeAtWorld(worldX, worldZ);
+    if (!data) return false;
+    if (data == &gLandscape) return syncLandscapeMeshFromData();
+    LandscapeWorldTile* tile = findLandscapeWorldTileAt(worldX, worldZ);
+    return tile && syncWorldTileMeshFromData(*tile);
 }
 
 void updateLandscapeWorldStreaming() {
@@ -3188,10 +3206,12 @@ Java_com_novaingine_v2_NativeBridge_nativeSculptTerrainAtScreen(
     const float strength=std::clamp(static_cast<float>(strengthValue),0.005f,2.5f);
     const int mode=std::clamp(static_cast<int>(modeValue),0,6);
     if(!gTerrainStrokeActive||!gTerrainStrokeHasUndo){recordUndo(true);if(gTerrainStrokeActive)gTerrainStrokeHasUndo=true;}
-    const bool changed=gLandscape.sculpt(hitX,hitZ,radius,strength,mode);
+    nova::LandscapeSystem* target = landscapeAtWorld(hitX, hitZ);
+    if (!target) return JNI_FALSE;
+    const bool changed = target->sculpt(hitX, hitZ, radius, strength, mode);
     gRenderer.setSculptCursor(true,nova::Vec3(hitX,hitY+0.02f,hitZ),nova::Vec3(0,1,0),radius);
     if(!changed)return JNI_FALSE;
-    return syncLandscapeMeshFromData()?JNI_TRUE:JNI_FALSE;
+    return syncLandscapeAtWorld(hitX, hitZ)?JNI_TRUE:JNI_FALSE;
 }
 
 JNIEXPORT jboolean JNICALL
@@ -3208,9 +3228,11 @@ Java_com_novaingine_v2_NativeBridge_nativePaintTerrainAtScreen(
     const float radius=std::clamp(static_cast<float>(radiusValue),0.5f,24.0f);
     const float strength=std::clamp(static_cast<float>(strengthValue),0.0f,1.0f);
     const int layer=std::clamp(static_cast<int>(material),0,3);
-    bool changed=gLandscape.paint(x,z,radius,strength,layer);
+    nova::LandscapeSystem* target = landscapeAtWorld(x, z);
+    if (!target) return JNI_FALSE;
+    bool changed = target->paint(x,z,radius,strength,layer);
     gRenderer.setSculptCursor(true,nova::Vec3(x,y+0.02f,z),nova::Vec3(0,1,0),radius);
-    return changed&&syncLandscapeMeshFromData()?JNI_TRUE:JNI_FALSE;
+    return changed&&syncLandscapeAtWorld(x,z)?JNI_TRUE:JNI_FALSE;
 }
 
 JNIEXPORT jboolean JNICALL
@@ -3273,12 +3295,14 @@ Java_com_novaingine_v2_NativeBridge_nativeSetTerrainHoleAtScreen(
     JNIEnv*,jclass,jfloat screenX,jfloat screenY,jboolean makeHole
 ) {
     std::lock_guard<std::mutex> lock(engineMutex);
-    if(!gInitialized||!gLandscape.valid())return JNI_FALSE;
+    if(!gInitialized||(!gLandscape.valid()&&gLandscapeWorldTiles.empty()))return JNI_FALSE;
     float x=0,z=0,y=0;if(!terrainScreenHit(screenX,screenY,x,z,y,true))return JNI_FALSE;
-    const int gx=std::clamp(static_cast<int>((x+32.0f)/0.5f),0,127);
-    const int gz=std::clamp(static_cast<int>((z+36.0f)/0.5f),0,127);
+    nova::LandscapeSystem* target = landscapeAtWorld(x,z);
+    if (!target) return JNI_FALSE;
+    const int gx=std::clamp(static_cast<int>((x-target->originX())/target->spacing()),0,target->width()-2);
+    const int gz=std::clamp(static_cast<int>((z-target->originZ())/target->spacing()),0,target->height()-2);
     recordUndo(true);
-    return gLandscape.setHole(gx,gz,makeHole==JNI_TRUE)&&syncLandscapeMeshFromData()?JNI_TRUE:JNI_FALSE;
+    return target->setHole(gx,gz,makeHole==JNI_TRUE)&&syncLandscapeAtWorld(x,z)?JNI_TRUE:JNI_FALSE;
 }
 
 JNIEXPORT jboolean JNICALL
