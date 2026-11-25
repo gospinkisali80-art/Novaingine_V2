@@ -23,8 +23,8 @@ public final class Meshy3DViewport extends View {
         {-1,-1,1},{1,-1,1},{1,1,1},{-1,1,1}
     };
     private static final int[][] FACES = {
-        {0,1,2,3},{4,5,6,7},{0,1,5,4},
-        {3,2,6,7},{0,3,7,4},{1,2,6,5}
+        {0,3,2,1},{4,5,6,7},{0,1,5,4},
+        {3,7,6,2},{0,4,7,3},{1,2,6,5}
     };
     private static final int[] FACE_COLORS = {
         0xFF9DAAB7,0xFF66798C,0xFF7D8FA1,
@@ -103,7 +103,7 @@ public final class Meshy3DViewport extends View {
             float nx=aby*acz-abz*acy, ny=abz*acx-abx*acz, nz=abx*acy-aby*acx;
             float centerZ=(a[2]+b[2]+c[2]+cameraPoint(V[face[3]][0],V[face[3]][1],V[face[3]][2])[2])*0.25f;
             // Camera looks toward negative camera-Z; visible outward normals face camera.
-            if(nx*0f+ny*0f+nz < -0.0001f) {
+            if(nx*0f+ny*0f+nz > 0.0001f) {
                 order[count]=f; depth[count]=centerZ; count++;
             }
         }
