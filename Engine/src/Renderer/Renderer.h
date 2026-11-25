@@ -144,6 +144,7 @@ public:
 
     bool uploadMesh(uint32_t objectId, const Mesh& mesh);
     bool setTerrainTexture(int layer, int mapType, int width, int height, const uint8_t* rgbaPixels);
+    void clearTerrainTextures();
     void releaseMesh(uint32_t objectId);
     void releaseAllMeshes();
 
