@@ -80,6 +80,7 @@ public final class Meshy3DViewport extends View {
     public void selectLinkedUvIsland(){document.selectLinkedFromCurrent();invalidate();}
     public void unwrapMesh(){syncCoreFromViewport();document.unwrapPlanar();generatePlanarUv();invalidate();}
     public void createPaintTexture(int width,int height,int color){document.createTexture(width,height,color);}
+    public void setPaintBrush(int color,float radius,float opacity){document.setBrush(color,radius,opacity);}
     public void paintTexturePixel(int x,int y,int color,float radius,float opacity){
         document.setBrush(color,radius,opacity);document.paintPixel(x,y);
     }
