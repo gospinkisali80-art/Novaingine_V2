@@ -1504,6 +1504,17 @@ bool Renderer::setTerrainTexture(int layer, int mapType, int width, int height, 
     return true;
 }
 
+void Renderer::clearTerrainTextures() {
+    for (int layer = 0; layer < 4; ++layer) {
+        for (int mapType = 0; mapType < 3; ++mapType) {
+            GLuint& texture = terrainTextures_[layer][mapType];
+            if (texture) glDeleteTextures(1, &texture);
+            texture = 0;
+        }
+    }
+    for (auto& mask : terrainTextureMask_) mask = 0;
+}
+
 void Renderer::releaseMesh(uint32_t objectId) {
     auto found = gpuBuffers_.find(objectId);
     if (found == gpuBuffers_.end()) return;
