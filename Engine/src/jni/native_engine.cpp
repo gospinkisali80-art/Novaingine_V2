@@ -3127,7 +3127,8 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateTerrain(
         if (object.name == "Landscape Terrain" ||
             object.name.rfind("Terrain Tile ", 0) == 0 ||
             object.name.rfind("Landscape Chunk ", 0) == 0 ||
-            object.name.rfind("Landscape Tile ", 0) == 0) {
+            object.name.rfind("Landscape Tile ", 0) == 0 ||
+            object.name == "Landscape Voxel Cave") {
             oldTerrain.push_back(object.id);
         }
     }
@@ -3766,6 +3767,10 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateEmptyScene(
     gSculptMeshId = 0;
     gRenderer.setSculptCursor(false, nova::Vec3(), nova::Vec3(0,1,0), 0.18f);
     gScene.clear();
+    gLandscape = nova::LandscapeSystem();
+    gLandscapeWorldTiles.clear();
+    gVoxelCaves.clear();
+    gLandscapeRigidBodies.clear();
     gCustomMeshes.clear();
     gSculptMasks.clear();
     gVisualScript = nova::VisualScript();
@@ -3805,9 +3810,11 @@ Java_com_novaingine_v2_NativeBridge_nativeResetScene(
     gLandscape = nova::LandscapeSystem();
     gLandscapeWorldTiles.clear();
     gVoxelCaves.clear();
+    gLandscapeRigidBodies.clear();
     gCustomMeshes.clear();
     gSculptMasks.clear();
     gRenderer.releaseAllMeshes();
+    gRenderer.clearTerrainTextures();
     gCamera.reset();
     gVerticalVelocity = 0.0f;
     gPhysicsGrounded = false;
