@@ -739,19 +739,20 @@ public final class ManualSculptWorkspace extends FrameLayout {
 
     private void saveViewportRender() {
         try {
-            android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(
-                    Math.max(1, meshyViewport.getWidth()), Math.max(1, meshyViewport.getHeight()),
-                    android.graphics.Bitmap.Config.ARGB_8888);
-            meshyViewport.draw(new android.graphics.Canvas(bitmap));
-            File dir = new File(activity.getFilesDir(), "Meshy3D/Renders");
-            if (!dir.exists() && !dir.mkdirs()) throw new java.io.IOException("Could not create render folder");
-            File output = new File(dir, "Meshy3D-" + System.currentTimeMillis() + ".png");
-            try (java.io.FileOutputStream stream = new java.io.FileOutputStream(output)) {
-                if (!bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, stream))
+            int width=Math.max(640,Math.min(1280,meshyViewport.getWidth()*2));
+            int height=Math.max(360,Math.min(720,(int)(width*(meshyViewport.getHeight()/(float)Math.max(1,meshyViewport.getWidth())))));
+            android.graphics.Bitmap bitmap=meshyViewport.renderFinalImage(width,height);
+            File dir=new File(activity.getFilesDir(),"Meshy3D/Renders");
+            if(!dir.exists()&&!dir.mkdirs())throw new java.io.IOException("Could not create render folder");
+            File output=new File(dir,"Meshy3D-Render-"+System.currentTimeMillis()+".png");
+            try(java.io.FileOutputStream stream=new java.io.FileOutputStream(output)){
+                if(!bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,stream))
                     throw new java.io.IOException("PNG export failed");
+                stream.flush();
             }
-            bitmap.recycle(); status.setText("Rendering | Viewport capture saved (not a final render): " + output.getAbsolutePath());
-        } catch (Exception error) { status.setText("Rendering | Export failed: " + error.getMessage()); }
+            bitmap.recycle();status.setText("Rendering | CPU scene render saved: "+output.getAbsolutePath());
+            Toast.makeText(activity,"Final scene render saved",Toast.LENGTH_SHORT).show();
+        }catch(Exception error){status.setText("Rendering | Render failed: "+error.getMessage());}
     }
 
     private interface FloatSetter { void set(float value); }
