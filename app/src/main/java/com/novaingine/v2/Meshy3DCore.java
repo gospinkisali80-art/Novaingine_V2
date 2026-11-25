@@ -161,7 +161,7 @@ public final class Meshy3DCore {
     }
     public void selectFace(int index,boolean additive){
         if(index<0||index>=faces.size())return;if(!additive)clearSelection();
-        selectedFaces.set(index);faces.get(index).selected=true;revision++;
+        selectedFaces.set(index);faces.get(index).selected=true;for(int v:faces.get(index).vertices)selectedVertices.set(v);revision++;
     }
     public void selectAll(){
         if(selectMode==SelectMode.VERTEX)selectedVertices.set(0,vertices.size());
