@@ -513,6 +513,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     if (modeButton != null) modeButton.setText(next);
                     if (brushDock != null) brushDock.setVisibility(sculptEnabled ? View.VISIBLE : View.GONE);
                     if (brushControls != null) brushControls.setVisibility(sculptEnabled ? View.VISIBLE : View.GONE);
+                    renderWorkspaceLayout(activeWorkspaceIndex);
                     if (status != null) status.setText("Meshy3D  |  " + next);
                     invalidate();
                 }).setNegativeButton("Cancel", null).show();
