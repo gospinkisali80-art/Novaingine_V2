@@ -417,6 +417,7 @@ public final class Meshy3DViewport extends View {
     public float getMetallic(){return metallic;}
     public float getRoughness(){return roughness;}
     public int getVertexCount(){return vertices.length;}
+    public int getEdgeCount(){return document.getEdgeCount();}
     public int getFaceCount(){return faces.length;}
     public void resetMesh(){
         vertices=new float[originalVertices.length][3];
@@ -565,7 +566,7 @@ public final class Meshy3DViewport extends View {
                     float dx=event.getX()-gx,dy=event.getY()-gy;
                     if(dx*dx+dy*dy<=radius*radius){
                         snapToNearestAxis(dx,dy);
-                    } else if(meshEditMode){selectAt(event.getX(),event.getY(),event.isShiftPressed());}
+                    } else if(meshEditMode){selectAt(event.getX(),event.getY(),false);}
                     else if(onViewportTap!=null) onViewportTap.run();
                 }
                 lastPinchDistance=0; performClick(); return true;
