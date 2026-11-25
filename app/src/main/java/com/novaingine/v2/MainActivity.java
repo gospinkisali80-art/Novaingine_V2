@@ -395,6 +395,7 @@ public final class MainActivity extends Activity
         addDrawerItem("Import Heightmap PNG", "Replace terrain heights from a grayscale image", this::openTerrainHeightmapImport);
         addDrawerItem("Export Heightmap PNG", "Save the current terrain height data as a grayscale image", this::openTerrainHeightmapExport);
         addDrawerItem("Import 16-bit RAW Heightmap", "Import a 129 x 129 little-endian .r16 file", this::openTerrainHeightmap16Import);
+        addDrawerItem("Import 16-bit PNG Heightmap", "Import a 129 x 129 16-bit grayscale PNG without reducing precision", this::openTerrainHeightmap16PngImport);
         addDrawerItem("Export 16-bit RAW Heightmap", "Export full 16-bit terrain height precision", this::openTerrainHeightmap16Export);
         addDrawerItem("Manual Sculpting", "Open the landscape sculpt editor with brush browser, scene tools and viewport controls", this::showMeshSculptor);
         addDrawerItem("Foliage Painting", "Paint trees and bushes into the scene", this::showFoliagePainter);
@@ -843,6 +844,7 @@ public final class MainActivity extends Activity
     private static final int REQUEST_IMPORT_HEIGHTMAP = 7413;
     private static final int REQUEST_EXPORT_HEIGHTMAP = 7414;
     private static final int REQUEST_IMPORT_HEIGHTMAP16 = 7415;
+    private static final int REQUEST_IMPORT_HEIGHTMAP16_PNG = 7418;
     private static final int REQUEST_EXPORT_HEIGHTMAP16 = 7416;
     private static final int REQUEST_IMPORT_TERRAIN_TEXTURE = 7417;
     private int pendingTerrainTextureLayer = 0;
@@ -885,6 +887,14 @@ public final class MainActivity extends Activity
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("*/*");
         startActivityForResult(intent, REQUEST_IMPORT_HEIGHTMAP16);
+    }
+
+    private void openTerrainHeightmap16PngImport() {
+        closeToolsDrawer();
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("image/png");
+        startActivityForResult(intent, REQUEST_IMPORT_HEIGHTMAP16_PNG);
     }
 
     private void openTerrainHeightmap16Export() {
@@ -942,6 +952,35 @@ public final class MainActivity extends Activity
                             android.widget.Toast.LENGTH_LONG).show());
                 }
             }, "Nova-Terrain-Texture-Import").start();
+            return;
+        }
+
+        if (requestCode == REQUEST_IMPORT_HEIGHTMAP16_PNG) {
+            new Thread(() -> {
+                try (InputStream input = getContentResolver().openInputStream(uri);
+                     java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream()) {
+                    if (input == null) throw new IllegalStateException("Could not open 16-bit PNG.");
+                    byte[] buffer = new byte[8192]; int read;
+                    while ((read = input.read(buffer)) != -1) {
+                        if (bytes.size() + read > 16 * 1024 * 1024)
+                            throw new IllegalArgumentException("PNG file exceeds 16 MB.");
+                        bytes.write(buffer, 0, read);
+                    }
+                    byte[] png = bytes.toByteArray();
+                    runOnUiThread(() -> {
+                        if (engineSurface == null) return;
+                        engineSurface.setTerrainHeightmapPng16(png, ok ->
+                                android.widget.Toast.makeText(this, ok
+                                        ? "16-bit grayscale PNG imported at full precision"
+                                        : "Unsupported PNG. Use a 129 x 129, 16-bit grayscale, non-interlaced PNG.",
+                                        android.widget.Toast.LENGTH_LONG).show());
+                    });
+                } catch (Exception error) {
+                    runOnUiThread(() -> android.widget.Toast.makeText(this,
+                            "16-bit PNG import failed: " + error.getMessage(),
+                            android.widget.Toast.LENGTH_LONG).show());
+                }
+            }, "Nova-Heightmap16-PNG-Import").start();
             return;
         }
 
