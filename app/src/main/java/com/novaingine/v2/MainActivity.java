@@ -923,9 +923,26 @@ public final class MainActivity extends Activity
 
         if (requestCode == REQUEST_IMPORT_TERRAIN_TEXTURE) {
             new Thread(() -> {
-                try (InputStream input = getContentResolver().openInputStream(uri)) {
+                try (InputStream input = getContentResolver().openInputStream(uri);
+                     java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream()) {
                     if (input == null) throw new IllegalStateException("Could not open texture image.");
-                    Bitmap decoded = BitmapFactory.decodeStream(input);
+                    byte[] buffer = new byte[8192]; int read;
+                    while ((read = input.read(buffer)) != -1) {
+                        if (bytes.size() + read > 64 * 1024 * 1024)
+                            throw new IllegalArgumentException("Texture image exceeds 64 MB.");
+                        bytes.write(buffer, 0, read);
+                    }
+                    byte[] encoded = bytes.toByteArray();
+                    File assetFile = terrainTextureAssetFile(pendingTerrainTextureLayer, pendingTerrainTextureMapType);
+                    if (assetFile != null) {
+                        File parent = assetFile.getParentFile();
+                        if (parent != null && !parent.exists() && !parent.mkdirs())
+                            throw new IllegalStateException("Could not create project texture folder.");
+                        try (java.io.FileOutputStream assetOutput = new java.io.FileOutputStream(assetFile)) {
+                            assetOutput.write(encoded);
+                        }
+                    }
+                    Bitmap decoded = BitmapFactory.decodeByteArray(encoded, 0, encoded.length);
                     if (decoded == null) throw new IllegalArgumentException("Unsupported image. Choose PNG, JPEG or WebP.");
                     int originalWidth = decoded.getWidth(), originalHeight = decoded.getHeight();
                     float scale = Math.min(1.0f, 1024.0f / Math.max(originalWidth, originalHeight));
@@ -942,7 +959,7 @@ public final class MainActivity extends Activity
                         engineSurface.setTerrainTexture(pendingTerrainTextureLayer,
                                 pendingTerrainTextureMapType, width, height, pixels, ok ->
                                 android.widget.Toast.makeText(this, ok
-                                        ? "Terrain texture imported • " + width + " x " + height
+                                        ? "Terrain texture imported and saved in project Assets/Terrain"
                                         : "Texture upload failed. Check image size and renderer state.",
                                         android.widget.Toast.LENGTH_LONG).show());
                     });
@@ -2043,7 +2060,46 @@ public final class MainActivity extends Activity
                 }), 700L);
     }
 
+    private File terrainTextureAssetFile(int layer, int mapType) {
+        if (activeProjectDirectory == null) return null;
+        String[] layers = {"Grass", "Rock", "Sand", "Snow"};
+        String[] maps = {"Albedo", "Normal", "Roughness"};
+        File directory = new File(activeProjectDirectory, "Assets/Terrain");
+        return new File(directory, layers[Math.max(0, Math.min(3, layer))] + "_" +
+                maps[Math.max(0, Math.min(2, mapType))] + ".img");
+    }
+
+    private void loadTerrainTextureAssets() {
+        if (activeProjectDirectory == null || engineSurface == null) return;
+        new Thread(() -> {
+            for (int layer = 0; layer < 4; layer++) {
+                for (int mapType = 0; mapType < 3; mapType++) {
+                    File file = terrainTextureAssetFile(layer, mapType);
+                    if (file == null || !file.isFile()) continue;
+                    Bitmap decoded = BitmapFactory.decodeFile(file.getAbsolutePath());
+                    if (decoded == null) continue;
+                    int originalWidth = decoded.getWidth(), originalHeight = decoded.getHeight();
+                    float scale = Math.min(1.0f, 1024.0f / Math.max(originalWidth, originalHeight));
+                    int width = Math.max(1, Math.round(originalWidth * scale));
+                    int height = Math.max(1, Math.round(originalHeight * scale));
+                    Bitmap scaled = (width == originalWidth && height == originalHeight)
+                            ? decoded : Bitmap.createScaledBitmap(decoded, width, height, true);
+                    int[] pixels = new int[width * height];
+                    scaled.getPixels(pixels, 0, width, 0, 0, width, height);
+                    if (scaled != decoded) scaled.recycle();
+                    decoded.recycle();
+                    final int textureLayer = layer, textureMap = mapType;
+                    engineSurface.setTerrainTexture(textureLayer, textureMap, width, height, pixels, ok -> {
+                        if (!ok) android.widget.Toast.makeText(this,
+                                "Could not restore " + file.getName(), android.widget.Toast.LENGTH_SHORT).show();
+                    });
+                }
+            }
+        }, "Nova-Terrain-Texture-Restore").start();
+    }
+
     private void enterProject(String message) {
+        loadTerrainTextureAssets();
         if (projectStartPage != null) rootLayout.removeView(projectStartPage);
         projectStartPage = null;
         projectHandler.removeCallbacks(autoSaveTask);
