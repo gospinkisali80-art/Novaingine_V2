@@ -57,6 +57,11 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private static final int ACCENT = 0xFFFFA52B;
 
     private final Activity activity;
+    private Meshy3DViewport meshyViewport;
+    private int selectedSculptBrush;
+    private float sculptRadiusUi=0.18f, sculptStrengthUi=0.40f, sculptFalloffUi=0.5f, sculptPressureUi=1.0f;
+    private int sculptSymmetryUi;
+    private boolean sculptSubtractUi;
     private final Runnable onExit;
     private final TextView status;
     private final TextView[] brushButtons = new TextView[BRUSHES.length];
@@ -120,7 +125,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
         setClickable(false);
 
         // Meshy3D owns this viewport and its starter cube; it is not the Novaingine GL scene.
-        Meshy3DViewport meshyViewport = new Meshy3DViewport(activity, this::toggleViewportFocus);
+        meshyViewport = new Meshy3DViewport(activity, this::toggleViewportFocus);
         addView(meshyViewport, new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
         // Meshy3D is being rebuilt from the Blender reference one section at a time.
@@ -258,6 +263,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
 
         status = new TextView(activity);
         status.setText("Meshy3D  |  " + WORKSPACE_NAMES[activeWorkspaceIndex]);
+        updateSculptViewport();
         status.setTextColor(0xFFB8C4D1);
         status.setTextSize(9);
         workspaceLayoutLayer = new FrameLayout(activity);
@@ -336,7 +342,66 @@ public final class ManualSculptWorkspace extends FrameLayout {
             bg.setCornerRadius(dp(3));
             view.setBackground(bg);
         }
+        if (activeWorkspaceIndex == 2) view.setOnClickListener(v -> handleSculptPanelItem(text));
         return view;
+    }
+
+    private void updateSculptViewport() {
+        if (meshyViewport != null) meshyViewport.setSculptSettings(
+                sculptEnabled, selectedSculptBrush, sculptRadiusUi, sculptStrengthUi,
+                sculptFalloffUi, sculptSymmetryUi, sculptSubtractUi, sculptPressureUi);
+    }
+
+    private void handleSculptPanelItem(String item) {
+        for (int i=0;i<BRUSHES.length;i++) {
+            if (BRUSHES[i].equalsIgnoreCase(item)) {
+                selectedSculptBrush=i; updateSculptViewport();
+                if(status!=null) status.setText("Sculpting | "+BRUSHES[i]+" — "+BRUSH_DESCRIPTIONS[i]);
+                return;
+            }
+        }
+        if ("Radius".equals(item)) showSculptSlider("Brush Radius",0.02f,0.75f,sculptRadiusUi,v->sculptRadiusUi=v);
+        else if ("Strength".equals(item)) showSculptSlider("Brush Strength",0.01f,1f,sculptStrengthUi,v->sculptStrengthUi=v);
+        else if ("Falloff".equals(item)) showSculptSlider("Brush Falloff",0f,1f,sculptFalloffUi,v->sculptFalloffUi=v);
+        else if ("Pressure".equals(item)) showSculptSlider("Pressure Sensitivity",0.05f,1f,sculptPressureUi,v->sculptPressureUi=v);
+        else if ("Symmetry".equals(item)) {
+            String[] axes={"Off","X","Y","Z"};
+            new android.app.AlertDialog.Builder(activity).setTitle("Sculpt Symmetry")
+                    .setSingleChoiceItems(axes,sculptSymmetryUi,(d,w)->{sculptSymmetryUi=w;updateSculptViewport();d.dismiss();})
+                    .setNegativeButton("Cancel",null).show();
+        } else if ("Add / Subtract".equals(item)) {
+            sculptSubtractUi=!sculptSubtractUi; updateSculptViewport();
+            Toast.makeText(activity,sculptSubtractUi?"Subtract mode":"Add mode",Toast.LENGTH_SHORT).show();
+        } else if ("Brush Preview".equals(item)) {
+            Toast.makeText(activity,"Active brush: "+BRUSHES[selectedSculptBrush],Toast.LENGTH_SHORT).show();
+        } else if ("Stroke Method".equals(item)) {
+            new android.app.AlertDialog.Builder(activity).setTitle("Stroke Method")
+                    .setItems(new String[]{"Dots","Drag Dot","Space"},(d,w)->Toast.makeText(activity,
+                    new String[]{"Dots","Drag Dot","Space"}[w]+" selected",Toast.LENGTH_SHORT).show()).show();
+        } else if ("Dyntopo / Remesh options".equals(item)) {
+            new android.app.AlertDialog.Builder(activity).setTitle("Mesh Detail")
+                    .setMessage("Dynamic topology and remeshing require a dense editable mesh. The current viewport starter cube has 8 vertices, so these operations are not enabled yet.")
+                    .setPositiveButton("OK",null).show();
+        }
+    }
+
+    private interface FloatSetter { void set(float value); }
+    private void showSculptSlider(String title,float min,float max,float current,FloatSetter setter) {
+        LinearLayout layout=new LinearLayout(activity); layout.setPadding(dp(18),dp(8),dp(18),dp(8));
+        layout.setOrientation(LinearLayout.VERTICAL);
+        TextView valueLabel=new TextView(activity);
+        valueLabel.setText(String.format(java.util.Locale.US,"%.2f",current));
+        SeekBar seek=new SeekBar(activity); seek.setMax(1000);
+        seek.setProgress((int)(((current-min)/(max-min))*1000));
+        layout.addView(valueLabel); layout.addView(seek);
+        seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
+            public void onProgressChanged(SeekBar b,int p,boolean from){float v=min+(max-min)*p/1000f;valueLabel.setText(String.format(java.util.Locale.US,"%.2f",v));}
+            public void onStartTrackingTouch(SeekBar b){}
+            public void onStopTrackingTouch(SeekBar b){}
+        });
+        new android.app.AlertDialog.Builder(activity).setTitle(title).setView(layout)
+                .setPositiveButton("Apply",(d,w)->{setter.set(min+(max-min)*seek.getProgress()/1000f);updateSculptViewport();})
+                .setNegativeButton("Cancel",null).show();
     }
 
     private LinearLayout createDock(String title, int width, int gravity) {
@@ -512,6 +577,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
         for (String tool : tools) {
             TextView item = dockItem(tool, false);
             item.setPadding(dp(9), dp(6), dp(9), dp(6));
+            if(index==2) item.setOnClickListener(v -> handleSculptPanelItem(tool));
             workspaceToolbar.addView(item, new LinearLayout.LayoutParams(
                     LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
         }
@@ -579,6 +645,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     }
                     activeEditorMode = next;
                     sculptEnabled = "Sculpt Mode".equals(next);
+                    updateSculptViewport();
                     if (modeButton != null) modeButton.setText(next);
                     if (brushDock != null) brushDock.setVisibility(sculptEnabled ? View.VISIBLE : View.GONE);
                     if (brushControls != null) brushControls.setVisibility(sculptEnabled ? View.VISIBLE : View.GONE);
