@@ -741,21 +741,17 @@ public final class MainActivity extends Activity
                 saveMeshyIncremental();
                 break;
             case "Link":
-                android.widget.Toast.makeText(this,
-                        "Meshy3D links supported GLB assets by importing them into the current scene.", android.widget.Toast.LENGTH_LONG).show();
-                openGlbPicker();
-                break;
             case "Append":
-                openGlbPicker();
+            case "Import":
+                android.widget.Toast.makeText(this,
+                        "GLB import/linking for the independent Meshy3D document is not implemented yet. The Novaingine scene will not be modified.",
+                        android.widget.Toast.LENGTH_LONG).show();
                 break;
             case "Data Previews":
                 showSceneDataPreview();
                 break;
-            case "Import":
-                openGlbPicker();
-                break;
             case "Export":
-                saveDocumentPicker(REQUEST_EXPORT_NOVA, "Meshy3D_Export.nova");
+                saveMeshyDocument();
                 break;
             case "External Data":
                 new AlertDialog.Builder(this).setTitle("External Data")
@@ -1428,19 +1424,11 @@ public final class MainActivity extends Activity
     }
 
     private void showSceneDataPreview() {
-        String[] objects = engineSurface.getSceneObjects();
-        if (objects == null || objects.length == 0) {
-            new AlertDialog.Builder(this).setTitle("Data Previews")
-                    .setMessage("The current scene contains no objects.").setPositiveButton("Close", null).show();
-            return;
-        }
-        new AlertDialog.Builder(this).setTitle("Scene Data Previews (" + objects.length + ")")
-                .setItems(objects, (d, which) -> {
-                    String row = objects[which] == null ? "" : objects[which];
-                    int split = row.indexOf('|');
-                    try { if (split > 0) engineSurface.selectObjectById(Integer.parseInt(row.substring(0, split))); }
-                    catch (NumberFormatException ignored) {}
-                }).setNegativeButton("Close", null).show();
+        new AlertDialog.Builder(this).setTitle("Meshy3D Data Preview")
+                .setMessage(activeMeshyDocument == null
+                        ? "Meshy3D document: no file open.\nDefault viewport object: Cube"
+                        : "Document: " + activeMeshyDocument.getName() + "\nObjects: Cube (Mesh)\nFormat: .meshy3d")
+                .setPositiveButton("Close", null).show();
     }
 
     private void cleanMeshyTemporaryFiles() {
