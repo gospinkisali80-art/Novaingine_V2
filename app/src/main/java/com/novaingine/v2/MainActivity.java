@@ -61,6 +61,7 @@ public final class MainActivity extends Activity
     private LinearLayout toolsDrawer;
     private boolean toolsDrawerOpen;
     private boolean drawerPhysicsEnabled;
+    private boolean terrainViewportSculpting;
     private boolean drawerWorldSpace = true;
     private boolean drawerSnapEnabled = true;
     private float drawerGridSnap = 10.0f;
@@ -1140,6 +1141,42 @@ public final class MainActivity extends Activity
                         android.widget.Toast.LENGTH_SHORT).show()));
 
         String[] brushNames = {"Raise", "Lower", "Smooth", "Flatten", "Noise", "Ramp", "Erode"};
+        Spinner terrainBrushPicker = new Spinner(this);
+        ArrayAdapter<String> terrainBrushAdapter = new ArrayAdapter<>(
+                this, android.R.layout.simple_spinner_item, brushNames);
+        terrainBrushAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        terrainBrushPicker.setAdapter(terrainBrushAdapter);
+        terrainBrushPicker.setSelection(0);
+        content.addView(terrainBrushPicker, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
+
+        TextView fingerSculpt = new TextView(this);
+        fingerSculpt.setText("START FINGER SCULPTING");
+        fingerSculpt.setTextColor(Color.WHITE);
+        fingerSculpt.setTextSize(12);
+        fingerSculpt.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        fingerSculpt.setGravity(Gravity.CENTER);
+        fingerSculpt.setPadding(dp(12), dp(12), dp(12), dp(12));
+        fingerSculpt.setBackgroundColor(0xFF276A48);
+        LinearLayout.LayoutParams fingerParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(44));
+        fingerParams.topMargin = dp(8);
+        content.addView(fingerSculpt, fingerParams);
+        fingerSculpt.setOnClickListener(v -> {
+            terrainViewportSculpting = !terrainViewportSculpting;
+            float radius = terrainValue(fields[2], 6.0f);
+            float strength = terrainValue(fields[3], 0.35f);
+            int selectedBrush = terrainBrushPicker.getSelectedItemPosition();
+            engineSurface.setTerrainSculptMode(
+                    terrainViewportSculpting, selectedBrush, radius, strength);
+            dialog.dismiss();
+            android.widget.Toast.makeText(this,
+                    terrainViewportSculpting
+                            ? "Finger sculpting ON • drag directly on the terrain"
+                            : "Finger sculpting OFF",
+                    android.widget.Toast.LENGTH_LONG).show();
+        });
+
         for (int mode = 0; mode < brushNames.length; mode++) {
             final int brushMode = mode;
             TextView action = new TextView(this);
@@ -1154,7 +1191,10 @@ public final class MainActivity extends Activity
                     LinearLayout.LayoutParams.MATCH_PARENT, dp(40));
             params.topMargin = dp(5);
             content.addView(action, params);
-            action.setOnClickListener(v -> applyTerrainBrush(fields, brushMode));
+            action.setOnClickListener(v -> {
+                terrainBrushPicker.setSelection(brushMode);
+                applyTerrainBrush(fields, brushMode);
+            });
         }
         dialog.show();
     }
