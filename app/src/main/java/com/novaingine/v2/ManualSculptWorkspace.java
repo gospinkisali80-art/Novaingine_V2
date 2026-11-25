@@ -162,6 +162,11 @@ public final class ManualSculptWorkspace extends FrameLayout {
             menu.setTextSize(11);
             menu.setGravity(Gravity.CENTER);
             menu.setPadding(dp(8), 0, dp(8), 0);
+            menu.setOnClickListener(view -> {
+                if ("File".equals(menuName) && activity instanceof MainActivity) {
+                    ((MainActivity) activity).showMeshyFileMenu(view);
+                }
+            });
             menus.addView(menu, new LinearLayout.LayoutParams(
                     LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
         }
