@@ -70,6 +70,13 @@ public final class MainActivity extends Activity
             engineSurface.saveSceneAsync(activeProjectScene.getAbsolutePath(), saved -> {
                 if (statisticsText != null) statisticsText.setText(saved
                         ? "NOVAINGINE V2  |  AUTO-SAVED" : "NOVAINGINE V2  |  SAVE RETRY");
+                if (saved && activeProjectScene != null) {
+                    File recovery = new File(activeProjectScene.getParentFile(), "Scene.recovery.nova");
+                    engineSurface.saveSceneAsync(recovery.getAbsolutePath(), recovered -> {
+                        if (!recovered && statisticsText != null)
+                            statisticsText.setText("NOVAINGINE V2  |  RECOVERY SAVE RETRY");
+                    });
+                }
             });
             projectHandler.postDelayed(this, 5000L);
         }
