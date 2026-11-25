@@ -77,6 +77,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private int symmetryAxis = 0;
     private boolean subtract;
     private boolean sculptEnabled = false;
+    private boolean objectModesLocked;
+    private String activeEditorMode = "Object Mode";
+    private TextView modeButton;
     private boolean orbitMode = false;
     private TextView orbitButton;
     private EditText[] positionInputs = new EditText[3];
@@ -226,6 +229,10 @@ public final class ManualSculptWorkspace extends FrameLayout {
             item.setTextSize(i == 0 ? 13 : 10);
             item.setGravity(Gravity.CENTER);
             item.setPadding(dp(6), 0, dp(6), 0);
+            if (i == 1) {
+                modeButton = item;
+                item.setOnClickListener(v -> showEditorModeMenu());
+            }
             viewportHeader.addView(item, new LinearLayout.LayoutParams(
                     LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
         }
@@ -247,6 +254,30 @@ public final class ManualSculptWorkspace extends FrameLayout {
         status.setText("Meshy3D");
         status.setTextColor(0xFFB8C4D1);
         status.setTextSize(9);
+    }
+
+    public void setObjectModesLocked(boolean locked) {
+        objectModesLocked = locked;
+        if (modeButton != null) modeButton.setAlpha(locked ? 0.55f : 1.0f);
+    }
+
+    private void showEditorModeMenu() {
+        final String[] modes = {"Object Mode", "Edit Mode", "Sculpt Mode"};
+        new android.app.AlertDialog.Builder(activity).setTitle("Meshy3D Mode")
+                .setItems(modes, (dialog, which) -> {
+                    String next = modes[which];
+                    if (objectModesLocked && !next.equals(activeEditorMode)) {
+                        Toast.makeText(activity, "Object mode switching is locked. Unlock it from Edit > Lock Object Modes.", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    activeEditorMode = next;
+                    sculptEnabled = "Sculpt Mode".equals(next);
+                    if (modeButton != null) modeButton.setText(next);
+                    if (brushDock != null) brushDock.setVisibility(sculptEnabled ? View.VISIBLE : View.GONE);
+                    if (brushControls != null) brushControls.setVisibility(sculptEnabled ? View.VISIBLE : View.GONE);
+                    if (status != null) status.setText("Meshy3D  |  " + next);
+                    invalidate();
+                }).setNegativeButton("Cancel", null).show();
     }
 
     private int dp(float value) {
