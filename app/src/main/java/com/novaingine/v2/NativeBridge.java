@@ -95,6 +95,8 @@ public final class NativeBridge {
 
     public static native void nativeSetExposure(float exposure);
 
+    public static native void nativeSetWorldEnvironment(float[] values);
+
     public static native void nativeSetPhysicsEnabled(
             boolean enabled
     );
