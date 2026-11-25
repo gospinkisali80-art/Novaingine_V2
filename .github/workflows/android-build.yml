@@ -8,6 +8,7 @@ on:
       - main
       - master
       - integration/chatgpt-bridge-foundation
+      - integration/chatgpt-bridge-foundation
 
 permissions:
   contents: read
