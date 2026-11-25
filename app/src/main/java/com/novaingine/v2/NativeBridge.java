@@ -112,6 +112,7 @@ public final class NativeBridge {
     public static native float[] nativeProjectSelectedPosition();
     public static native float[] nativeProjectSelectedGizmo();
     public static native void nativeSetSelectedTransform(float[] values);
+    public static native boolean nativeSetSelectedMaterialColor(float red, float green, float blue);
     public static native void nativeBeginTransformEdit();
     public static native void nativeUpdateSelectedTransform(float[] values);
     public static native int nativePaintFoliage(float centerX, float centerZ, float radius, int count, int kind);
