@@ -844,6 +844,9 @@ public final class MainActivity extends Activity
     private static final int REQUEST_EXPORT_HEIGHTMAP = 7414;
     private static final int REQUEST_IMPORT_HEIGHTMAP16 = 7415;
     private static final int REQUEST_EXPORT_HEIGHTMAP16 = 7416;
+    private static final int REQUEST_IMPORT_TERRAIN_TEXTURE = 7417;
+    private int pendingTerrainTextureLayer = 0;
+    private int pendingTerrainTextureMapType = 0;
 
     public void openSculptAssetPicker() {
         openGlbPicker();
@@ -856,6 +859,16 @@ public final class MainActivity extends Activity
         intent.setType("*/*");
         intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"model/gltf-binary", "application/octet-stream"});
         startActivityForResult(intent, REQUEST_IMPORT_GLB);
+    }
+
+    private void openTerrainTexturePicker(int layer, int mapType) {
+        pendingTerrainTextureLayer = Math.max(0, Math.min(3, layer));
+        pendingTerrainTextureMapType = Math.max(0, Math.min(2, mapType));
+        closeToolsDrawer();
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("image/*");
+        startActivityForResult(intent, REQUEST_IMPORT_TERRAIN_TEXTURE);
     }
 
     private void openTerrainHeightmapImport() {
@@ -897,6 +910,40 @@ public final class MainActivity extends Activity
         super.onActivityResult(requestCode, resultCode, data);
         if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
         Uri uri = data.getData();
+
+        if (requestCode == REQUEST_IMPORT_TERRAIN_TEXTURE) {
+            new Thread(() -> {
+                try (InputStream input = getContentResolver().openInputStream(uri)) {
+                    if (input == null) throw new IllegalStateException("Could not open texture image.");
+                    Bitmap decoded = BitmapFactory.decodeStream(input);
+                    if (decoded == null) throw new IllegalArgumentException("Unsupported image. Choose PNG, JPEG or WebP.");
+                    int originalWidth = decoded.getWidth(), originalHeight = decoded.getHeight();
+                    float scale = Math.min(1.0f, 1024.0f / Math.max(originalWidth, originalHeight));
+                    int width = Math.max(1, Math.round(originalWidth * scale));
+                    int height = Math.max(1, Math.round(originalHeight * scale));
+                    Bitmap scaled = (width == originalWidth && height == originalHeight)
+                            ? decoded : Bitmap.createScaledBitmap(decoded, width, height, true);
+                    int[] pixels = new int[width * height];
+                    scaled.getPixels(pixels, 0, width, 0, 0, width, height);
+                    if (scaled != decoded) scaled.recycle();
+                    decoded.recycle();
+                    runOnUiThread(() -> {
+                        if (engineSurface == null) return;
+                        engineSurface.setTerrainTexture(pendingTerrainTextureLayer,
+                                pendingTerrainTextureMapType, width, height, pixels, ok ->
+                                android.widget.Toast.makeText(this, ok
+                                        ? "Terrain texture imported • " + width + " x " + height
+                                        : "Texture upload failed. Check image size and renderer state.",
+                                        android.widget.Toast.LENGTH_LONG).show());
+                    });
+                } catch (Exception error) {
+                    runOnUiThread(() -> android.widget.Toast.makeText(this,
+                            "Texture import failed: " + error.getMessage(),
+                            android.widget.Toast.LENGTH_LONG).show());
+                }
+            }, "Nova-Terrain-Texture-Import").start();
+            return;
+        }
 
         if (requestCode == REQUEST_IMPORT_HEIGHTMAP16) {
             new Thread(() -> {
@@ -1383,6 +1430,39 @@ public final class MainActivity extends Activity
                 }
             });
         }
+
+        TextView textureHeading = new TextView(this);
+        textureHeading.setText("TEXTURE MAP ASSETS • ALBEDO / NORMAL / ROUGHNESS");
+        textureHeading.setTextColor(0xFFB45F16);
+        textureHeading.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        textureHeading.setPadding(0, dp(16), 0, dp(4));
+        content.addView(textureHeading);
+        TextView textureHelp = new TextView(this);
+        textureHelp.setText("Import real image maps for each terrain layer. Albedo uses RGB colour, Normal expects a tangent-space normal map, and Roughness uses its red channel. Images are resized to a maximum 1024 px and uploaded to GPU memory.");
+        textureHelp.setTextColor(Color.DKGRAY); textureHelp.setTextSize(11);
+        content.addView(textureHelp);
+        Spinner textureLayerPicker = new Spinner(this);
+        ArrayAdapter<String> textureLayerAdapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, materialNames);
+        textureLayerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        textureLayerPicker.setAdapter(textureLayerAdapter);
+        content.addView(textureLayerPicker, new LinearLayout.LayoutParams(-1, dp(42)));
+        Spinner textureMapPicker = new Spinner(this);
+        String[] textureMapNames = {"Albedo / Base Color", "Normal", "Roughness"};
+        ArrayAdapter<String> textureMapAdapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, textureMapNames);
+        textureMapAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        textureMapPicker.setAdapter(textureMapAdapter);
+        content.addView(textureMapPicker, new LinearLayout.LayoutParams(-1, dp(42)));
+        TextView importTexture = new TextView(this);
+        importTexture.setText("IMPORT SELECTED TEXTURE MAP");
+        importTexture.setTextColor(Color.WHITE); importTexture.setGravity(Gravity.CENTER);
+        importTexture.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        importTexture.setPadding(dp(8), dp(12), dp(8), dp(12));
+        importTexture.setBackgroundColor(0xFF35566B);
+        content.addView(importTexture, new LinearLayout.LayoutParams(-1, dp(44)));
+        importTexture.setOnClickListener(v -> openTerrainTexturePicker(
+                textureLayerPicker.getSelectedItemPosition(), textureMapPicker.getSelectedItemPosition()));
 
         TextView paintHeading = new TextView(this);
         paintHeading.setText("MATERIAL PAINTING");
