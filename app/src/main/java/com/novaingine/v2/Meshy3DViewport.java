@@ -250,10 +250,24 @@ public final class Meshy3DViewport extends View {
         switch(event.getActionMasked()){
             case MotionEvent.ACTION_DOWN:
                 downX=lastX=event.getX(); downY=lastY=event.getY();
-                moved=false; lastPinchDistance=0; return true;
+                moved=false; lastPinchDistance=0;
+                if(sculpting){
+                    strokeActive=true;
+                    strokeX=previousStrokeX=event.getX();
+                    strokeY=previousStrokeY=event.getY();
+                    applySculptDab(strokeX,strokeY,0f,0f);
+                }
+                return true;
             case MotionEvent.ACTION_POINTER_DOWN:
                 lastPinchDistance=pointerDistance(event); moved=true; return true;
             case MotionEvent.ACTION_MOVE:
+                if(sculpting && strokeActive && event.getPointerCount()==1){
+                    float sx=event.getX(), sy=event.getY();
+                    applySculptDab(sx,sy,sx-previousStrokeX,sy-previousStrokeY);
+                    previousStrokeX=sx; previousStrokeY=sy;
+                    moved=true;
+                    return true;
+                }
                 if(event.getPointerCount()>=2){
                     float distance=pointerDistance(event);
                     if(lastPinchDistance>0 && distance>0){
@@ -277,6 +291,7 @@ public final class Meshy3DViewport extends View {
                 }
                 return true;
             case MotionEvent.ACTION_UP:
+                strokeActive=false;
                 if(!moved && !sculpting){
                     float gx=getWidth()-190*d, gy=150*d, radius=35*d;
                     float dx=event.getX()-gx,dy=event.getY()-gy;
@@ -286,7 +301,7 @@ public final class Meshy3DViewport extends View {
                 }
                 lastPinchDistance=0; performClick(); return true;
             case MotionEvent.ACTION_CANCEL:
-                lastPinchDistance=0; return true;
+                strokeActive=false; lastPinchDistance=0; return true;
         }
         return true;
     }
