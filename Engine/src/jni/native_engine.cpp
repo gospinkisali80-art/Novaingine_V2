@@ -55,6 +55,7 @@ std::vector<std::pair<uint32_t, bool>> gSculptWorkspaceVisibility;
 bool gSculptStrokeActive = false;
 bool gTerrainStrokeActive = false;
 bool gTerrainStrokeHasUndo = false;
+int gTerrainLodLevel = -1;
 bool gHasPreviousSculptHit = false;
 nova::Vec3 gPreviousSculptHit;
 nova::Vec3 gPreviousSculptNormal;
@@ -174,6 +175,7 @@ void restoreScene(const SceneSnapshot& snapshot) {
         gScene.select(snapshot.selectedId);
     }
     gRenderer.releaseAllMeshes();
+    gTerrainLodLevel = -1;
     for (const auto& entry : gCustomMeshes) gRenderer.uploadMesh(entry.first, entry.second);
     {
         std::lock_guard<std::mutex> qlock(gSculptQueueMutex);
@@ -340,6 +342,54 @@ float terrainHeightAt(float worldX, float worldZ, bool& found) {
         return h0 + (h1 - h0) * tz;
     }
     return 0.0f;
+}
+
+nova::Mesh buildTerrainLodMesh(const nova::Mesh& source, int stride) {
+    constexpr int resolution = 129;
+    const auto& sourceVertices = source.getVertices();
+    if (sourceVertices.size() != resolution * resolution) return nova::Mesh();
+    stride = std::clamp(stride, 1, 8);
+    const int side = 128 / stride + 1;
+    std::vector<nova::Vertex> vertices;
+    std::vector<uint32_t> indices;
+    vertices.reserve(static_cast<size_t>(side * side));
+    indices.reserve(static_cast<size_t>((side - 1) * (side - 1) * 6));
+    for (int z = 0; z <= 128; z += stride) {
+        for (int x = 0; x <= 128; x += stride) {
+            vertices.push_back(sourceVertices[static_cast<size_t>(z * resolution + x)]);
+        }
+    }
+    for (int z = 0; z < side - 1; ++z) {
+        for (int x = 0; x < side - 1; ++x) {
+            const uint32_t a = static_cast<uint32_t>(z * side + x);
+            const uint32_t b = a + 1;
+            const uint32_t c = a + static_cast<uint32_t>(side);
+            const uint32_t d = c + 1;
+            indices.insert(indices.end(), {a, c, b, b, c, d});
+        }
+    }
+    nova::Mesh result(std::move(vertices), std::move(indices));
+    result.recalculateNormals();
+    return result;
+}
+
+void updateTerrainLod() {
+    nova::SceneObject* terrain = nullptr;
+    for (nova::SceneObject& object : gScene.getObjects()) {
+        if (object.name == "Landscape Terrain") { terrain = &object; break; }
+    }
+    if (!terrain) { gTerrainLodLevel = -1; return; }
+    auto meshIt = gCustomMeshes.find(terrain->id);
+    if (meshIt == gCustomMeshes.end()) { gTerrainLodLevel = -1; return; }
+
+    const float distance = nova::length(gCamera.position - nova::Vec3(0.0f, 0.0f, -4.0f));
+    const int level = distance < 55.0f ? 0 : (distance < 110.0f ? 1 : (distance < 190.0f ? 2 : 3));
+    if (level == gTerrainLodLevel) return;
+    const int stride = level == 0 ? 1 : (level == 1 ? 2 : (level == 2 ? 4 : 8));
+    nova::Mesh lodMesh = buildTerrainLodMesh(meshIt->second, stride);
+    if (lodMesh.isValid() && gRenderer.uploadMesh(terrain->id, lodMesh)) {
+        gTerrainLodLevel = level;
+    }
 }
 // Transform helpers use the same Rz * Ry * Rx order as Renderer::makeModelMatrix.
 nova::Vec3 rotateByObject(const nova::Vec3& v, const nova::Vec3& degrees) {
@@ -717,6 +767,7 @@ Java_com_novaingine_v2_NativeBridge_nativeRender(
         }
     }
 
+    updateTerrainLod();
     gRenderer.beginFrame();
     gRenderer.render(gScene, gCamera);
     gRenderer.endFrame();
@@ -2486,6 +2537,7 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateTerrain(
         gScene.removeObject(terrainId);
         return JNI_FALSE;
     }
+    gTerrainLodLevel = -1;
     gScene.select(terrainId);
     return JNI_TRUE;
 }
@@ -2613,6 +2665,7 @@ Java_com_novaingine_v2_NativeBridge_nativeSculptTerrain(
 
     meshIt->second = std::move(updatedMesh);
     if (!gRenderer.uploadMesh(terrain->id, meshIt->second)) return JNI_FALSE;
+    gTerrainLodLevel = -1;
     return JNI_TRUE;
 }
 
@@ -2646,7 +2699,9 @@ Java_com_novaingine_v2_NativeBridge_nativeSetTerrainHeights(
     updated.recalculateNormals();
     if (!updated.isValid()) return JNI_FALSE;
     meshIt->second = std::move(updated);
-    return gRenderer.uploadMesh(terrain->id, meshIt->second) ? JNI_TRUE : JNI_FALSE;
+    const bool uploaded = gRenderer.uploadMesh(terrain->id, meshIt->second);
+    if (uploaded) gTerrainLodLevel = -1;
+    return uploaded ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jfloatArray JNICALL
@@ -2790,7 +2845,9 @@ Java_com_novaingine_v2_NativeBridge_nativeSculptTerrainAtScreen(
     updatedMesh.recalculateNormals();
     if (!updatedMesh.isValid()) return JNI_FALSE;
     meshIt->second = std::move(updatedMesh);
-    return gRenderer.uploadMesh(terrain->id, meshIt->second) ? JNI_TRUE : JNI_FALSE;
+    const bool uploaded = gRenderer.uploadMesh(terrain->id, meshIt->second);
+    if (uploaded) gTerrainLodLevel = -1;
+    return uploaded ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jint JNICALL
