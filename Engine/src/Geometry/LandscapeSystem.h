@@ -88,7 +88,39 @@ public:
     }
     bool setHole(int x,int z,bool value){if(x<0||z<0||x>=width_-1||z>=height_-1)return false;holes_[static_cast<size_t>(z*(width_-1)+x)]=value?1:0;return true;}
     bool isHole(int x,int z)const{return x<0||z<0||x>=width_-1||z>=height_-1||holes_[static_cast<size_t>(z*(width_-1)+x)]!=0;}
-    bool addSpline(const std::vector<SplinePoint>& p){if(p.size()<2||p.size()>4096)return false;splines_.push_back(p);return true;}
+    bool addSpline(const std::vector<SplinePoint>& p){
+        if(p.size()<2||p.size()>4096||active_<0||layers_[active_].locked)return false;
+        splines_.push_back(p);
+        auto& layer=layers_[active_];
+        auto h=heights();auto oldWeights=weights();
+        for(size_t seg=1;seg<p.size();++seg){
+            const auto&a=p[seg-1];const auto&b=p[seg];
+            const float dx=b.x-a.x,dz=b.z-a.z,len2=dx*dx+dz*dz;
+            const float width=std::max(0.5f,(a.width+b.width)*0.5f);
+            const int ax=std::clamp(int(std::round((a.x-originX_)/spacing_)),0,width_-1);
+            const int az=std::clamp(int(std::round((a.z-originZ_)/spacing_)),0,height_-1);
+            const int bx=std::clamp(int(std::round((b.x-originX_)/spacing_)),0,width_-1);
+            const int bz=std::clamp(int(std::round((b.z-originZ_)/spacing_)),0,height_-1);
+            const float roadHeight=(h[idx(ax,az)]+h[idx(bx,bz)])*0.5f;
+            for(int z=0;z<height_;++z)for(int x=0;x<width_;++x){
+                const float wx=originX_+x*spacing_,wz=originZ_+z*spacing_;
+                const float t=len2>1e-6f?std::clamp(((wx-a.x)*dx+(wz-a.z)*dz)/len2,0.0f,1.0f):0.0f;
+                const float px=a.x+dx*t,pz=a.z+dz*t;
+                const float d=std::sqrt((wx-px)*(wx-px)+(wz-pz)*(wz-pz));
+                if(d>width*1.5f)continue;
+                const float blend=std::clamp(1.0f-d/(width*1.5f),0.0f,1.0f);
+                const size_t i=idx(x,z);
+                const float target=h[i]+(roadHeight-h[i])*blend;
+                layer.heightDelta[i]+=target-h[i];h[i]=target;
+                auto w=oldWeights[i];const float paint=blend*0.92f;
+                for(int c=0;c<3;++c)w[c]*=(1.0f-paint);
+                w[2]+=paint;float total=w[0]+w[1]+w[2];
+                if(total>1e-6f)for(int c=0;c<3;++c)w[c]/=total;
+                for(int c=0;c<4;++c)layer.paintDelta[i][c]+=w[c]-oldWeights[i][c];
+            }
+        }
+        return true;
+    }
     void buildChunks(int size){chunks_.clear();size=std::clamp(size,8,128);for(int z=0;z<height_-1;z+=size)for(int x=0;x<width_-1;x+=size){Chunk c;c.x=x;c.z=z;c.quads=std::min(size,std::min(width_-1-x,height_-1-z));chunks_.push_back(c);}}
     void setChunkState(size_t i,bool loaded,int lod){if(i<chunks_.size()){chunks_[i].loaded=loaded;chunks_[i].lod=std::clamp(lod,0,4);}}
 private:
