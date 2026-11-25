@@ -38,6 +38,7 @@ public final class Meshy3DViewport extends View {
 
 
     public Meshy3DCore getDocumentCore(){return document;}
+    public void refreshFromDocument(){syncViewportFromCore();}
     private void syncCoreFromViewport(){document.replaceGeometry(vertices,faces);}
     private void syncViewportFromCore(){
         vertices=document.copyVertices();faces=document.copyFaces();vertexMask=new float[vertices.length];
