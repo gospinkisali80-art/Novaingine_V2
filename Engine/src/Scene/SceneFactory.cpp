@@ -82,6 +82,12 @@ void addMannequin(Scene& scene, Vec3 origin, const std::string& prefix) {
 }
 
 void SceneFactory::buildDefaultScene(Scene& scene) {
+    // A new project starts as a genuinely empty level. The procedural sky,
+    // clouds and directional sunlight are rendered by Renderer, not scene props.
+    scene.clear();
+}
+
+void SceneFactory::buildShowcaseScene(Scene& scene) {
     scene.clear();
 
     const Color floor = makeColor(0.56f, 0.57f, 0.59f);

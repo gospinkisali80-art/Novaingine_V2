@@ -11,6 +11,8 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import android.graphics.Color;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
@@ -44,12 +46,26 @@ public final class MainActivity extends Activity
     private LinearLayout editorPanels;
     private TextView playStopButton;
     private boolean playMode;
+    // World environment values are mirrored to the native renderer.
+    private final float[] worldEnvironment = {
+            -0.45f, -0.80f, -0.35f,
+            1.0f, 0.96f, 0.88f,
+            3.0f, 1.0f, 1.0f, 0.45f,
+            1.0f, 1.0f, 0.12f,
+            1.0f, 0.55f, 0.75f, 0.002f,
+            0.0f, 0.0f, 0.0f, 0.2f,
+            0.70f, 0.76f, 0.82f,
+            1.0f, 0.15f, 1.0f, 1.0f
+    };
 
     private boolean viewportMaximized;
     private View toolsScrim;
     private LinearLayout toolsDrawer;
     private boolean toolsDrawerOpen;
     private boolean drawerPhysicsEnabled;
+    private boolean selectedRigidBodyEnabled;
+    private boolean terrainViewportSculpting;
+    private boolean terrainViewportPainting;
     private boolean drawerWorldSpace = true;
     private boolean drawerSnapEnabled = true;
     private float drawerGridSnap = 10.0f;
@@ -376,16 +392,24 @@ public final class MainActivity extends Activity
 
         addDrawerSection("WORLD BUILDING");
         addDrawerItem("Terrain Sculpting", "Sculpt the generated terrain surface", this::showTerrainSculptor);
+        addDrawerItem("Import Heightmap PNG", "Replace terrain heights from a grayscale image", this::openTerrainHeightmapImport);
+        addDrawerItem("Export Heightmap PNG", "Save the current terrain height data as a grayscale image", this::openTerrainHeightmapExport);
+        addDrawerItem("Import 16-bit RAW Heightmap", "Import a 129 x 129 little-endian .r16 file", this::openTerrainHeightmap16Import);
+        addDrawerItem("Import 16-bit PNG Heightmap", "Import a 129 x 129 16-bit grayscale PNG without reducing precision", this::openTerrainHeightmap16PngImport);
+        addDrawerItem("Export 16-bit PNG Heightmap", "Export a 129 x 129 16-bit grayscale PNG", this::openTerrainHeightmap16PngExport);
+        addDrawerItem("Export 16-bit RAW Heightmap", "Export full 16-bit terrain height precision", this::openTerrainHeightmap16Export);
         addDrawerItem("Manual Sculpting", "Open the landscape sculpt editor with brush browser, scene tools and viewport controls", this::showMeshSculptor);
         addDrawerItem("Foliage Painting", "Paint trees and bushes into the scene", this::showFoliagePainter);
         addDrawerItem("Import Blender Model (.glb)", "Import a Blender-exported glTF binary model", this::openGlbPicker);
 
         addDrawerSection("RENDERING");
+        addDrawerItem("World Environment", "Directional light, sky light, atmosphere, clouds, height fog and post-processing", this::showWorldEnvironment);
         addDrawerItem("Global Illumination", "Indirect lighting controls", () -> showToolStatus("Global Illumination"));
         addDrawerItem("Reflections", "Environment and surface reflections", () -> showToolStatus("Reflections"));
 
         addDrawerSection("GAME SYSTEMS");
         addDrawerItem("Animation", "Keyframes and playback", () -> showToolStatus("Animation"));
+        addDrawerItem("Selected Object Rigid Body", "Attach or remove a gravity body that collides with the sculpted landscape", this::showRigidBodySetup);
         addDrawerItem("Audio", "Sound sources and audio controls", () -> showToolStatus("Audio"));
         addDrawerItem("AI Assistant", "Groq-hosted Qwen cloud scene-building assistant", this::openAIAssistant);
         addDrawerItem("Visual Scripting", "Create, connect, edit and run gameplay nodes", this::showVisualScriptingEditor);
@@ -519,6 +543,180 @@ public final class MainActivity extends Activity
                 }).setNegativeButton("Cancel", null).show();
     }
 
+    private void applyWorldEnvironment() {
+        if (engineSurface != null) {
+            engineSurface.setWorldEnvironment(worldEnvironment);
+        }
+    }
+
+    private void addEnvironmentToggle(LinearLayout panel, String title, int index) {
+        CheckBox check = new CheckBox(this);
+        check.setText(title);
+        check.setTextColor(Color.WHITE);
+        check.setChecked(worldEnvironment[index] >= 0.5f);
+        panel.addView(check);
+        check.setOnCheckedChangeListener((button, checked) -> {
+            worldEnvironment[index] = checked ? 1.0f : 0.0f;
+            applyWorldEnvironment();
+        });
+    }
+
+    private void addEnvironmentSlider(LinearLayout panel, String title,
+                                      float minimum, float maximum, float initial,
+                                      java.util.function.Consumer<Float> changed) {
+        TextView label = new TextView(this);
+        label.setTextColor(0xFFE2E8F0);
+        label.setTextSize(12);
+        label.setText(title + ": " + String.format(java.util.Locale.US, "%.2f", initial));
+        label.setPadding(0, dp(8), 0, dp(2));
+        panel.addView(label);
+
+        android.widget.SeekBar slider = new android.widget.SeekBar(this);
+        slider.setMax(1000);
+        slider.setProgress(Math.max(0, Math.min(1000,
+                Math.round((initial - minimum) / Math.max(0.0001f, maximum - minimum) * 1000.0f))));
+        panel.addView(slider);
+        slider.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(android.widget.SeekBar bar, int progress, boolean fromUser) {
+                float value = minimum + (maximum - minimum) * progress / 1000.0f;
+                label.setText(title + ": " + String.format(java.util.Locale.US, "%.2f", value));
+                if (fromUser) changed.accept(value);
+            }
+            @Override public void onStartTrackingTouch(android.widget.SeekBar bar) {}
+            @Override public void onStopTrackingTouch(android.widget.SeekBar bar) {}
+        });
+    }
+
+    private void showWorldEnvironment() {
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(18), dp(8), dp(18), dp(18));
+        panel.setBackgroundColor(0xFF202630);
+        scroll.addView(panel);
+
+        TextView note = new TextView(this);
+        note.setText("Mobile renderer environment controls. Changes update the viewport immediately.");
+        note.setTextColor(0xFFB9C4D0);
+        note.setTextSize(11);
+        panel.addView(note);
+
+        addDrawerSectionTo(panel, "DIRECTIONAL LIGHT");
+        addEnvironmentToggle(panel, "Enable directional sun", 7);
+        float azimuth = (float)Math.toDegrees(Math.atan2(-worldEnvironment[2], -worldEnvironment[0]));
+        if (azimuth < 0) azimuth += 360.0f;
+        float elevation = (float)Math.toDegrees(Math.asin(Math.max(-1.0f, Math.min(1.0f, -worldEnvironment[1]))));
+        final float[] sunAngles = {azimuth, elevation};
+        addEnvironmentSlider(panel, "Sun azimuth", 0.0f, 360.0f, azimuth, value -> {
+            sunAngles[0] = value;
+            updateEnvironmentSunDirection(sunAngles[0], sunAngles[1]);
+        });
+        addEnvironmentSlider(panel, "Sun elevation", -10.0f, 89.0f, elevation, value -> {
+            sunAngles[1] = value;
+            updateEnvironmentSunDirection(sunAngles[0], sunAngles[1]);
+        });
+        addEnvironmentSlider(panel, "Sun intensity", 0.0f, 10.0f, worldEnvironment[6], value -> {
+            worldEnvironment[6] = value; applyWorldEnvironment();
+        });
+        addEnvironmentSlider(panel, "Sun red", 0.0f, 1.0f, worldEnvironment[3], value -> {
+            worldEnvironment[3] = value; applyWorldEnvironment();
+        });
+        addEnvironmentSlider(panel, "Sun green", 0.0f, 1.0f, worldEnvironment[4], value -> {
+            worldEnvironment[4] = value; applyWorldEnvironment();
+        });
+        addEnvironmentSlider(panel, "Sun blue", 0.0f, 1.0f, worldEnvironment[5], value -> {
+            worldEnvironment[5] = value; applyWorldEnvironment();
+        });
+
+        addDrawerSectionTo(panel, "SKY LIGHT");
+        addEnvironmentToggle(panel, "Enable sky light", 8);
+        addEnvironmentSlider(panel, "Sky light intensity", 0.0f, 2.0f, worldEnvironment[9], value -> {
+            worldEnvironment[9] = value; applyWorldEnvironment();
+        });
+
+        addDrawerSectionTo(panel, "SKY ATMOSPHERE");
+        addEnvironmentToggle(panel, "Enable sky atmosphere", 10);
+        addEnvironmentSlider(panel, "Rayleigh scattering", 0.0f, 3.0f, worldEnvironment[11], value -> {
+            worldEnvironment[11] = value; applyWorldEnvironment();
+        });
+        addEnvironmentSlider(panel, "Mie scattering", 0.0f, 1.0f, worldEnvironment[12], value -> {
+            worldEnvironment[12] = value; applyWorldEnvironment();
+        });
+
+        addDrawerSectionTo(panel, "CLOUD LAYER");
+        addEnvironmentToggle(panel, "Enable procedural clouds", 13);
+        addEnvironmentSlider(panel, "Cloud coverage", 0.0f, 1.0f, worldEnvironment[14], value -> {
+            worldEnvironment[14] = value; applyWorldEnvironment();
+        });
+        addEnvironmentSlider(panel, "Cloud density", 0.0f, 1.0f, worldEnvironment[15], value -> {
+            worldEnvironment[15] = value; applyWorldEnvironment();
+        });
+        addEnvironmentSlider(panel, "Cloud movement speed", 0.0f, 0.02f, worldEnvironment[16], value -> {
+            worldEnvironment[16] = value; applyWorldEnvironment();
+        });
+
+        addDrawerSectionTo(panel, "EXPONENTIAL HEIGHT FOG");
+        addEnvironmentToggle(panel, "Enable height fog", 17);
+        addEnvironmentSlider(panel, "Fog density", 0.0f, 0.05f, worldEnvironment[18], value -> {
+            worldEnvironment[18] = value; applyWorldEnvironment();
+        });
+        addEnvironmentSlider(panel, "Fog base height", -20.0f, 50.0f, worldEnvironment[19], value -> {
+            worldEnvironment[19] = value; applyWorldEnvironment();
+        });
+        addEnvironmentSlider(panel, "Fog height falloff", 0.001f, 2.0f, worldEnvironment[20], value -> {
+            worldEnvironment[20] = value; applyWorldEnvironment();
+        });
+        addEnvironmentSlider(panel, "Fog red", 0.0f, 1.0f, worldEnvironment[21], value -> {
+            worldEnvironment[21] = value; applyWorldEnvironment();
+        });
+        addEnvironmentSlider(panel, "Fog green", 0.0f, 1.0f, worldEnvironment[22], value -> {
+            worldEnvironment[22] = value; applyWorldEnvironment();
+        });
+        addEnvironmentSlider(panel, "Fog blue", 0.0f, 1.0f, worldEnvironment[23], value -> {
+            worldEnvironment[23] = value; applyWorldEnvironment();
+        });
+
+        addDrawerSectionTo(panel, "POST PROCESSING");
+        addEnvironmentToggle(panel, "Enable bloom", 24);
+        addEnvironmentSlider(panel, "Bloom intensity", 0.0f, 1.5f, worldEnvironment[25], value -> {
+            worldEnvironment[25] = value; applyWorldEnvironment();
+        });
+        addEnvironmentSlider(panel, "Color contrast", 0.0f, 2.0f, worldEnvironment[26], value -> {
+            worldEnvironment[26] = value; applyWorldEnvironment();
+        });
+        addEnvironmentSlider(panel, "Color saturation", 0.0f, 2.0f, worldEnvironment[27], value -> {
+            worldEnvironment[27] = value; applyWorldEnvironment();
+        });
+
+        applyWorldEnvironment();
+        new AlertDialog.Builder(this).setTitle("WORLD ENVIRONMENT")
+                .setView(scroll)
+                .setPositiveButton("Done", (dialog, which) -> closeToolsDrawer())
+                .setNegativeButton("Close", null)
+                .show();
+    }
+
+    private void addDrawerSectionTo(LinearLayout panel, String title) {
+        TextView section = new TextView(this);
+        section.setText(title);
+        section.setTextColor(0xFFFFB45C);
+        section.setTextSize(11);
+        section.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        section.setPadding(0, dp(14), 0, dp(4));
+        panel.addView(section);
+    }
+
+    private void updateEnvironmentSunDirection(float azimuthDegrees, float elevationDegrees) {
+        double azimuth = Math.toRadians(azimuthDegrees);
+        double elevation = Math.toRadians(elevationDegrees);
+        float horizontal = (float)Math.cos(elevation);
+        worldEnvironment[0] = -horizontal * (float)Math.cos(azimuth);
+        worldEnvironment[1] = -(float)Math.sin(elevation);
+        worldEnvironment[2] = -horizontal * (float)Math.sin(azimuth);
+        applyWorldEnvironment();
+    }
+
     private void showDrawerRenderModes() {
         final String[] names = {"Lit", "Unlit", "Wireframe", "Detail Lighting",
                 "Lighting Only", "Normals", "Roughness", "Metallic"};
@@ -644,6 +842,18 @@ public final class MainActivity extends Activity
     }
 
     private static final int REQUEST_IMPORT_GLB = 7412;
+    private static final int REQUEST_IMPORT_HEIGHTMAP = 7413;
+    private static final int REQUEST_EXPORT_HEIGHTMAP = 7414;
+    private static final int REQUEST_IMPORT_HEIGHTMAP16 = 7415;
+    private static final int REQUEST_IMPORT_HEIGHTMAP16_PNG = 7418;
+    private static final int REQUEST_EXPORT_HEIGHTMAP16_PNG = 7419;
+    private static final int REQUEST_IMPORT_WORLD_TILE_RAW16 = 7420;
+    private int pendingWorldTileX = 1;
+    private int pendingWorldTileZ = 0;
+    private static final int REQUEST_EXPORT_HEIGHTMAP16 = 7416;
+    private static final int REQUEST_IMPORT_TERRAIN_TEXTURE = 7417;
+    private int pendingTerrainTextureLayer = 0;
+    private int pendingTerrainTextureMapType = 0;
 
     public void openSculptAssetPicker() {
         openGlbPicker();
@@ -658,11 +868,366 @@ public final class MainActivity extends Activity
         startActivityForResult(intent, REQUEST_IMPORT_GLB);
     }
 
+    private void openTerrainTexturePicker(int layer, int mapType) {
+        pendingTerrainTextureLayer = Math.max(0, Math.min(3, layer));
+        pendingTerrainTextureMapType = Math.max(0, Math.min(2, mapType));
+        closeToolsDrawer();
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("image/*");
+        startActivityForResult(intent, REQUEST_IMPORT_TERRAIN_TEXTURE);
+    }
+
+    private void openTerrainHeightmapImport() {
+        closeToolsDrawer();
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("image/*");
+        startActivityForResult(intent, REQUEST_IMPORT_HEIGHTMAP);
+    }
+
+    private void openTerrainHeightmap16Import() {
+        closeToolsDrawer();
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        startActivityForResult(intent, REQUEST_IMPORT_HEIGHTMAP16);
+    }
+
+    private void openLandscapeWorldTilePicker(int tileX, int tileZ) {
+        pendingWorldTileX = Math.max(-10000, Math.min(10000, tileX));
+        pendingWorldTileZ = Math.max(-10000, Math.min(10000, tileZ));
+        closeToolsDrawer();
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        startActivityForResult(intent, REQUEST_IMPORT_WORLD_TILE_RAW16);
+    }
+
+    private void openTerrainHeightmap16PngExport() {
+        closeToolsDrawer();
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("image/png");
+        intent.putExtra(Intent.EXTRA_TITLE, "Novaingine_Heightmap_129x129_16bit.png");
+        startActivityForResult(intent, REQUEST_EXPORT_HEIGHTMAP16_PNG);
+    }
+
+    private void openTerrainHeightmap16PngImport() {
+        closeToolsDrawer();
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("image/png");
+        startActivityForResult(intent, REQUEST_IMPORT_HEIGHTMAP16_PNG);
+    }
+
+    private void openTerrainHeightmap16Export() {
+        closeToolsDrawer();
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/octet-stream");
+        intent.putExtra(Intent.EXTRA_TITLE, "Novaingine_Heightmap_129x129.r16");
+        startActivityForResult(intent, REQUEST_EXPORT_HEIGHTMAP16);
+    }
+
+    private void openTerrainHeightmapExport() {
+        closeToolsDrawer();
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("image/png");
+        intent.putExtra(Intent.EXTRA_TITLE, "Novaingine_Heightmap.png");
+        startActivityForResult(intent, REQUEST_EXPORT_HEIGHTMAP);
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != REQUEST_IMPORT_GLB || resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
         Uri uri = data.getData();
+
+        if (requestCode == REQUEST_IMPORT_TERRAIN_TEXTURE) {
+            new Thread(() -> {
+                try (InputStream input = getContentResolver().openInputStream(uri);
+                     java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream()) {
+                    if (input == null) throw new IllegalStateException("Could not open texture image.");
+                    byte[] buffer = new byte[8192]; int read;
+                    while ((read = input.read(buffer)) != -1) {
+                        if (bytes.size() + read > 64 * 1024 * 1024)
+                            throw new IllegalArgumentException("Texture image exceeds 64 MB.");
+                        bytes.write(buffer, 0, read);
+                    }
+                    byte[] encoded = bytes.toByteArray();
+                    File assetFile = terrainTextureAssetFile(pendingTerrainTextureLayer, pendingTerrainTextureMapType);
+                    if (assetFile != null) {
+                        File parent = assetFile.getParentFile();
+                        if (parent != null && !parent.exists() && !parent.mkdirs())
+                            throw new IllegalStateException("Could not create project texture folder.");
+                        try (java.io.FileOutputStream assetOutput = new java.io.FileOutputStream(assetFile)) {
+                            assetOutput.write(encoded);
+                        }
+                    }
+                    Bitmap decoded = BitmapFactory.decodeByteArray(encoded, 0, encoded.length);
+                    if (decoded == null) throw new IllegalArgumentException("Unsupported image. Choose PNG, JPEG or WebP.");
+                    int originalWidth = decoded.getWidth(), originalHeight = decoded.getHeight();
+                    float scale = Math.min(1.0f, 1024.0f / Math.max(originalWidth, originalHeight));
+                    int width = Math.max(1, Math.round(originalWidth * scale));
+                    int height = Math.max(1, Math.round(originalHeight * scale));
+                    Bitmap scaled = (width == originalWidth && height == originalHeight)
+                            ? decoded : Bitmap.createScaledBitmap(decoded, width, height, true);
+                    int[] pixels = new int[width * height];
+                    scaled.getPixels(pixels, 0, width, 0, 0, width, height);
+                    if (scaled != decoded) scaled.recycle();
+                    decoded.recycle();
+                    runOnUiThread(() -> {
+                        if (engineSurface == null) return;
+                        engineSurface.setTerrainTexture(pendingTerrainTextureLayer,
+                                pendingTerrainTextureMapType, width, height, pixels, ok ->
+                                android.widget.Toast.makeText(this, ok
+                                        ? "Terrain texture imported and saved in project Assets/Terrain"
+                                        : "Texture upload failed. Check image size and renderer state.",
+                                        android.widget.Toast.LENGTH_LONG).show());
+                    });
+                } catch (Exception error) {
+                    runOnUiThread(() -> android.widget.Toast.makeText(this,
+                            "Texture import failed: " + error.getMessage(),
+                            android.widget.Toast.LENGTH_LONG).show());
+                }
+            }, "Nova-Terrain-Texture-Import").start();
+            return;
+        }
+
+        if (requestCode == REQUEST_IMPORT_WORLD_TILE_RAW16) {
+            final int tileX = pendingWorldTileX, tileZ = pendingWorldTileZ;
+            if (tileX == 0 && tileZ == 0) {
+                android.widget.Toast.makeText(this, "Tile 0, 0 is the main landscape. Choose another tile coordinate.",
+                        android.widget.Toast.LENGTH_LONG).show();
+                return;
+            }
+            new Thread(() -> {
+                try (InputStream input = getContentResolver().openInputStream(uri);
+                     java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream()) {
+                    if (input == null) throw new IllegalStateException("Could not open world tile heightmap.");
+                    byte[] buffer = new byte[8192]; int read;
+                    while ((read = input.read(buffer)) != -1) {
+                        if (bytes.size() + read > 100000)
+                            throw new IllegalArgumentException("World tile RAW16 file is too large.");
+                        bytes.write(buffer, 0, read);
+                    }
+                    byte[] raw = bytes.toByteArray();
+                    if (raw.length != 129 * 129 * 2)
+                        throw new IllegalArgumentException("Expected 33,282 bytes: 129 x 129 unsigned 16-bit little-endian samples.");
+                    float[] heights = new float[129 * 129];
+                    for (int i = 0; i < heights.length; i++) {
+                        int value = (raw[i * 2] & 0xFF) | ((raw[i * 2 + 1] & 0xFF) << 8);
+                        heights[i] = -12.0f + (value / 65535.0f) * 36.0f;
+                    }
+                    File asset = landscapeWorldTileAssetFile(tileX, tileZ);
+                    if (asset != null) {
+                        File parent = asset.getParentFile();
+                        if (parent != null && !parent.exists() && !parent.mkdirs())
+                            throw new IllegalStateException("Could not create landscape tile asset folder.");
+                        try (FileOutputStream output = new FileOutputStream(asset)) { output.write(raw); }
+                    }
+                    runOnUiThread(() -> engineSurface.createLandscapeWorldTile(tileX, tileZ, heights, ok ->
+                            android.widget.Toast.makeText(this, ok
+                                    ? "World tile " + tileX + ", " + tileZ + " imported and saved"
+                                    : "Tile import failed. Check for duplicate coordinates and create the main landscape first.",
+                                    android.widget.Toast.LENGTH_LONG).show()));
+                } catch (Exception error) {
+                    runOnUiThread(() -> android.widget.Toast.makeText(this,
+                            "World tile import failed: " + error.getMessage(),
+                            android.widget.Toast.LENGTH_LONG).show());
+                }
+            }, "Nova-World-Tile-Import").start();
+            return;
+        }
+
+        if (requestCode == REQUEST_EXPORT_HEIGHTMAP16_PNG) {
+            if (engineSurface == null) return;
+            engineSurface.getTerrainHeights(heights -> {
+                if (heights == null || heights.length != 129 * 129) {
+                    android.widget.Toast.makeText(this, "Create a landscape before exporting.",
+                            android.widget.Toast.LENGTH_LONG).show();
+                    return;
+                }
+                new Thread(() -> {
+                    try {
+                        byte[] png = encodeTerrainHeightmap16Png(heights);
+                        try (java.io.OutputStream output = getContentResolver().openOutputStream(uri)) {
+                            if (output == null) throw new IllegalStateException("Could not write 16-bit PNG.");
+                            output.write(png);
+                        }
+                        runOnUiThread(() -> android.widget.Toast.makeText(this,
+                                "Exported 129 x 129 16-bit grayscale PNG.",
+                                android.widget.Toast.LENGTH_LONG).show());
+                    } catch (Exception error) {
+                        runOnUiThread(() -> android.widget.Toast.makeText(this,
+                                "16-bit PNG export failed: " + error.getMessage(),
+                                android.widget.Toast.LENGTH_LONG).show());
+                    }
+                }, "Nova-Heightmap16-PNG-Export").start();
+            });
+            return;
+        }
+
+        if (requestCode == REQUEST_IMPORT_HEIGHTMAP16_PNG) {
+            new Thread(() -> {
+                try (InputStream input = getContentResolver().openInputStream(uri);
+                     java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream()) {
+                    if (input == null) throw new IllegalStateException("Could not open 16-bit PNG.");
+                    byte[] buffer = new byte[8192]; int read;
+                    while ((read = input.read(buffer)) != -1) {
+                        if (bytes.size() + read > 16 * 1024 * 1024)
+                            throw new IllegalArgumentException("PNG file exceeds 16 MB.");
+                        bytes.write(buffer, 0, read);
+                    }
+                    byte[] png = bytes.toByteArray();
+                    runOnUiThread(() -> {
+                        if (engineSurface == null) return;
+                        engineSurface.setTerrainHeightmapPng16(png, ok ->
+                                android.widget.Toast.makeText(this, ok
+                                        ? "16-bit grayscale PNG imported at full precision"
+                                        : "Unsupported PNG. Use a 129 x 129, 16-bit grayscale, non-interlaced PNG.",
+                                        android.widget.Toast.LENGTH_LONG).show());
+                    });
+                } catch (Exception error) {
+                    runOnUiThread(() -> android.widget.Toast.makeText(this,
+                            "16-bit PNG import failed: " + error.getMessage(),
+                            android.widget.Toast.LENGTH_LONG).show());
+                }
+            }, "Nova-Heightmap16-PNG-Import").start();
+            return;
+        }
+
+        if (requestCode == REQUEST_IMPORT_HEIGHTMAP16) {
+            new Thread(() -> {
+                try (InputStream input = getContentResolver().openInputStream(uri);
+                     java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream()) {
+                    if (input == null) throw new IllegalStateException("Could not open RAW16 file.");
+                    byte[] buffer = new byte[8192]; int read;
+                    while ((read = input.read(buffer)) != -1) {
+                        if (bytes.size() + read > 100000) throw new IllegalArgumentException("Heightmap file is too large.");
+                        bytes.write(buffer, 0, read);
+                    }
+                    byte[] raw = bytes.toByteArray();
+                    if (raw.length != 129 * 129 * 2) throw new IllegalArgumentException(
+                            "Expected exactly 33,282 bytes: 129 x 129 unsigned 16-bit little-endian samples.");
+                    float[] heights = new float[129 * 129];
+                    for (int i = 0; i < heights.length; i++) {
+                        int value = (raw[i * 2] & 0xFF) | ((raw[i * 2 + 1] & 0xFF) << 8);
+                        heights[i] = -12.0f + (value / 65535.0f) * 36.0f;
+                    }
+                    runOnUiThread(() -> engineSurface.setTerrainHeights(heights, ok ->
+                            android.widget.Toast.makeText(this, ok ? "16-bit RAW heightmap imported" :
+                                    "Create a landscape first", android.widget.Toast.LENGTH_LONG).show()));
+                } catch (Exception error) {
+                    runOnUiThread(() -> android.widget.Toast.makeText(this,
+                            "RAW16 import failed: " + error.getMessage(), android.widget.Toast.LENGTH_LONG).show());
+                }
+            }, "Nova-Heightmap16-Import").start();
+            return;
+        }
+
+        if (requestCode == REQUEST_EXPORT_HEIGHTMAP16) {
+            if (engineSurface == null) return;
+            engineSurface.getTerrainHeights(heights -> {
+                if (heights == null || heights.length != 129 * 129) {
+                    android.widget.Toast.makeText(this, "Create a landscape before exporting.",
+                            android.widget.Toast.LENGTH_LONG).show(); return;
+                }
+                new Thread(() -> {
+                    try (java.io.OutputStream output = getContentResolver().openOutputStream(uri)) {
+                        if (output == null) throw new IllegalStateException("Could not write RAW16 file.");
+                        byte[] raw = new byte[heights.length * 2];
+                        for (int i = 0; i < heights.length; i++) {
+                            int value = Math.max(0, Math.min(65535,
+                                    Math.round(((heights[i] + 12.0f) / 36.0f) * 65535.0f)));
+                            raw[i * 2] = (byte) (value & 0xFF);
+                            raw[i * 2 + 1] = (byte) ((value >>> 8) & 0xFF);
+                        }
+                        output.write(raw);
+                        runOnUiThread(() -> android.widget.Toast.makeText(this,
+                                "Exported 129 x 129 unsigned 16-bit little-endian RAW heightmap",
+                                android.widget.Toast.LENGTH_LONG).show());
+                    } catch (Exception error) {
+                        runOnUiThread(() -> android.widget.Toast.makeText(this,
+                                "RAW16 export failed: " + error.getMessage(), android.widget.Toast.LENGTH_LONG).show());
+                    }
+                }, "Nova-Heightmap16-Export").start();
+            });
+            return;
+        }
+
+        if (requestCode == REQUEST_IMPORT_HEIGHTMAP) {
+            new Thread(() -> {
+                try (InputStream input = getContentResolver().openInputStream(uri)) {
+                    if (input == null) throw new IllegalStateException("Could not open heightmap.");
+                    Bitmap decoded = BitmapFactory.decodeStream(input);
+                    if (decoded == null) throw new IllegalArgumentException("Unsupported image. Choose a PNG or other readable image.");
+                    Bitmap scaled = Bitmap.createScaledBitmap(decoded, 129, 129, true);
+                    int[] pixels = new int[129 * 129];
+                    scaled.getPixels(pixels, 0, 129, 0, 0, 129, 129);
+                    float[] heights = new float[pixels.length];
+                    for (int i = 0; i < pixels.length; i++) {
+                        int gray = (Color.red(pixels[i]) + Color.green(pixels[i]) + Color.blue(pixels[i])) / 3;
+                        heights[i] = -12.0f + (gray / 255.0f) * 36.0f;
+                    }
+                    if (scaled != decoded) scaled.recycle();
+                    decoded.recycle();
+                    runOnUiThread(() -> {
+                        if (engineSurface == null) return;
+                        engineSurface.setTerrainHeights(heights, ok ->
+                                android.widget.Toast.makeText(this,
+                                        ok ? "Heightmap imported (129 x 129, 8-bit grayscale)" :
+                                                "Create a landscape first, then import the heightmap.",
+                                        android.widget.Toast.LENGTH_LONG).show());
+                    });
+                } catch (Exception error) {
+                    runOnUiThread(() -> android.widget.Toast.makeText(this,
+                            "Heightmap import failed: " + error.getMessage(),
+                            android.widget.Toast.LENGTH_LONG).show());
+                }
+            }, "Nova-Heightmap-Import").start();
+            return;
+        }
+
+        if (requestCode == REQUEST_EXPORT_HEIGHTMAP) {
+            if (engineSurface == null) return;
+            engineSurface.getTerrainHeights(heights -> {
+                if (heights == null || heights.length != 129 * 129) {
+                    android.widget.Toast.makeText(this, "Create a landscape before exporting.",
+                            android.widget.Toast.LENGTH_LONG).show();
+                    return;
+                }
+                Bitmap bitmap = Bitmap.createBitmap(129, 129, Bitmap.Config.ARGB_8888);
+                int[] pixels = new int[heights.length];
+                for (int i = 0; i < heights.length; i++) {
+                    int gray = Math.max(0, Math.min(255,
+                            Math.round(((heights[i] + 12.0f) / 36.0f) * 255.0f)));
+                    pixels[i] = Color.rgb(gray, gray, gray);
+                }
+                bitmap.setPixels(pixels, 0, 129, 0, 0, 129, 129);
+                new Thread(() -> {
+                    try (java.io.OutputStream output = getContentResolver().openOutputStream(uri)) {
+                        if (output == null || !bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
+                            throw new IllegalStateException("Could not write PNG.");
+                        }
+                        runOnUiThread(() -> android.widget.Toast.makeText(this,
+                                "Heightmap exported as 129 x 129 8-bit grayscale PNG.",
+                                android.widget.Toast.LENGTH_LONG).show());
+                    } catch (Exception error) {
+                        runOnUiThread(() -> android.widget.Toast.makeText(this,
+                                "Heightmap export failed: " + error.getMessage(),
+                                android.widget.Toast.LENGTH_LONG).show());
+                    } finally {
+                        bitmap.recycle();
+                    }
+                }, "Nova-Heightmap-Export").start();
+            });
+            return;
+        }
+
+        if (requestCode != REQUEST_IMPORT_GLB) return;
         new Thread(() -> {
             File modelFile = new File(getCacheDir(), "nova_import_" + System.currentTimeMillis() + ".glb");
             try (InputStream input = getContentResolver().openInputStream(uri);
@@ -899,17 +1464,17 @@ public final class MainActivity extends Activity
 
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(18), dp(8), dp(18), dp(4));
+        content.setPadding(dp(18), dp(8), dp(18), dp(8));
 
         TextView info = new TextView(this);
-        info.setText("Create an editable 11 x 11 terrain patch, then sculpt around a world X/Z position. The patch is centered near the arena.");
+        info.setText("LANDSCAPE • 129 x 129 connected heightfield\nCreate a continuous terrain surface, then shape it with height brushes. Brush positions use world X/Z coordinates.");
         info.setTextColor(Color.DKGRAY);
         info.setTextSize(12);
         content.addView(info);
 
         String[] labels = {"Brush center X", "Brush center Z", "Brush radius", "Brush strength"};
         EditText[] fields = new EditText[4];
-        String[] defaults = {"0", "-4", "3.0", "0.45"};
+        String[] defaults = {"0", "-4", "6.0", "0.65"};
         for (int i = 0; i < fields.length; i++) {
             TextView label = new TextView(this);
             label.setText(labels[i]);
@@ -927,20 +1492,486 @@ public final class MainActivity extends Activity
             fields[i] = field;
         }
 
-        new AlertDialog.Builder(this)
-                .setTitle("Terrain Sculpting")
-                .setView(content)
-                .setNeutralButton("Generate", (dialog, which) -> {
-                    boolean ok = engineSurface.createTerrain();
+        ScrollView landscapeScroll = new ScrollView(this);
+        landscapeScroll.addView(content);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Landscape Tools")
+                .setView(landscapeScroll)
+                .setNegativeButton("Close", null)
+                .create();
+
+        TextView generate = new TextView(this);
+        generate.setText("CREATE / REPLACE LANDSCAPE");
+        generate.setTextColor(Color.WHITE);
+        generate.setTextSize(12);
+        generate.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        generate.setGravity(Gravity.CENTER);
+        generate.setPadding(dp(12), dp(13), dp(12), dp(13));
+        generate.setBackgroundColor(0xFF276A48);
+        LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(44));
+        actionParams.topMargin = dp(8);
+        content.addView(generate, actionParams);
+        generate.setOnClickListener(v -> engineSurface.createTerrain(ok ->
+                android.widget.Toast.makeText(this,
+                        ok ? "129 x 129 landscape created" : "Landscape creation failed",
+                        android.widget.Toast.LENGTH_SHORT).show()));
+
+        String[] brushNames = {"Raise", "Lower", "Smooth", "Flatten", "Noise", "Ramp", "Erode"};
+        Spinner terrainBrushPicker = new Spinner(this);
+        ArrayAdapter<String> terrainBrushAdapter = new ArrayAdapter<>(
+                this, android.R.layout.simple_spinner_item, brushNames);
+        terrainBrushAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        terrainBrushPicker.setAdapter(terrainBrushAdapter);
+        terrainBrushPicker.setSelection(0);
+        content.addView(terrainBrushPicker, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
+
+        TextView fingerSculpt = new TextView(this);
+        fingerSculpt.setText(terrainViewportSculpting ? "STOP FINGER SCULPTING" : "START FINGER SCULPTING");
+        fingerSculpt.setTextColor(Color.WHITE);
+        fingerSculpt.setTextSize(12);
+        fingerSculpt.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        fingerSculpt.setGravity(Gravity.CENTER);
+        fingerSculpt.setPadding(dp(12), dp(12), dp(12), dp(12));
+        fingerSculpt.setBackgroundColor(0xFF276A48);
+        LinearLayout.LayoutParams fingerParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(44));
+        fingerParams.topMargin = dp(8);
+        content.addView(fingerSculpt, fingerParams);
+        fingerSculpt.setOnClickListener(v -> {
+            terrainViewportSculpting = !terrainViewportSculpting;
+            float radius = terrainValue(fields[2], 6.0f);
+            float strength = terrainValue(fields[3], 0.35f);
+            int selectedBrush = terrainBrushPicker.getSelectedItemPosition();
+            engineSurface.setTerrainSculptMode(
+                    terrainViewportSculpting, selectedBrush, radius, strength);
+            dialog.dismiss();
+            android.widget.Toast.makeText(this,
+                    terrainViewportSculpting
+                            ? "Finger sculpting ON • drag directly on the terrain"
+                            : "Finger sculpting OFF",
+                    android.widget.Toast.LENGTH_LONG).show();
+        });
+
+        for (int mode = 0; mode < brushNames.length; mode++) {
+            final int brushMode = mode;
+            TextView action = new TextView(this);
+            action.setText(brushNames[mode].toUpperCase(java.util.Locale.ROOT));
+            action.setTextColor(Color.WHITE);
+            action.setTextSize(12);
+            action.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+            action.setGravity(Gravity.CENTER);
+            action.setPadding(dp(12), dp(10), dp(12), dp(10));
+            action.setBackgroundColor(0xFF354456);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(40));
+            params.topMargin = dp(5);
+            content.addView(action, params);
+            action.setOnClickListener(v -> {
+                terrainBrushPicker.setSelection(brushMode);
+                if (terrainViewportSculpting) {
+                    engineSurface.setTerrainSculptMode(true, brushMode,
+                            terrainValue(fields[2], 6.0f),
+                            terrainValue(fields[3], 0.35f));
+                    dialog.dismiss();
                     android.widget.Toast.makeText(this,
-                            ok ? "Terrain generated" : "Terrain generation failed",
+                            brushNames[brushMode] + " brush selected • drag on terrain",
                             android.widget.Toast.LENGTH_SHORT).show();
-                })
-                .setPositiveButton("Raise", (dialog, which) ->
-                        applyTerrainBrush(fields, 0))
-                .setNegativeButton("More Tools", (dialog, which) ->
-                        showTerrainModes(fields))
-                .show();
+                } else {
+                    applyTerrainBrush(fields, brushMode);
+                }
+            });
+        }
+
+        TextView textureHeading = new TextView(this);
+        textureHeading.setText("TEXTURE MAP ASSETS • ALBEDO / NORMAL / ROUGHNESS");
+        textureHeading.setTextColor(0xFFB45F16);
+        textureHeading.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        textureHeading.setPadding(0, dp(16), 0, dp(4));
+        content.addView(textureHeading);
+        TextView textureHelp = new TextView(this);
+        textureHelp.setText("Import real image maps for each terrain layer. Albedo uses RGB colour, Normal expects a tangent-space normal map, and Roughness uses its red channel. Images are resized to a maximum 1024 px and uploaded to GPU memory.");
+        textureHelp.setTextColor(Color.DKGRAY); textureHelp.setTextSize(11);
+        content.addView(textureHelp);
+        Spinner textureLayerPicker = new Spinner(this);
+        String[] textureLayerNames = {"Grass", "Rock", "Sand", "Snow"};
+        ArrayAdapter<String> textureLayerAdapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, textureLayerNames);
+        textureLayerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        textureLayerPicker.setAdapter(textureLayerAdapter);
+        content.addView(textureLayerPicker, new LinearLayout.LayoutParams(-1, dp(42)));
+        Spinner textureMapPicker = new Spinner(this);
+        String[] textureMapNames = {"Albedo / Base Color", "Normal", "Roughness"};
+        ArrayAdapter<String> textureMapAdapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, textureMapNames);
+        textureMapAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        textureMapPicker.setAdapter(textureMapAdapter);
+        content.addView(textureMapPicker, new LinearLayout.LayoutParams(-1, dp(42)));
+        TextView importTexture = new TextView(this);
+        importTexture.setText("IMPORT SELECTED TEXTURE MAP");
+        importTexture.setTextColor(Color.WHITE); importTexture.setGravity(Gravity.CENTER);
+        importTexture.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        importTexture.setPadding(dp(8), dp(12), dp(8), dp(12));
+        importTexture.setBackgroundColor(0xFF35566B);
+        content.addView(importTexture, new LinearLayout.LayoutParams(-1, dp(44)));
+        importTexture.setOnClickListener(v -> openTerrainTexturePicker(
+                textureLayerPicker.getSelectedItemPosition(), textureMapPicker.getSelectedItemPosition()));
+
+        TextView paintHeading = new TextView(this);
+        paintHeading.setText("MATERIAL PAINTING");
+        paintHeading.setTextColor(0xFFB45F16);
+        paintHeading.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        paintHeading.setPadding(0, dp(16), 0, dp(4));
+        content.addView(paintHeading);
+        Spinner materialPicker = new Spinner(this);
+        String[] materialNames = {"Grass", "Rock", "Sand", "Snow"};
+        ArrayAdapter<String> materialAdapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, materialNames);
+        materialAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        materialPicker.setAdapter(materialAdapter);
+        content.addView(materialPicker, new LinearLayout.LayoutParams(-1, dp(44)));
+        TextView paintToggle = new TextView(this);
+        paintToggle.setText(terrainViewportPainting ? "STOP MATERIAL PAINTING" : "START MATERIAL PAINTING");
+        paintToggle.setTextColor(Color.WHITE); paintToggle.setGravity(Gravity.CENTER);
+        paintToggle.setPadding(dp(10), dp(12), dp(10), dp(12));
+        paintToggle.setBackgroundColor(0xFF246A83);
+        content.addView(paintToggle, new LinearLayout.LayoutParams(-1, dp(44)));
+        paintToggle.setOnClickListener(v -> {
+            terrainViewportPainting = !terrainViewportPainting;
+            engineSurface.setTerrainPaintMode(terrainViewportPainting,
+                    materialPicker.getSelectedItemPosition(),
+                    terrainValue(fields[2], 6.0f), terrainValue(fields[3], 0.35f));
+            terrainViewportSculpting = false;
+            dialog.dismiss();
+            android.widget.Toast.makeText(this,
+                    terrainViewportPainting ? "Paint mode ON • drag on terrain" : "Paint mode OFF",
+                    android.widget.Toast.LENGTH_LONG).show();
+        });
+
+        TextView erosionHeading = new TextView(this);
+        erosionHeading.setText("EROSION SIMULATION");
+        erosionHeading.setTextColor(0xFFB45F16);
+        erosionHeading.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        erosionHeading.setPadding(0, dp(16), 0, dp(4));
+        content.addView(erosionHeading);
+        TextView hydraulic = new TextView(this);
+        hydraulic.setText("RUN HYDRAULIC EROSION • 1200 DROPLETS");
+        hydraulic.setTextColor(Color.WHITE); hydraulic.setGravity(Gravity.CENTER);
+        hydraulic.setPadding(dp(8), dp(12), dp(8), dp(12));
+        hydraulic.setBackgroundColor(0xFF35566B);
+        content.addView(hydraulic, new LinearLayout.LayoutParams(-1, dp(42)));
+        hydraulic.setOnClickListener(v -> engineSurface.runTerrainErosion(0, 1200,
+                terrainValue(fields[3], 0.35f), ok ->
+                android.widget.Toast.makeText(this, ok ? "Hydraulic erosion applied" :
+                        "Create a landscape first or unlock the active layer",
+                        android.widget.Toast.LENGTH_LONG).show()));
+        TextView thermal = new TextView(this);
+        thermal.setText("RUN THERMAL EROSION • 12 PASSES");
+        thermal.setTextColor(Color.WHITE); thermal.setGravity(Gravity.CENTER);
+        thermal.setPadding(dp(8), dp(12), dp(8), dp(12));
+        thermal.setBackgroundColor(0xFF66512F);
+        LinearLayout.LayoutParams thermalParams = new LinearLayout.LayoutParams(-1, dp(42));
+        thermalParams.topMargin = dp(5);
+        content.addView(thermal, thermalParams);
+        thermal.setOnClickListener(v -> engineSurface.runTerrainErosion(1, 12,
+                terrainValue(fields[3], 0.35f), ok ->
+                android.widget.Toast.makeText(this, ok ? "Thermal erosion applied" :
+                        "Create a landscape first or unlock the active layer",
+                        android.widget.Toast.LENGTH_LONG).show()));
+
+        TextView layerHeading = new TextView(this);
+        layerHeading.setText("NON-DESTRUCTIVE EDIT LAYERS");
+        layerHeading.setTextColor(0xFFB45F16);
+        layerHeading.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        layerHeading.setPadding(0, dp(16), 0, dp(4));
+        content.addView(layerHeading);
+        TextView addLayer = new TextView(this);
+        addLayer.setText("ADD EDIT LAYER");
+        addLayer.setTextColor(Color.WHITE); addLayer.setGravity(Gravity.CENTER);
+        addLayer.setPadding(dp(8), dp(12), dp(8), dp(12));
+        addLayer.setBackgroundColor(0xFF3C6847);
+        content.addView(addLayer, new LinearLayout.LayoutParams(-1, dp(42)));
+        addLayer.setOnClickListener(v -> {
+            EditText name = new EditText(this); name.setSingleLine(true);
+            name.setHint("Layer name (e.g. Mountain sculpt)");
+            new AlertDialog.Builder(this).setTitle("New Landscape Layer").setView(name)
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton("Add", (d, w) -> engineSurface.addLandscapeLayer(
+                            name.getText().toString().trim(), index ->
+                                    android.widget.Toast.makeText(this, index >= 0 ?
+                                            "Edit layer added: " + (index + 1) :
+                                            "Could not add layer. Create a landscape first.",
+                                            android.widget.Toast.LENGTH_LONG).show()))
+                    .show();
+        });
+        TextView manageLayers = new TextView(this);
+        manageLayers.setText("SELECT / MANAGE EDIT LAYERS");
+        manageLayers.setTextColor(Color.WHITE); manageLayers.setGravity(Gravity.CENTER);
+        manageLayers.setPadding(dp(8), dp(12), dp(8), dp(12));
+        manageLayers.setBackgroundColor(0xFF354456);
+        LinearLayout.LayoutParams layerParams = new LinearLayout.LayoutParams(-1, dp(42));
+        layerParams.topMargin = dp(5); content.addView(manageLayers, layerParams);
+        manageLayers.setOnClickListener(v -> engineSurface.getLandscapeLayers(names -> {
+            if (names == null || names.length == 0) {
+                android.widget.Toast.makeText(this, "Create a landscape first", android.widget.Toast.LENGTH_SHORT).show();
+                return;
+            }
+            new AlertDialog.Builder(this).setTitle("Landscape Edit Layers")
+                    .setItems(names, (d, which) -> {
+                        engineSurface.selectLandscapeLayer(which, ok -> {
+                            if (!ok) return;
+                            String[] actions = {"Toggle visibility", "Toggle lock", "Move layer up", "Move layer down", "Edit layer blend", "Delete layer"};
+                            new AlertDialog.Builder(this).setTitle(names[which])
+                                    .setItems(actions, (ad, action) -> engineSurface.getLandscapeLayerState(which, state -> {
+                                        if (state == null || state.length < 4) return;
+                                        if (action == 0) engineSurface.setLandscapeLayerState(which,
+                                                state[0] < 0.5f, state[1] > 0.5f, state[2], state[3], result ->
+                                                android.widget.Toast.makeText(this, result ? "Layer visibility updated" : "Layer update failed", android.widget.Toast.LENGTH_SHORT).show());
+                                        else if (action == 1) engineSurface.setLandscapeLayerState(which,
+                                                state[0] > 0.5f, state[1] < 0.5f, state[2], state[3], result ->
+                                                android.widget.Toast.makeText(this, result ? "Layer lock updated" : "Layer update failed", android.widget.Toast.LENGTH_SHORT).show());
+                                        else if (action == 2) engineSurface.moveLandscapeLayer(which, Math.max(0, which - 1), result ->
+                                                android.widget.Toast.makeText(this, result ? "Layer moved up" : "Layer move failed", android.widget.Toast.LENGTH_SHORT).show());
+                                        else if (action == 3) engineSurface.moveLandscapeLayer(which, Math.min(names.length - 1, which + 1), result ->
+                                                android.widget.Toast.makeText(this, result ? "Layer moved down" : "Layer move failed", android.widget.Toast.LENGTH_SHORT).show());
+                                        else if (action == 4) {
+                                            LinearLayout blend = new LinearLayout(this);
+                                            blend.setOrientation(LinearLayout.VERTICAL);
+                                            blend.setPadding(dp(18), dp(8), dp(18), dp(8));
+                                            TextView hLabel = new TextView(this); hLabel.setText("Height blend alpha"); hLabel.setTextColor(Color.DKGRAY);
+                                            android.widget.SeekBar hAlpha = new android.widget.SeekBar(this); hAlpha.setMax(100); hAlpha.setProgress(Math.round(state[2] * 100));
+                                            TextView pLabel = new TextView(this); pLabel.setText("Paint blend alpha"); pLabel.setTextColor(Color.DKGRAY);
+                                            android.widget.SeekBar pAlpha = new android.widget.SeekBar(this); pAlpha.setMax(100); pAlpha.setProgress(Math.round(state[3] * 100));
+                                            blend.addView(hLabel); blend.addView(hAlpha); blend.addView(pLabel); blend.addView(pAlpha);
+                                            new AlertDialog.Builder(this).setTitle("Layer Blend • " + names[which]).setView(blend)
+                                                    .setNegativeButton("Cancel", null)
+                                                    .setPositiveButton("Apply", (bd, bw) -> engineSurface.setLandscapeLayerState(
+                                                            which, state[0] > 0.5f, state[1] > 0.5f,
+                                                            hAlpha.getProgress() / 100.0f, pAlpha.getProgress() / 100.0f,
+                                                            result -> android.widget.Toast.makeText(this, result ? "Layer blend updated" : "Layer blend failed", android.widget.Toast.LENGTH_SHORT).show()))
+                                                    .show();
+                                        } else engineSurface.deleteLandscapeLayer(which, result ->
+                                                android.widget.Toast.makeText(this, result ? "Layer deleted" : "The last remaining layer cannot be deleted", android.widget.Toast.LENGTH_SHORT).show());
+                                    })).setNegativeButton("Close", null).show();
+                        });
+                    }).setNegativeButton("Close", null).show();
+        }));
+
+        TextView splineHeading = new TextView(this);
+        splineHeading.setText("LANDSCAPE SPLINES • ROAD CORRIDORS");
+        splineHeading.setTextColor(0xFFB45F16);
+        splineHeading.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        splineHeading.setPadding(0, dp(16), 0, dp(4));
+        content.addView(splineHeading);
+        EditText[] road = new EditText[9];
+        String[] roadLabels = {"Start X", "Start Z", "Start width", "Control X", "Control Z", "Control width", "End X", "End Z", "End width"};
+        String[] roadDefaults = {"-20", "-4", "5", "0", "5", "5", "20", "-4", "5"};
+        for (int i=0;i<road.length;i++) {
+            TextView label = new TextView(this); label.setText(roadLabels[i]);
+            label.setTextColor(Color.DKGRAY); label.setTextSize(11); content.addView(label);
+            road[i] = new EditText(this); road[i].setSingleLine(true);
+            road[i].setInputType(android.text.InputType.TYPE_CLASS_NUMBER |
+                    android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL |
+                    android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+            road[i].setText(roadDefaults[i]); content.addView(road[i]);
+        }
+        TextView addRoad = new TextView(this);
+        addRoad.setText("CREATE CURVED ROAD SPLINE");
+        addRoad.setTextColor(Color.WHITE); addRoad.setGravity(Gravity.CENTER);
+        addRoad.setPadding(dp(8), dp(12), dp(8), dp(12));
+        addRoad.setBackgroundColor(0xFF6B5733);
+        content.addView(addRoad, new LinearLayout.LayoutParams(-1, dp(42)));
+        addRoad.setOnClickListener(v -> {
+            float[] points = {
+                    terrainValue(road[0], -20), terrainValue(road[1], -4), terrainValue(road[2], 5),
+                    terrainValue(road[3], 0), terrainValue(road[4], 5), terrainValue(road[5], 5),
+                    terrainValue(road[6], 20), terrainValue(road[7], -4), terrainValue(road[8], 5)
+            };
+            engineSurface.addLandscapeSpline(points, ok ->
+                    android.widget.Toast.makeText(this, ok ? "Curved road spline stored and terrain conformed" :
+                            "Could not create road spline. Keep all control points inside one landscape tile.",
+                            android.widget.Toast.LENGTH_LONG).show());
+        });
+
+
+        TextView caveHeading = new TextView(this);
+        caveHeading.setText("CAVE / TUNNEL CREATION");
+        caveHeading.setTextColor(0xFFB45F16);
+        caveHeading.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        caveHeading.setPadding(0, dp(16), 0, dp(4));
+        content.addView(caveHeading);
+        EditText[] caveFields = new EditText[7];
+        String[] caveLabels = {"Entry X", "Entry Y", "Entry Z", "Exit X", "Exit Y", "Exit Z", "Tunnel radius"};
+        String[] caveDefaults = {"-14", "-2.5", "-4", "14", "-2.5", "-4", "2.0"};
+        for (int i=0;i<caveFields.length;i++) {
+            TextView label = new TextView(this); label.setText(caveLabels[i]);
+            label.setTextColor(Color.DKGRAY); label.setTextSize(11); content.addView(label);
+            caveFields[i] = new EditText(this); caveFields[i].setSingleLine(true);
+            caveFields[i].setInputType(android.text.InputType.TYPE_CLASS_NUMBER |
+                    android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL |
+                    android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+            caveFields[i].setText(caveDefaults[i]); content.addView(caveFields[i]);
+        }
+        TextView createCave = new TextView(this);
+        createCave.setText("CREATE CAVE TUNNEL + ENTRANCES");
+        createCave.setTextColor(Color.WHITE); createCave.setGravity(Gravity.CENTER);
+        createCave.setPadding(dp(8), dp(12), dp(8), dp(12)); createCave.setBackgroundColor(0xFF51413A);
+        content.addView(createCave, new LinearLayout.LayoutParams(-1, dp(42)));
+        createCave.setOnClickListener(v -> {
+            float[] pathPoints = {
+                    terrainValue(caveFields[0], -14), terrainValue(caveFields[1], -2.5f), terrainValue(caveFields[2], -4),
+                    terrainValue(caveFields[3], 14), terrainValue(caveFields[4], -2.5f), terrainValue(caveFields[5], -4)
+            };
+            engineSurface.createLandscapeCave(pathPoints, terrainValue(caveFields[6], 2.0f), ok ->
+                    android.widget.Toast.makeText(this, ok ? "Cave tunnel and surface entrances created" :
+                            "Cave creation failed. Create a landscape first.", android.widget.Toast.LENGTH_LONG).show());
+        });
+
+        TextView holeHeading = new TextView(this);
+        holeHeading.setText("TERRAIN VISIBILITY / HOLES");
+        holeHeading.setTextColor(0xFFB45F16);
+        holeHeading.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        holeHeading.setPadding(0, dp(16), 0, dp(4));
+        content.addView(holeHeading);
+        TextView cutHole = new TextView(this);
+        cutHole.setText("CUT TERRAIN HOLES • TAP CELLS");
+        cutHole.setTextColor(Color.WHITE); cutHole.setGravity(Gravity.CENTER);
+        cutHole.setPadding(dp(8), dp(12), dp(8), dp(12)); cutHole.setBackgroundColor(0xFF7A3F3F);
+        content.addView(cutHole, new LinearLayout.LayoutParams(-1, dp(42)));
+        cutHole.setOnClickListener(v -> {
+            engineSurface.setTerrainHoleMode(true, true);
+            dialog.dismiss();
+            android.widget.Toast.makeText(this, "Hole editing ON • tap terrain cells", android.widget.Toast.LENGTH_LONG).show();
+        });
+        TextView fillHole = new TextView(this);
+        fillHole.setText("FILL TERRAIN HOLES • TAP CELLS");
+        fillHole.setTextColor(Color.WHITE); fillHole.setGravity(Gravity.CENTER);
+        fillHole.setPadding(dp(8), dp(12), dp(8), dp(12)); fillHole.setBackgroundColor(0xFF426B75);
+        LinearLayout.LayoutParams fillParams = new LinearLayout.LayoutParams(-1, dp(42));
+        fillParams.topMargin = dp(5); content.addView(fillHole, fillParams);
+        fillHole.setOnClickListener(v -> {
+            engineSurface.setTerrainHoleMode(true, false);
+            dialog.dismiss();
+            android.widget.Toast.makeText(this, "Hole filling ON • tap a hole cell", android.widget.Toast.LENGTH_LONG).show();
+        });
+
+        TextView worldTileHeading = new TextView(this);
+        worldTileHeading.setText("LARGE WORLD • LANDSCAPE TILE STREAMING");
+        worldTileHeading.setTextColor(0xFFB45F16);
+        worldTileHeading.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        worldTileHeading.setPadding(0, dp(16), 0, dp(4));
+        content.addView(worldTileHeading);
+        TextView worldTileInfo = new TextView(this);
+        worldTileInfo.setText("Each tile is 129 x 129 samples covering 64 x 64 world units. Adjacent tile borders are matched on import. Distant tiles stream out and return with distance-based LOD.");
+        worldTileInfo.setTextColor(Color.DKGRAY); worldTileInfo.setTextSize(11);
+        content.addView(worldTileInfo);
+        EditText worldTileX = new EditText(this); worldTileX.setSingleLine(true);
+        worldTileX.setHint("Tile X coordinate (0 is main tile)");
+        worldTileX.setInputType(android.text.InputType.TYPE_CLASS_NUMBER | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+        worldTileX.setText("1"); content.addView(worldTileX);
+        EditText worldTileZ = new EditText(this); worldTileZ.setSingleLine(true);
+        worldTileZ.setHint("Tile Z coordinate");
+        worldTileZ.setInputType(android.text.InputType.TYPE_CLASS_NUMBER | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+        worldTileZ.setText("0"); content.addView(worldTileZ);
+        TextView importWorldTile = new TextView(this);
+        importWorldTile.setText("IMPORT 16-BIT RAW WORLD TILE");
+        importWorldTile.setTextColor(Color.WHITE); importWorldTile.setGravity(Gravity.CENTER);
+        importWorldTile.setPadding(dp(8), dp(12), dp(8), dp(12));
+        importWorldTile.setBackgroundColor(0xFF35566B);
+        content.addView(importWorldTile, new LinearLayout.LayoutParams(-1, dp(44)));
+        importWorldTile.setOnClickListener(v -> openLandscapeWorldTilePicker(
+                Math.round(terrainValue(worldTileX, 1)), Math.round(terrainValue(worldTileZ, 0))));
+        TextView worldTileCount = new TextView(this);
+        worldTileCount.setText("REFRESH WORLD TILE COUNT");
+        worldTileCount.setTextColor(Color.WHITE); worldTileCount.setGravity(Gravity.CENTER);
+        worldTileCount.setPadding(dp(8), dp(10), dp(8), dp(10));
+        worldTileCount.setBackgroundColor(0xFF46566A);
+        content.addView(worldTileCount, new LinearLayout.LayoutParams(-1, dp(40)));
+        worldTileCount.setOnClickListener(v -> engineSurface.getLandscapeWorldTileCount(count ->
+                worldTileCount.setText("WORLD TILES: " + count)));
+        TextView copyMainTile = new TextView(this);
+        copyMainTile.setText("COPY MAIN LANDSCAPE TO THIS TILE");
+        copyMainTile.setTextColor(Color.WHITE); copyMainTile.setGravity(Gravity.CENTER);
+        copyMainTile.setPadding(dp(8), dp(10), dp(8), dp(10));
+        copyMainTile.setBackgroundColor(0xFF3E684F);
+        content.addView(copyMainTile, new LinearLayout.LayoutParams(-1, dp(40)));
+        copyMainTile.setOnClickListener(v -> {
+            int tx = Math.round(terrainValue(worldTileX, 1));
+            int tz = Math.round(terrainValue(worldTileZ, 0));
+            engineSurface.copyMainLandscapeTile(tx, tz, ok -> {
+                if (ok) {
+                    File asset = landscapeWorldTileAssetFile(tx, tz);
+                    if (asset != null) {
+                        File parent = asset.getParentFile();
+                        if (parent != null && !parent.exists()) parent.mkdirs();
+                        engineSurface.getTerrainHeights(heights -> {
+                            if (heights == null) return;
+                            new Thread(() -> {
+                                try (java.io.DataOutputStream output = new java.io.DataOutputStream(
+                                        new java.io.FileOutputStream(asset))) {
+                                    for (float height : heights) {
+                                        int sample = Math.max(0, Math.min(65535,
+                                                Math.round(((height + 12.0f) / 36.0f) * 65535.0f)));
+                                        output.writeByte(sample & 0xFF);
+                                        output.writeByte((sample >>> 8) & 0xFF);
+                                    }
+                                } catch (Exception ignored) { }
+                            }, "Nova-World-Tile-Copy-Asset").start();
+                        });
+                    }
+                }
+                android.widget.Toast.makeText(this, ok ? "Main landscape copied to tile " + tx + ", " + tz :
+                        "Copy failed. Choose a new tile coordinate.", android.widget.Toast.LENGTH_LONG).show();
+            });
+        });
+        TextView removeWorldTile = new TextView(this);
+        removeWorldTile.setText("REMOVE WORLD TILE AT X / Z");
+        removeWorldTile.setTextColor(Color.WHITE); removeWorldTile.setGravity(Gravity.CENTER);
+        removeWorldTile.setPadding(dp(8), dp(10), dp(8), dp(10));
+        removeWorldTile.setBackgroundColor(0xFF824848);
+        content.addView(removeWorldTile, new LinearLayout.LayoutParams(-1, dp(40)));
+        removeWorldTile.setOnClickListener(v -> {
+            int tx = Math.round(terrainValue(worldTileX, 1));
+            int tz = Math.round(terrainValue(worldTileZ, 0));
+            engineSurface.removeLandscapeWorldTile(tx, tz, ok -> {
+                if (ok) {
+                    File asset = landscapeWorldTileAssetFile(tx, tz);
+                    if (asset != null && asset.exists()) asset.delete();
+                }
+                android.widget.Toast.makeText(this, ok ? "World tile removed" :
+                        "No removable world tile exists at those coordinates", android.widget.Toast.LENGTH_LONG).show();
+            });
+        });
+
+        TextView componentHeading = new TextView(this);
+        componentHeading.setText("LANDSCAPE COMPONENT MANAGEMENT");
+        componentHeading.setTextColor(0xFFB45F16);
+        componentHeading.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        componentHeading.setPadding(0, dp(16), 0, dp(4));
+        content.addView(componentHeading);
+        Spinner chunkPicker = new Spinner(this);
+        String[] chunkSizes = {"8 quads", "16 quads", "32 quads", "64 quads", "128 quads"};
+        ArrayAdapter<String> chunkAdapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, chunkSizes);
+        chunkAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        chunkPicker.setAdapter(chunkAdapter); chunkPicker.setSelection(2);
+        content.addView(chunkPicker, new LinearLayout.LayoutParams(-1, dp(44)));
+        TextView applyChunks = new TextView(this);
+        applyChunks.setText("REBUILD LANDSCAPE COMPONENT GRID");
+        applyChunks.setTextColor(Color.WHITE); applyChunks.setGravity(Gravity.CENTER);
+        applyChunks.setPadding(dp(8), dp(12), dp(8), dp(12)); applyChunks.setBackgroundColor(0xFF354456);
+        content.addView(applyChunks, new LinearLayout.LayoutParams(-1, dp(42)));
+        applyChunks.setOnClickListener(v -> {
+            int[] sizes = {8,16,32,64,128};
+            engineSurface.setLandscapeChunkSize(sizes[chunkPicker.getSelectedItemPosition()], ok -> {
+                engineSurface.getLandscapeChunkCount(count ->
+                        android.widget.Toast.makeText(this, ok ? "Landscape component grid: " + count + " components" :
+                                "Component grid update failed", android.widget.Toast.LENGTH_LONG).show());
+            });
+        });
+        dialog.show();
     }
 
     private float terrainValue(EditText field, float fallback) {
@@ -954,26 +1985,49 @@ public final class MainActivity extends Activity
     private void applyTerrainBrush(EditText[] fields, int mode) {
         float x = terrainValue(fields[0], 0.0f);
         float z = terrainValue(fields[1], -4.0f);
-        float radius = terrainValue(fields[2], 3.0f);
-        float strength = terrainValue(fields[3], 0.45f);
-        boolean changed = engineSurface.sculptTerrain(x, z, radius, strength, mode);
-        android.widget.Toast.makeText(this,
-                changed ? "Terrain sculpted" : "No terrain found or no change",
-                android.widget.Toast.LENGTH_SHORT).show();
-    }
-
-    private void showTerrainModes(EditText[] fields) {
-        new AlertDialog.Builder(this)
-                .setTitle("Terrain Brush")
-                .setItems(new String[]{"Lower", "Smooth", "Flatten"},
-                        (dialog, which) -> applyTerrainBrush(fields, which + 1))
-                .setNegativeButton("Cancel", null)
-                .show();
+        float radius = terrainValue(fields[2], 6.0f);
+        float strength = terrainValue(fields[3], 0.65f);
+        engineSurface.sculptTerrain(x, z, radius, strength, mode, changed ->
+                android.widget.Toast.makeText(this,
+                        changed ? "Landscape updated" : "No landscape change. Create a landscape first.",
+                        android.widget.Toast.LENGTH_SHORT).show());
     }
 
     private void openAIAssistant() {
         closeToolsDrawer();
         new AIEditorAssistant(this, engineSurface).show();
+    }
+
+    private void showRigidBodySetup() {
+        closeToolsDrawer();
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(16), dp(8), dp(16), dp(8));
+        EditText mass = new EditText(this); mass.setSingleLine(true); mass.setHint("Mass (kg)"); mass.setText("1.0");
+        EditText restitution = new EditText(this); restitution.setSingleLine(true); restitution.setHint("Bounciness (0 - 0.9)"); restitution.setText("0.12");
+        EditText friction = new EditText(this); friction.setSingleLine(true); friction.setHint("Friction (0 - 2)"); friction.setText("0.7");
+        content.addView(mass); content.addView(restitution); content.addView(friction);
+        new AlertDialog.Builder(this).setTitle("Selected Object Physics")
+                .setMessage("Select a mesh in the viewport first. This adds a basic dynamic body with gravity, terrain contact and static-platform contact.")
+                .setView(content)
+                .setNegativeButton("Cancel", null)
+                .setNeutralButton(selectedRigidBodyEnabled ? "REMOVE BODY" : "ADD BODY", (d, w) -> {
+                    if (selectedRigidBodyEnabled) {
+                        engineSurface.setSelectedRigidBody(false, 1.0f, 0.12f, 0.7f, ok -> {
+                            if (ok) selectedRigidBodyEnabled = false;
+                            android.widget.Toast.makeText(this, ok ? "Rigid body removed" :
+                                    "Select a non-landscape object first", android.widget.Toast.LENGTH_LONG).show();
+                        });
+                    } else {
+                        engineSurface.setSelectedRigidBody(true,
+                                terrainValue(mass, 1.0f), terrainValue(restitution, 0.12f),
+                                terrainValue(friction, 0.7f), ok -> {
+                                    if (ok) selectedRigidBodyEnabled = true;
+                                    android.widget.Toast.makeText(this, ok ? "Rigid body attached" :
+                                            "Select a non-landscape object first", android.widget.Toast.LENGTH_LONG).show();
+                                });
+                    }
+                }).show();
     }
 
     private void showToolStatus(String toolName) {
@@ -1193,7 +2247,141 @@ public final class MainActivity extends Activity
                 }), 700L);
     }
 
+    private static void writePngInt(java.io.OutputStream output, int value) throws java.io.IOException {
+        output.write((value >>> 24) & 0xFF);
+        output.write((value >>> 16) & 0xFF);
+        output.write((value >>> 8) & 0xFF);
+        output.write(value & 0xFF);
+    }
+
+    private static void writePngChunk(java.io.OutputStream output, String type, byte[] data)
+            throws java.io.IOException {
+        byte[] typeBytes = type.getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        writePngInt(output, data.length);
+        output.write(typeBytes);
+        output.write(data);
+        java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+        crc.update(typeBytes);
+        crc.update(data);
+        writePngInt(output, (int) crc.getValue());
+    }
+
+    private static byte[] encodeTerrainHeightmap16Png(float[] heights) throws java.io.IOException {
+        if (heights == null || heights.length != 129 * 129)
+            throw new IllegalArgumentException("Expected 129 x 129 height samples.");
+        java.io.ByteArrayOutputStream png = new java.io.ByteArrayOutputStream();
+        png.write(new byte[]{(byte)137, 80, 78, 71, 13, 10, 26, 10});
+        java.io.ByteArrayOutputStream header = new java.io.ByteArrayOutputStream(13);
+        writePngInt(header, 129); writePngInt(header, 129);
+        header.write(16); header.write(0); header.write(0); header.write(0); header.write(0);
+        writePngChunk(png, "IHDR", header.toByteArray());
+
+        java.io.ByteArrayOutputStream raw = new java.io.ByteArrayOutputStream(129 * 129 * 2 + 129);
+        for (int y = 0; y < 129; y++) {
+            raw.write(0);
+            for (int x = 0; x < 129; x++) {
+                float h = heights[y * 129 + x];
+                int sample = Math.max(0, Math.min(65535,
+                        Math.round(((h + 12.0f) / 36.0f) * 65535.0f)));
+                raw.write((sample >>> 8) & 0xFF);
+                raw.write(sample & 0xFF);
+            }
+        }
+        java.io.ByteArrayOutputStream compressed = new java.io.ByteArrayOutputStream();
+        try (java.util.zip.DeflaterOutputStream deflater =
+                     new java.util.zip.DeflaterOutputStream(compressed)) {
+            raw.writeTo(deflater);
+        }
+        writePngChunk(png, "IDAT", compressed.toByteArray());
+        writePngChunk(png, "IEND", new byte[0]);
+        return png.toByteArray();
+    }
+
+    private File landscapeWorldTileAssetFile(int tileX, int tileZ) {
+        if (activeProjectDirectory == null) return null;
+        return new File(new File(activeProjectDirectory, "Assets/LandscapeTiles"),
+                "Tile_" + tileX + "_" + tileZ + ".r16");
+    }
+
+    private void loadLandscapeWorldTiles() {
+        if (activeProjectDirectory == null || engineSurface == null) return;
+        File directory = new File(activeProjectDirectory, "Assets/LandscapeTiles");
+        File[] files = directory.listFiles((dir, name) -> name.matches("Tile_-?\\d+_-?\\d+\\.r16"));
+        if (files == null || files.length == 0) return;
+        new Thread(() -> {
+            for (File file : files) {
+                try (InputStream input = new java.io.FileInputStream(file);
+                     java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream()) {
+                    byte[] buffer = new byte[8192]; int read;
+                    while ((read = input.read(buffer)) != -1) {
+                        if (bytes.size() + read > 100000) throw new IllegalArgumentException("Tile file too large.");
+                        bytes.write(buffer, 0, read);
+                    }
+                    byte[] raw = bytes.toByteArray();
+                    if (raw.length != 129 * 129 * 2) continue;
+                    java.util.regex.Matcher matcher = java.util.regex.Pattern
+                            .compile("Tile_(-?\\d+)_(-?\\d+)\\.r16").matcher(file.getName());
+                    if (!matcher.matches()) continue;
+                    int tileX = Integer.parseInt(matcher.group(1));
+                    int tileZ = Integer.parseInt(matcher.group(2));
+                    float[] heights = new float[129 * 129];
+                    for (int i = 0; i < heights.length; i++) {
+                        int value = (raw[i * 2] & 0xFF) | ((raw[i * 2 + 1] & 0xFF) << 8);
+                        heights[i] = -12.0f + (value / 65535.0f) * 36.0f;
+                    }
+                    engineSurface.createLandscapeWorldTile(tileX, tileZ, heights, ok -> {
+                        if (!ok) android.widget.Toast.makeText(this,
+                                "Could not restore world tile " + tileX + ", " + tileZ,
+                                android.widget.Toast.LENGTH_SHORT).show();
+                    });
+                } catch (Exception error) {
+                    android.widget.Toast.makeText(this, "Tile restore failed: " + file.getName(),
+                            android.widget.Toast.LENGTH_SHORT).show();
+                }
+            }
+        }, "Nova-World-Tile-Restore").start();
+    }
+
+    private File terrainTextureAssetFile(int layer, int mapType) {
+        if (activeProjectDirectory == null) return null;
+        String[] layers = {"Grass", "Rock", "Sand", "Snow"};
+        String[] maps = {"Albedo", "Normal", "Roughness"};
+        File directory = new File(activeProjectDirectory, "Assets/Terrain");
+        return new File(directory, layers[Math.max(0, Math.min(3, layer))] + "_" +
+                maps[Math.max(0, Math.min(2, mapType))] + ".img");
+    }
+
+    private void loadTerrainTextureAssets() {
+        if (activeProjectDirectory == null || engineSurface == null) return;
+        new Thread(() -> {
+            for (int layer = 0; layer < 4; layer++) {
+                for (int mapType = 0; mapType < 3; mapType++) {
+                    File file = terrainTextureAssetFile(layer, mapType);
+                    if (file == null || !file.isFile()) continue;
+                    Bitmap decoded = BitmapFactory.decodeFile(file.getAbsolutePath());
+                    if (decoded == null) continue;
+                    int originalWidth = decoded.getWidth(), originalHeight = decoded.getHeight();
+                    float scale = Math.min(1.0f, 1024.0f / Math.max(originalWidth, originalHeight));
+                    int width = Math.max(1, Math.round(originalWidth * scale));
+                    int height = Math.max(1, Math.round(originalHeight * scale));
+                    Bitmap scaled = (width == originalWidth && height == originalHeight)
+                            ? decoded : Bitmap.createScaledBitmap(decoded, width, height, true);
+                    int[] pixels = new int[width * height];
+                    scaled.getPixels(pixels, 0, width, 0, 0, width, height);
+                    if (scaled != decoded) scaled.recycle();
+                    decoded.recycle();
+                    final int textureLayer = layer, textureMap = mapType;
+                    engineSurface.setTerrainTexture(textureLayer, textureMap, width, height, pixels, ok -> {
+                        if (!ok) android.widget.Toast.makeText(this,
+                                "Could not restore " + file.getName(), android.widget.Toast.LENGTH_SHORT).show();
+                    });
+                }
+            }
+        }, "Nova-Terrain-Texture-Restore").start();
+    }
+
     private void enterProject(String message) {
+        loadTerrainTextureAssets();
         if (projectStartPage != null) rootLayout.removeView(projectStartPage);
         projectStartPage = null;
         projectHandler.removeCallbacks(autoSaveTask);

@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <fstream>
 #include <iomanip>
+#include <sstream>
 #include <mutex>
 #include <condition_variable>
 #include <deque>
@@ -15,6 +16,8 @@
 #include <vector>
 #include <utility>
 #include <cstdio>
+#include <cstring>
+#include <zlib.h>
 #include <thread>
 
 #include "../Camera/Camera.h"
@@ -23,6 +26,8 @@
 #include "../Renderer/Renderer.h"
 #include "../Physics/PhysicsWorld.h"
 #include "../Geometry/Mesh.h"
+#include "../Geometry/LandscapeSystem.h"
+#include "../Geometry/VoxelCaveSystem.h"
 #include "../Geometry/PrimitiveBuilder.h"
 #include "../Geometry/MeshSculptor.h"
 #include "../Geometry/MeshModeling.h"
@@ -41,6 +46,26 @@ std::mutex engineMutex;
 
 Renderer gRenderer;
 nova::Scene gScene;
+nova::LandscapeSystem gLandscape;
+struct LandscapeWorldTile {
+    int tileX = 0, tileZ = 0, lod = 0;
+    uint32_t objectId = 0;
+    bool loaded = true;
+    nova::LandscapeSystem data;
+    nova::Mesh fullMesh;
+};
+std::unordered_map<uint64_t, LandscapeWorldTile> gLandscapeWorldTiles;
+struct VoxelCaveRecord { uint32_t objectId = 0; nova::VoxelCaveSystem volume; };
+std::vector<VoxelCaveRecord> gVoxelCaves;
+uint64_t landscapeTileKey(int x, int z) {
+    return (static_cast<uint64_t>(static_cast<uint32_t>(x)) << 32) |
+           static_cast<uint32_t>(z);
+}
+float landscapeTileOriginX(int x) { return -32.0f + static_cast<float>(x) * 64.0f; }
+float landscapeTileOriginZ(int z) { return -36.0f + static_cast<float>(z) * 64.0f; }
+
+struct LandscapeRigidBody { nova::Vec3 velocity; float mass=1.0f; float restitution=0.12f; float friction=0.7f; };
+std::unordered_map<uint32_t, LandscapeRigidBody> gLandscapeRigidBodies;
 std::unordered_map<uint32_t, nova::Mesh> gCustomMeshes;
 std::unordered_map<uint32_t, std::vector<float>> gSculptMasks;
 std::unique_ptr<nova::SculptMesh> gSculptMesh;
@@ -53,6 +78,11 @@ bool gSculptWorkspacePreviousShowSky = true;
 bool gSculptWorkspacePreviousShowShadows = true;
 std::vector<std::pair<uint32_t, bool>> gSculptWorkspaceVisibility;
 bool gSculptStrokeActive = false;
+bool gTerrainStrokeActive = false;
+bool gTerrainStrokeHasUndo = false;
+int gTerrainLodLevel = -1;
+bool gTerrainChunksDirty = true;
+int gLandscapeChunkSize = 32;
 bool gHasPreviousSculptHit = false;
 nova::Vec3 gPreviousSculptHit;
 nova::Vec3 gPreviousSculptNormal;
@@ -138,6 +168,10 @@ struct SceneSnapshot {
     std::unordered_map<uint32_t, nova::Mesh> customMeshes;
     std::unordered_map<uint32_t, std::vector<float>> sculptMasks;
     bool includesCustomMeshes = false;
+    bool includesLandscape = false;
+    nova::LandscapeSystem landscape;
+    std::unordered_map<uint64_t, LandscapeWorldTile> worldTiles;
+    std::vector<VoxelCaveRecord> voxelCaves;
     uint32_t selectedId = 0;
 };
 
@@ -149,6 +183,8 @@ SceneSnapshot captureScene(bool includeCustomMeshes = false) {
     SceneSnapshot snapshot;
     snapshot.objects = gScene.getObjects();
     snapshot.includesCustomMeshes = includeCustomMeshes;
+    snapshot.includesLandscape = includeCustomMeshes;
+    if (includeCustomMeshes) { snapshot.landscape = gLandscape; snapshot.worldTiles = gLandscapeWorldTiles; snapshot.voxelCaves = gVoxelCaves; }
     if (includeCustomMeshes) { snapshot.customMeshes = gCustomMeshes; snapshot.sculptMasks = gSculptMasks; }
     snapshot.selectedId = gScene.selectedId();
     return snapshot;
@@ -165,6 +201,7 @@ void recordUndo(bool includeCustomMeshes = false) {
 void restoreScene(const SceneSnapshot& snapshot) {
     gScene.clear();
     if (snapshot.includesCustomMeshes) { gCustomMeshes = snapshot.customMeshes; gSculptMasks = snapshot.sculptMasks; }
+    if (snapshot.includesLandscape) { gLandscape = snapshot.landscape; gLandscapeWorldTiles = snapshot.worldTiles; gVoxelCaves = snapshot.voxelCaves; }
     for (const nova::SceneObject& object : snapshot.objects) {
         gScene.addObject(object);
     }
@@ -172,6 +209,8 @@ void restoreScene(const SceneSnapshot& snapshot) {
         gScene.select(snapshot.selectedId);
     }
     gRenderer.releaseAllMeshes();
+    gTerrainLodLevel = -1;
+    gTerrainChunksDirty = true;
     for (const auto& entry : gCustomMeshes) gRenderer.uploadMesh(entry.first, entry.second);
     {
         std::lock_guard<std::mutex> qlock(gSculptQueueMutex);
@@ -310,6 +349,596 @@ bool makeScreenRay(float screenX, float screenY, nova::Vec3& ray) {
     ray=nova::normalize(farPoint-nearPoint);
     return nova::length(ray)>0.0001f;
 }
+
+float terrainHeightAt(float worldX, float worldZ, bool& found, bool allowHole = false);
+
+bool syncLandscapeMeshFromData() {
+    nova::SceneObject* terrain = nullptr;
+    for (nova::SceneObject& object : gScene.getObjects()) {
+        if (object.name == "Landscape Terrain") { terrain = &object; break; }
+    }
+    if (!terrain || !gLandscape.valid()) return false;
+    auto meshIt = gCustomMeshes.find(terrain->id);
+    if (meshIt == gCustomMeshes.end()) return false;
+    const auto heights = gLandscape.heights();
+    const auto weights = gLandscape.weights();
+    if (heights.size() != 129u * 129u || weights.size() != heights.size()) return false;
+    std::vector<nova::Vertex> vertices = meshIt->second.getVertices();
+    if (vertices.size() != heights.size()) return false;
+    for (size_t i=0;i<vertices.size();++i) {
+        vertices[i].position.y = std::clamp(heights[i], -12.0f, 24.0f);
+        for (int c=0;c<4;++c) vertices[i].layerWeights[c] = weights[i][c];
+    }
+    std::vector<uint32_t> indices;
+    indices.reserve(128u*128u*6u);
+    for (int z=0;z<128;++z) for (int x=0;x<128;++x) {
+        if (gLandscape.isHole(x,z)) continue;
+        const uint32_t a=static_cast<uint32_t>(z*129+x), b=a+1, c=a+129, d=c+1;
+        indices.insert(indices.end(), {a,c,b,b,c,d});
+    }
+    nova::Mesh updated;
+    updated.setData(std::move(vertices), std::move(indices));
+    updated.recalculateNormals();
+    if (!updated.isValid()) return false;
+    meshIt->second = std::move(updated);
+    const bool ok = gRenderer.uploadMesh(terrain->id, meshIt->second);
+    if (ok) { gTerrainLodLevel = -1; gTerrainChunksDirty = true; }
+    return ok;
+}
+
+bool terrainScreenHit(float screenX, float screenY, float& hitX, float& hitZ, float& hitY, bool allowHole = false) {
+    nova::Vec3 ray;
+    if (!makeScreenRay(screenX, screenY, ray)) return false;
+    const nova::Vec3 origin=gCamera.position;
+    for(float distance=0.15f;distance<=500.0f;distance+=0.12f){
+        const nova::Vec3 p=origin+ray*distance;
+        bool found=false;float h=terrainHeightAt(p.x,p.z,found,allowHole);
+        if(found&&p.y<=h+0.04f){hitX=p.x;hitZ=p.z;hitY=h;return true;}
+    }
+    return false;
+}
+
+float terrainHeightAt(float worldX, float worldZ, bool& found, bool allowHole) {
+    found = false;
+    for (const nova::SceneObject& object : gScene.getObjects()) {
+        if (object.name != "Landscape Terrain") continue;
+        auto meshIt = gCustomMeshes.find(object.id);
+        if (meshIt == gCustomMeshes.end()) continue;
+        const auto& vertices = meshIt->second.getVertices();
+        constexpr int resolution = 129;
+        constexpr float spacing = 0.5f;
+        const float gx = (worldX + 32.0f) / spacing;
+        const float gz = (worldZ + 36.0f) / spacing;
+        if (gx < 0.0f || gz < 0.0f || gx > 128.0f || gz > 128.0f ||
+            vertices.size() != static_cast<size_t>(resolution * resolution)) continue;
+        if (!allowHole && gLandscape.valid() && gLandscape.isHole(std::min(127, static_cast<int>(gx)),
+                std::min(127, static_cast<int>(gz)))) continue;
+        const int x0 = std::min(127, static_cast<int>(std::floor(gx)));
+        const int z0 = std::min(127, static_cast<int>(std::floor(gz)));
+        const int x1 = x0 + 1, z1 = z0 + 1;
+        const float tx = gx - x0, tz = gz - z0;
+        const float h00 = vertices[static_cast<size_t>(z0 * resolution + x0)].position.y;
+        const float h10 = vertices[static_cast<size_t>(z0 * resolution + x1)].position.y;
+        const float h01 = vertices[static_cast<size_t>(z1 * resolution + x0)].position.y;
+        const float h11 = vertices[static_cast<size_t>(z1 * resolution + x1)].position.y;
+        const float h0 = h00 + (h10 - h00) * tx;
+        const float h1 = h01 + (h11 - h01) * tx;
+        found = true;
+        return h0 + (h1 - h0) * tz;
+    }
+    const int tileX = static_cast<int>(std::floor((worldX + 32.0f) / 64.0f));
+    const int tileZ = static_cast<int>(std::floor((worldZ + 36.0f) / 64.0f));
+    auto tileIt = gLandscapeWorldTiles.find(landscapeTileKey(tileX, tileZ));
+    if (tileIt != gLandscapeWorldTiles.end()) {
+        const LandscapeWorldTile& tile = tileIt->second;
+        if (tile.data.valid() && tile.fullMesh.getVertices().size() == 129u * 129u) {
+            const float gx = (worldX - landscapeTileOriginX(tile.tileX)) / tile.data.spacing();
+            const float gz = (worldZ - landscapeTileOriginZ(tile.tileZ)) / tile.data.spacing();
+            if (gx >= 0.0f && gz >= 0.0f && gx <= 128.0f && gz <= 128.0f) {
+                const int x0 = std::min(127, static_cast<int>(std::floor(gx)));
+                const int z0 = std::min(127, static_cast<int>(std::floor(gz)));
+                if (allowHole || !tile.data.isHole(x0, z0)) {
+                    const int x1 = x0 + 1, z1 = z0 + 1;
+                    const float tx = gx - x0, tz = gz - z0;
+                    const auto& vertices = tile.fullMesh.getVertices();
+                    const float h00 = vertices[static_cast<size_t>(z0 * 129 + x0)].position.y;
+                    const float h10 = vertices[static_cast<size_t>(z0 * 129 + x1)].position.y;
+                    const float h01 = vertices[static_cast<size_t>(z1 * 129 + x0)].position.y;
+                    const float h11 = vertices[static_cast<size_t>(z1 * 129 + x1)].position.y;
+                    const float h0 = h00 + (h10 - h00) * tx;
+                    const float h1 = h01 + (h11 - h01) * tx;
+                    found = true;
+                    return h0 + (h1 - h0) * tz;
+                }
+            }
+        }
+    }
+    return 0.0f;
+}
+
+nova::Vec3 terrainNormalAt(float worldX, float worldZ) {
+    constexpr float sample = 0.5f;
+    bool leftOk=false, rightOk=false, backOk=false, frontOk=false;
+    const float left = terrainHeightAt(worldX-sample, worldZ, leftOk);
+    const float right = terrainHeightAt(worldX+sample, worldZ, rightOk);
+    const float back = terrainHeightAt(worldX, worldZ-sample, backOk);
+    const float front = terrainHeightAt(worldX, worldZ+sample, frontOk);
+    if (!leftOk || !rightOk || !backOk || !frontOk) return nova::Vec3(0,1,0);
+    const float dx = (right-left)/(2.0f*sample);
+    const float dz = (front-back)/(2.0f*sample);
+    return nova::normalize(nova::Vec3(-dx, 1.0f, -dz));
+}
+
+nova::Mesh buildWorldTileMesh(const nova::LandscapeSystem& data, int tileX, int tileZ, int stride) {
+    if (!data.valid()) return nova::Mesh();
+    const auto heights = data.heights();
+    const auto weights = data.weights();
+    if (heights.size() != 129u * 129u || weights.size() != heights.size()) return nova::Mesh();
+    stride = std::clamp(stride, 1, 8);
+    const int side = 128 / stride + 1;
+    std::vector<nova::Vertex> vertices;
+    std::vector<uint32_t> indices;
+    vertices.reserve(static_cast<size_t>(side * side));
+    indices.reserve(static_cast<size_t>((side - 1) * (side - 1) * 6));
+    const float ox = landscapeTileOriginX(tileX), oz = landscapeTileOriginZ(tileZ);
+    for (int z = 0; z <= 128; z += stride) {
+        for (int x = 0; x <= 128; x += stride) {
+            const size_t index = static_cast<size_t>(z * 129 + x);
+            nova::Vertex vertex(nova::Vec3(ox + x * data.spacing(),
+                    std::clamp(heights[index], -12.0f, 24.0f),
+                    oz + z * data.spacing()), nova::Vec3(0,1,0),
+                    static_cast<float>(x) / 128.0f, static_cast<float>(z) / 128.0f);
+            for (int c = 0; c < 4; ++c) vertex.layerWeights[c] = weights[index][c];
+            vertices.push_back(vertex);
+        }
+    }
+    for (int z = 0; z < side - 1; ++z) for (int x = 0; x < side - 1; ++x) {
+        const int gx = x * stride, gz = z * stride;
+        if (data.isHole(gx, gz)) continue;
+        const uint32_t a = static_cast<uint32_t>(z * side + x);
+        const uint32_t b = a + 1, c = a + static_cast<uint32_t>(side), d = c + 1;
+        indices.insert(indices.end(), {a,c,b,b,c,d});
+    }
+    nova::Mesh mesh(std::move(vertices), std::move(indices));
+    if (mesh.isValid()) mesh.recalculateNormals();
+    return mesh;
+}
+
+bool syncWorldTileMeshFromData(LandscapeWorldTile& tile) {
+    if (tile.objectId == 0) return false;
+    tile.fullMesh = buildWorldTileMesh(tile.data, tile.tileX, tile.tileZ, 1);
+    if (!tile.fullMesh.isValid()) return false;
+    gCustomMeshes[tile.objectId] = tile.fullMesh;
+    tile.lod = 0;
+    tile.loaded = true;
+    nova::SceneObject* object = gScene.find(tile.objectId);
+    if (object) object->visible = true;
+    return gRenderer.uploadMesh(tile.objectId, gCustomMeshes[tile.objectId]);
+}
+
+LandscapeWorldTile* findLandscapeWorldTileAt(float worldX, float worldZ) {
+    for (auto& entry : gLandscapeWorldTiles) {
+        LandscapeWorldTile& tile = entry.second;
+        const float gx = (worldX - landscapeTileOriginX(tile.tileX)) / tile.data.spacing();
+        const float gz = (worldZ - landscapeTileOriginZ(tile.tileZ)) / tile.data.spacing();
+        if (gx >= 0.0f && gz >= 0.0f && gx <= 128.0f && gz <= 128.0f) return &tile;
+    }
+    return nullptr;
+}
+
+const nova::LandscapeSystem* landscapeDataForTile(int tileX, int tileZ) {
+    if (tileX == 0 && tileZ == 0) return gLandscape.valid() ? &gLandscape : nullptr;
+    auto found = gLandscapeWorldTiles.find(landscapeTileKey(tileX, tileZ));
+    return found == gLandscapeWorldTiles.end() ? nullptr : &found->second.data;
+}
+
+bool createLandscapeWorldTile(int tileX, int tileZ, const std::vector<float>& sourceHeights) {
+    if (!gInitialized || (tileX == 0 && tileZ == 0) ||
+        std::abs(tileX) > 10000 || std::abs(tileZ) > 10000 ||
+        sourceHeights.size() != 129u * 129u || gLandscapeWorldTiles.size() >= 256u) return false;
+    const uint64_t key = landscapeTileKey(tileX, tileZ);
+    if (gLandscapeWorldTiles.count(key)) return false;
+
+    LandscapeWorldTile tile;
+    tile.tileX = tileX;
+    tile.tileZ = tileZ;
+    const float originX = landscapeTileOriginX(tileX);
+    const float originZ = landscapeTileOriginZ(tileZ);
+    if (!tile.data.initialize(129, 129, 0.5f, originX, originZ)) return false;
+    tile.data.buildChunks(gLandscapeChunkSize);
+    std::vector<float> heights = sourceHeights;
+
+    auto neighborHeights = [&](int nx, int nz) -> std::vector<float> {
+        const nova::LandscapeSystem* neighbor = landscapeDataForTile(nx, nz);
+        return neighbor ? neighbor->heights() : std::vector<float>();
+    };
+    const std::vector<float> west = neighborHeights(tileX - 1, tileZ);
+    const std::vector<float> east = neighborHeights(tileX + 1, tileZ);
+    const std::vector<float> south = neighborHeights(tileX, tileZ - 1);
+    const std::vector<float> north = neighborHeights(tileX, tileZ + 1);
+    if (west.size() == heights.size())
+        for (int z = 0; z < 129; ++z) heights[static_cast<size_t>(z * 129)] = west[static_cast<size_t>(z * 129 + 128)];
+    if (east.size() == heights.size())
+        for (int z = 0; z < 129; ++z) heights[static_cast<size_t>(z * 129 + 128)] = east[static_cast<size_t>(z * 129)];
+    if (south.size() == heights.size())
+        for (int x = 0; x < 129; ++x) heights[static_cast<size_t>(x)] = south[static_cast<size_t>(128 * 129 + x)];
+    if (north.size() == heights.size())
+        for (int x = 0; x < 129; ++x) heights[static_cast<size_t>(128 * 129 + x)] = north[static_cast<size_t>(x)];
+    if (!tile.data.setBaseHeights(heights)) return false;
+
+    const nova::Color grass(0.28f, 0.40f, 0.19f, 1.0f);
+    nova::Transform transform;
+    const std::string name = "Landscape Tile " + std::to_string(tileX) + " " + std::to_string(tileZ);
+    tile.objectId = gScene.addObject(name, nova::PrimitiveType::Plane, transform, grass);
+    nova::SceneObject* object = gScene.find(tile.objectId);
+    if (!object) return false;
+    object->material.baseColor = nova::Vec3(grass.r, grass.g, grass.b);
+    object->material.roughness = 0.94f;
+    tile.fullMesh = buildWorldTileMesh(tile.data, tileX, tileZ, 1);
+    if (!tile.fullMesh.isValid()) {
+        gScene.removeObject(tile.objectId);
+        return false;
+    }
+    gCustomMeshes[tile.objectId] = tile.fullMesh;
+    if (!gRenderer.uploadMesh(tile.objectId, gCustomMeshes[tile.objectId])) {
+        gCustomMeshes.erase(tile.objectId);
+        gScene.removeObject(tile.objectId);
+        return false;
+    }
+    tile.loaded = true;
+    tile.lod = 0;
+    gLandscapeWorldTiles.emplace(key, std::move(tile));
+    gScene.select(object->id);
+    return true;
+}
+
+nova::LandscapeSystem* landscapeAtWorld(float worldX, float worldZ) {
+    if (gLandscape.valid()) {
+        const float gx = (worldX - gLandscape.originX()) / gLandscape.spacing();
+        const float gz = (worldZ - gLandscape.originZ()) / gLandscape.spacing();
+        if (gx >= 0.0f && gz >= 0.0f && gx <= 128.0f && gz <= 128.0f) return &gLandscape;
+    }
+    LandscapeWorldTile* tile = findLandscapeWorldTileAt(worldX, worldZ);
+    return tile ? &tile->data : nullptr;
+}
+
+bool syncLandscapeAtWorld(float worldX, float worldZ) {
+    nova::LandscapeSystem* data = landscapeAtWorld(worldX, worldZ);
+    if (!data) return false;
+    if (data == &gLandscape) return syncLandscapeMeshFromData();
+    LandscapeWorldTile* tile = findLandscapeWorldTileAt(worldX, worldZ);
+    return tile && syncWorldTileMeshFromData(*tile);
+}
+
+void updateLandscapeWorldStreaming() {
+    for (auto& entry : gLandscapeWorldTiles) {
+        LandscapeWorldTile& tile = entry.second;
+        nova::SceneObject* object = gScene.find(tile.objectId);
+        if (!object) continue;
+        const float centerX = landscapeTileOriginX(tile.tileX) + 32.0f;
+        const float centerZ = landscapeTileOriginZ(tile.tileZ) + 32.0f;
+        const float dx = gCamera.position.x - centerX;
+        const float dz = gCamera.position.z - centerZ;
+        const float distance = std::sqrt(dx * dx + dz * dz);
+        if (distance > 420.0f) {
+            if (tile.loaded) gRenderer.releaseMesh(tile.objectId);
+            tile.loaded = false;
+            object->visible = false;
+            continue;
+        }
+        const int lod = distance < 90.0f ? 0 : (distance < 180.0f ? 1 : (distance < 300.0f ? 2 : 3));
+        object->visible = true;
+        if (!tile.loaded || tile.lod != lod || !gCustomMeshes.count(tile.objectId)) {
+            const int stride = lod == 0 ? 1 : (lod == 1 ? 2 : (lod == 2 ? 4 : 8));
+            nova::Mesh lodMesh = buildWorldTileMesh(tile.data, tile.tileX, tile.tileZ, stride);
+            if (lodMesh.isValid()) {
+                gCustomMeshes[tile.objectId] = std::move(lodMesh);
+                tile.lod = lod;
+                tile.loaded = gRenderer.uploadMesh(tile.objectId, gCustomMeshes[tile.objectId]);
+            }
+        }
+    }
+}
+
+nova::Mesh buildTerrainLodMesh(const nova::Mesh& source, int stride) {
+    constexpr int resolution = 129;
+    const auto& sourceVertices = source.getVertices();
+    if (sourceVertices.size() != resolution * resolution) return nova::Mesh();
+    stride = std::clamp(stride, 1, 8);
+    const int side = 128 / stride + 1;
+    std::vector<nova::Vertex> vertices;
+    std::vector<uint32_t> indices;
+    vertices.reserve(static_cast<size_t>(side * side));
+    indices.reserve(static_cast<size_t>((side - 1) * (side - 1) * 6));
+    for (int z = 0; z <= 128; z += stride) {
+        for (int x = 0; x <= 128; x += stride) {
+            vertices.push_back(sourceVertices[static_cast<size_t>(z * resolution + x)]);
+        }
+    }
+    for (int z = 0; z < side - 1; ++z) {
+        for (int x = 0; x < side - 1; ++x) {
+            const uint32_t a = static_cast<uint32_t>(z * side + x);
+            const uint32_t b = a + 1;
+            const uint32_t c = a + static_cast<uint32_t>(side);
+            const uint32_t d = c + 1;
+            indices.insert(indices.end(), {a, c, b, b, c, d});
+        }
+    }
+    nova::Mesh result(std::move(vertices), std::move(indices));
+    result.recalculateNormals();
+    return result;
+}
+
+nova::Mesh buildLandscapeChunkMesh(const nova::Mesh& source,
+    const nova::LandscapeSystem::Chunk& chunk, int stride) {
+    const auto& src=source.getVertices();
+    stride=std::clamp(stride,1,8);
+    const int side=chunk.quads/stride+1;
+    if(side<2)return nova::Mesh();
+    std::vector<nova::Vertex> vertices;
+    std::vector<uint32_t> indices;
+    vertices.reserve(static_cast<size_t>(side*side));
+    for(int z=0;z<=chunk.quads;z+=stride)
+        for(int x=0;x<=chunk.quads;x+=stride){
+            const int gx=chunk.x+x,gz=chunk.z+z;
+            vertices.push_back(src[static_cast<size_t>(gz*129+gx)]);
+        }
+    for(int z=0;z<side-1;++z)for(int x=0;x<side-1;++x){
+        const int gx=chunk.x+x*stride,gz=chunk.z+z*stride;
+        if(gLandscape.isHole(gx,gz))continue;
+        const uint32_t a=static_cast<uint32_t>(z*side+x),b=a+1,c=a+side,d=c+1;
+        indices.insert(indices.end(),{a,c,b,b,c,d});
+    }
+    nova::Mesh result(std::move(vertices),std::move(indices));
+    if(result.isValid())result.recalculateNormals();
+    return result;
+}
+
+void removeLandscapeChunkObjects() {
+    std::vector<uint32_t> remove;
+    for(const auto& object:gScene.getObjects())
+        if(object.name.rfind("Landscape Chunk ",0)==0)remove.push_back(object.id);
+    for(uint32_t id:remove){gRenderer.releaseMesh(id);gCustomMeshes.erase(id);gScene.removeObject(id);}
+    gTerrainChunksDirty=true;
+}
+
+void updateTerrainLod() {
+    nova::SceneObject* terrain=nullptr;
+    for(nova::SceneObject& object:gScene.getObjects())
+        if(object.name=="Landscape Terrain"){terrain=&object;break;}
+    if(!terrain||!gLandscape.valid())return;
+    terrain->visible=false;
+    auto rootIt=gCustomMeshes.find(terrain->id);
+    if(rootIt==gCustomMeshes.end())return;
+    const nova::Mesh rootMesh=rootIt->second;
+
+    const auto& chunks=gLandscape.chunks();
+    for(size_t i=0;i<chunks.size();++i){
+        const auto& chunk=chunks[i];
+        const float cx=gLandscape.originX()+(chunk.x+chunk.quads*0.5f)*gLandscape.spacing();
+        const float cz=gLandscape.originZ()+(chunk.z+chunk.quads*0.5f)*gLandscape.spacing();
+        const float dx=gCamera.position.x-cx,dz=gCamera.position.z-cz;
+        const float distance=std::sqrt(dx*dx+dz*dz);
+        const bool shouldLoad=distance<240.0f;
+        const int lod=distance<65.0f?0:(distance<125.0f?1:(distance<190.0f?2:3));
+        const bool wasLoaded=chunk.loaded;
+        const int oldLod=chunk.lod;
+        gLandscape.setChunkState(i,shouldLoad,lod);
+
+        const std::string name="Landscape Chunk "+std::to_string(i);
+        nova::SceneObject* chunkObject=nullptr;
+        for(nova::SceneObject& object:gScene.getObjects())
+            if(object.name==name){chunkObject=&object;break;}
+
+        if(!shouldLoad){
+            if(chunkObject){const uint32_t id=chunkObject->id;gRenderer.releaseMesh(id);gCustomMeshes.erase(id);gScene.removeObject(id);}
+            continue;
+        }
+        if(!chunkObject){
+            nova::Transform transform;
+            const nova::Color grass(0.28f,0.40f,0.19f,1.0f);
+            const uint32_t id=gScene.addObject(name,nova::PrimitiveType::Plane,transform,grass);
+            chunkObject=gScene.find(id);
+            if(!chunkObject)continue;
+            chunkObject->material.baseColor=nova::Vec3(grass.r,grass.g,grass.b);
+            chunkObject->material.roughness=0.94f;
+        }
+        if(gTerrainChunksDirty||!wasLoaded||oldLod!=lod||!gCustomMeshes.count(chunkObject->id)){
+            const int stride=lod==0?1:(lod==1?2:(lod==2?4:8));
+            nova::Mesh chunkMesh=buildLandscapeChunkMesh(rootMesh,chunk,stride);
+            if(chunkMesh.isValid()){
+                gCustomMeshes[chunkObject->id]=std::move(chunkMesh);
+                gRenderer.uploadMesh(chunkObject->id,gCustomMeshes[chunkObject->id]);
+            }
+        }
+    }
+    gTerrainChunksDirty=false;
+}
+
+bool insideVoxelCave(const nova::Vec3& position) {
+    for (const VoxelCaveRecord& cave : gVoxelCaves)
+        if (cave.volume.containsAir(position)) return true;
+    return false;
+}
+
+bool resolveVoxelCaveCollision(nova::Vec3& position, float radius) {
+    bool resolved = false;
+    for (const VoxelCaveRecord& cave : gVoxelCaves)
+        resolved = cave.volume.resolveSphereInsideCave(position, radius) || resolved;
+    return resolved;
+}
+
+void stepLandscapeRigidBodies(float dt) {
+    dt = std::clamp(dt, 0.0f, 0.05f);
+    if (dt <= 0.0f || gLandscapeRigidBodies.empty()) return;
+
+    for (auto it = gLandscapeRigidBodies.begin(); it != gLandscapeRigidBodies.end();) {
+        nova::SceneObject* object = gScene.find(it->first);
+        if (!object || !object->visible) {
+            it = gLandscapeRigidBodies.erase(it);
+            continue;
+        }
+
+        LandscapeRigidBody& body = it->second;
+        const float halfX = std::max(0.05f, std::fabs(object->transform.scale.x) * 0.5f);
+        const float halfY = std::max(0.05f, std::fabs(object->transform.scale.y) * 0.5f);
+        const float halfZ = std::max(0.05f, std::fabs(object->transform.scale.z) * 0.5f);
+
+        body.velocity.y -= 9.81f * dt;
+        object->transform.position = object->transform.position + body.velocity * dt;
+
+        const bool inCaveAir = insideVoxelCave(object->transform.position);
+        if (inCaveAir) resolveVoxelCaveCollision(object->transform.position,
+            std::min(halfX, std::min(halfY, halfZ)));
+        bool foundGround = false;
+        const float ground = inCaveAir ? 0.0f : terrainHeightAt(
+            object->transform.position.x, object->transform.position.z, foundGround);
+        if (!inCaveAir && foundGround) {
+            const nova::Vec3 normal = terrainNormalAt(
+                object->transform.position.x, object->transform.position.z);
+            const float support = std::fabs(normal.x)*halfX +
+                                  std::fabs(normal.y)*halfY +
+                                  std::fabs(normal.z)*halfZ;
+            const float signedDistance =
+                (object->transform.position.y-ground)*normal.y - support;
+            if (signedDistance < 0.0f) {
+                object->transform.position = object->transform.position -
+                    normal * signedDistance;
+                const float normalVelocity = body.velocity.x*normal.x +
+                    body.velocity.y*normal.y + body.velocity.z*normal.z;
+                if (normalVelocity < 0.0f) {
+                    body.velocity = body.velocity -
+                        normal * ((1.0f+body.restitution)*normalVelocity);
+                }
+                const float afterNormal = body.velocity.x*normal.x +
+                    body.velocity.y*normal.y + body.velocity.z*normal.z;
+                nova::Vec3 tangent(body.velocity.x-normal.x*afterNormal,
+                    body.velocity.y-normal.y*afterNormal,
+                    body.velocity.z-normal.z*afterNormal);
+                const float frictionStep = std::clamp(body.friction*dt*5.0f,0.0f,1.0f);
+                body.velocity = body.velocity - tangent*frictionStep;
+                if (std::fabs(body.velocity.x)+std::fabs(body.velocity.y)+
+                    std::fabs(body.velocity.z) < 0.02f) body.velocity = nova::Vec3();
+            }
+        }
+
+        for (const nova::SceneObject& other : gScene.getObjects()) {
+            if (other.id == object->id || !other.visible || !other.isStatic ||
+                other.name == "Landscape Terrain" ||
+                other.name.rfind("Landscape Chunk ", 0) == 0 ||
+                other.name.rfind("Landscape Tile ", 0) == 0) continue;
+            const auto box = nova::PhysicsWorld::boundsFor(other);
+            if (!box.valid) continue;
+            const nova::Vec3 position = object->transform.position;
+            const float overlapX = std::min(position.x+halfX, box.max.x) -
+                                   std::max(position.x-halfX, box.min.x);
+            const float overlapY = std::min(position.y+halfY, box.max.y) -
+                                   std::max(position.y-halfY, box.min.y);
+            const float overlapZ = std::min(position.z+halfZ, box.max.z) -
+                                   std::max(position.z-halfZ, box.min.z);
+            if (overlapX <= 0.0f || overlapY <= 0.0f || overlapZ <= 0.0f) continue;
+            nova::Vec3 normal(0.0f,0.0f,0.0f);
+            float penetration = overlapX;
+            normal.x = position.x >= (box.min.x+box.max.x)*0.5f ? 1.0f : -1.0f;
+            if (overlapY < penetration) {
+                penetration = overlapY;
+                normal = nova::Vec3(0.0f,
+                    position.y >= (box.min.y+box.max.y)*0.5f ? 1.0f : -1.0f,0.0f);
+            }
+            if (overlapZ < penetration) {
+                penetration = overlapZ;
+                normal = nova::Vec3(0.0f,0.0f,
+                    position.z >= (box.min.z+box.max.z)*0.5f ? 1.0f : -1.0f);
+            }
+            object->transform.position = object->transform.position +
+                normal * (penetration + 0.001f);
+            const float normalVelocity = body.velocity.x*normal.x +
+                body.velocity.y*normal.y + body.velocity.z*normal.z;
+            if (normalVelocity < 0.0f)
+                body.velocity = body.velocity -
+                    normal * ((1.0f+body.restitution)*normalVelocity);
+            const float afterNormal = body.velocity.x*normal.x +
+                body.velocity.y*normal.y + body.velocity.z*normal.z;
+            nova::Vec3 tangent(body.velocity.x-normal.x*afterNormal,
+                body.velocity.y-normal.y*afterNormal,
+                body.velocity.z-normal.z*afterNormal);
+            body.velocity = body.velocity - tangent*
+                std::clamp(body.friction*dt*5.0f,0.0f,1.0f);
+        }
+
+        for (const auto& otherBody : gLandscapeRigidBodies) {
+            if (otherBody.first <= object->id) continue;
+            nova::SceneObject* other = gScene.find(otherBody.first);
+            if (!other || !other->visible) continue;
+            const float otherHalfX = std::max(0.05f, std::fabs(other->transform.scale.x) * 0.5f);
+            const float otherHalfY = std::max(0.05f, std::fabs(other->transform.scale.y) * 0.5f);
+            const float otherHalfZ = std::max(0.05f, std::fabs(other->transform.scale.z) * 0.5f);
+            const nova::Vec3 delta = object->transform.position - other->transform.position;
+            const float overlapX = halfX + otherHalfX - std::fabs(delta.x);
+            const float overlapY = halfY + otherHalfY - std::fabs(delta.y);
+            const float overlapZ = halfZ + otherHalfZ - std::fabs(delta.z);
+            if (overlapX <= 0.0f || overlapY <= 0.0f || overlapZ <= 0.0f) continue;
+
+            // Resolve along the shallowest separating axis, not only the vertical axis.
+            nova::Vec3 normal(0.0f, 0.0f, 0.0f);
+            float penetration = overlapX;
+            normal.x = delta.x >= 0.0f ? 1.0f : -1.0f;
+            if (overlapY < penetration) {
+                penetration = overlapY;
+                normal = nova::Vec3(0.0f, delta.y >= 0.0f ? 1.0f : -1.0f, 0.0f);
+            }
+            if (overlapZ < penetration) {
+                penetration = overlapZ;
+                normal = nova::Vec3(0.0f, 0.0f, delta.z >= 0.0f ? 1.0f : -1.0f);
+            }
+
+            LandscapeRigidBody& otherState = gLandscapeRigidBodies[otherBody.first];
+            const float inverseMassA = 1.0f / std::max(0.01f, body.mass);
+            const float inverseMassB = 1.0f / std::max(0.01f, otherState.mass);
+            const float inverseMassSum = inverseMassA + inverseMassB;
+            const float correction = std::max(0.0f, penetration - 0.002f) * 0.82f / inverseMassSum;
+            object->transform.position = object->transform.position + normal * (correction * inverseMassA);
+            other->transform.position = other->transform.position - normal * (correction * inverseMassB);
+
+            const float relativeX = body.velocity.x - otherState.velocity.x;
+            const float relativeY = body.velocity.y - otherState.velocity.y;
+            const float relativeZ = body.velocity.z - otherState.velocity.z;
+            const float normalVelocity = relativeX * normal.x +
+                                        relativeY * normal.y +
+                                        relativeZ * normal.z;
+            if (normalVelocity < 0.0f) {
+                const float restitution = std::min(body.restitution, otherState.restitution);
+                const float impulseMagnitude = -(1.0f + restitution) * normalVelocity / inverseMassSum;
+                const nova::Vec3 impulse = normal * impulseMagnitude;
+                body.velocity = body.velocity + impulse * inverseMassA;
+                otherState.velocity = otherState.velocity - impulse * inverseMassB;
+
+                const float rvx = body.velocity.x - otherState.velocity.x;
+                const float rvy = body.velocity.y - otherState.velocity.y;
+                const float rvz = body.velocity.z - otherState.velocity.z;
+                const float normalAfter = rvx * normal.x + rvy * normal.y + rvz * normal.z;
+                nova::Vec3 tangent(rvx - normal.x * normalAfter,
+                                   rvy - normal.y * normalAfter,
+                                   rvz - normal.z * normalAfter);
+                const float tangentLength = std::sqrt(tangent.x*tangent.x +
+                                                      tangent.y*tangent.y + tangent.z*tangent.z);
+                if (tangentLength > 1e-5f) {
+                    tangent = tangent * (1.0f / tangentLength);
+                    const float frictionImpulse = -(rvx*tangent.x + rvy*tangent.y + rvz*tangent.z) /
+                                                  inverseMassSum;
+                    const float friction = std::sqrt(std::max(0.0f, body.friction * otherState.friction));
+                    const float maxFriction = impulseMagnitude * friction;
+                    const float clampedFriction = std::clamp(frictionImpulse, -maxFriction, maxFriction);
+                    const nova::Vec3 frictionVector = tangent * clampedFriction;
+                    body.velocity = body.velocity + frictionVector * inverseMassA;
+                    otherState.velocity = otherState.velocity - frictionVector * inverseMassB;
+                }
+            }
+        }
+        ++it;
+    }
+}
+
 // Transform helpers use the same Rz * Ry * Rx order as Renderer::makeModelMatrix.
 nova::Vec3 rotateByObject(const nova::Vec3& v, const nova::Vec3& degrees) {
     const float k=3.14159265358979323846f/180.0f;
@@ -572,6 +1201,96 @@ void moveSelected(
     }
 }
 
+
+bool decodeGray16Png(const uint8_t* data, size_t size,
+                     std::vector<uint16_t>& samples, int& width, int& height) {
+    static const uint8_t signature[8] = {137,80,78,71,13,10,26,10};
+    if (!data || size < 8 || std::memcmp(data, signature, 8) != 0) return false;
+    auto readBE32 = [](const uint8_t* p) -> uint32_t {
+        return (static_cast<uint32_t>(p[0]) << 24) |
+               (static_cast<uint32_t>(p[1]) << 16) |
+               (static_cast<uint32_t>(p[2]) << 8) |
+                static_cast<uint32_t>(p[3]);
+    };
+    width = height = 0;
+    int bitDepth = 0, colorType = -1, interlace = -1;
+    std::vector<uint8_t> compressed;
+    size_t offset = 8;
+    bool hasHeader = false, hasEnd = false;
+    while (offset + 12 <= size) {
+        const uint32_t length = readBE32(data + offset);
+        offset += 4;
+        if (length > size - offset - 8) return false;
+        const uint8_t* type = data + offset;
+        const uint8_t* payload = data + offset + 4;
+        const uint32_t storedCrc = readBE32(payload + length);
+        uLong calculatedCrc = crc32(0L, Z_NULL, 0);
+        calculatedCrc = crc32(calculatedCrc, type, static_cast<uInt>(length + 4u));
+        if (static_cast<uint32_t>(calculatedCrc) != storedCrc) return false;
+        if (std::memcmp(type, "IHDR", 4) == 0) {
+            if (length != 13) return false;
+            const uint32_t w = readBE32(payload), h = readBE32(payload + 4);
+            if (w != 129 || h != 129) return false;
+            width = static_cast<int>(w); height = static_cast<int>(h);
+            bitDepth = payload[8]; colorType = payload[9]; interlace = payload[12];
+            if (bitDepth != 16 || colorType != 0 || payload[10] != 0 ||
+                payload[11] != 0 || interlace != 0) return false;
+            hasHeader = true;
+        } else if (std::memcmp(type, "IDAT", 4) == 0) {
+            if (!hasHeader || compressed.size() + length > 8u * 1024u * 1024u) return false;
+            compressed.insert(compressed.end(), payload, payload + length);
+        } else if (std::memcmp(type, "IEND", 4) == 0) {
+            hasEnd = true;
+            break;
+        }
+        offset += static_cast<size_t>(length) + 8u;
+    }
+    if (!hasHeader || !hasEnd || compressed.empty()) return false;
+
+    constexpr size_t bytesPerPixel = 2;
+    const size_t rowBytes = static_cast<size_t>(width) * bytesPerPixel;
+    const size_t filteredSize = (rowBytes + 1u) * static_cast<size_t>(height);
+    std::vector<uint8_t> filtered(filteredSize);
+    uLongf outputSize = static_cast<uLongf>(filtered.size());
+    const int inflateResult = uncompress(filtered.data(), &outputSize,
+        compressed.data(), static_cast<uLong>(compressed.size()));
+    if (inflateResult != Z_OK || outputSize != filtered.size()) return false;
+
+    std::vector<uint8_t> decoded(rowBytes * static_cast<size_t>(height));
+    auto paeth = [](int a, int b, int c) -> int {
+        const int p = a + b - c;
+        const int pa = std::abs(p - a), pb = std::abs(p - b), pc = std::abs(p - c);
+        return pa <= pb && pa <= pc ? a : (pb <= pc ? b : c);
+    };
+    for (int y = 0; y < height; ++y) {
+        const size_t srcRow = static_cast<size_t>(y) * (rowBytes + 1u);
+        const uint8_t filter = filtered[srcRow];
+        if (filter > 4) return false;
+        for (size_t x = 0; x < rowBytes; ++x) {
+            const int raw = filtered[srcRow + 1u + x];
+            const int left = x >= bytesPerPixel ? decoded[static_cast<size_t>(y) * rowBytes + x - bytesPerPixel] : 0;
+            const int up = y > 0 ? decoded[static_cast<size_t>(y - 1) * rowBytes + x] : 0;
+            const int upperLeft = (y > 0 && x >= bytesPerPixel)
+                ? decoded[static_cast<size_t>(y - 1) * rowBytes + x - bytesPerPixel] : 0;
+            int predictor = 0;
+            if (filter == 1) predictor = left;
+            else if (filter == 2) predictor = up;
+            else if (filter == 3) predictor = (left + up) / 2;
+            else if (filter == 4) predictor = paeth(left, up, upperLeft);
+            decoded[static_cast<size_t>(y) * rowBytes + x] =
+                static_cast<uint8_t>((raw + predictor) & 0xFF);
+        }
+    }
+
+    samples.resize(static_cast<size_t>(width) * static_cast<size_t>(height));
+    for (size_t i = 0; i < samples.size(); ++i) {
+        const uint8_t high = decoded[i * 2u];
+        const uint8_t low = decoded[i * 2u + 1u];
+        samples[i] = static_cast<uint16_t>((static_cast<uint16_t>(high) << 8) | low);
+    }
+    return true;
+}
+
 } // namespace
 
 extern "C" {
@@ -686,6 +1405,9 @@ Java_com_novaingine_v2_NativeBridge_nativeRender(
         }
     }
 
+    if (!gPaused) stepLandscapeRigidBodies(dt);
+    updateTerrainLod();
+    updateLandscapeWorldStreaming();
     gRenderer.beginFrame();
     gRenderer.render(gScene, gCamera);
     gRenderer.endFrame();
@@ -810,6 +1532,24 @@ Java_com_novaingine_v2_NativeBridge_nativeFly(
             gPhysicsGrounded,
             gJumpWasPressed
         );
+
+        // Landscape collision samples the actual editable heightfield instead of
+        // treating the terrain as a flat primitive plane.
+        const bool cameraInsideCave = insideVoxelCave(gCamera.position);
+        if (cameraInsideCave) resolveVoxelCaveCollision(gCamera.position, 0.42f);
+        bool hasLandscapeGround = false;
+        const float landscapeGround = cameraInsideCave ? 0.0f : terrainHeightAt(
+            gCamera.position.x, gCamera.position.z, hasLandscapeGround);
+        if (!cameraInsideCave && hasLandscapeGround) {
+            const float minimumCameraY =
+                landscapeGround + nova::PhysicsWorld::PLAYER_HEIGHT;
+            if (gCamera.position.y < minimumCameraY) {
+                gCamera.position.y = minimumCameraY;
+                if (gVerticalVelocity < 0.0f) gVerticalVelocity = 0.0f;
+                gPhysicsGrounded = true;
+                gCamera.target = gCamera.position + gCamera.forward() * 10.0f;
+            }
+        }
     } else {
         gCamera.move(
             static_cast<float>(forward),
@@ -1014,6 +1754,52 @@ Java_com_novaingine_v2_NativeBridge_nativeSetExposure(
 }
 
 JNIEXPORT void JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetWorldEnvironment(
+    JNIEnv* env, jclass, jfloatArray values
+) {
+    if (values == nullptr || env->GetArrayLength(values) < 28) return;
+    jfloat data[28];
+    env->GetFloatArrayRegion(values, 0, 28, data);
+    if (env->ExceptionCheck()) { env->ExceptionClear(); return; }
+
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized) return;
+
+    RendererSettings settings = gRenderer.getSettings();
+    nova::Vec3 sunDirection(data[0], data[1], data[2]);
+    sunDirection = nova::normalize(sunDirection);
+    if (nova::length(sunDirection) > 0.0001f) {
+        settings.directionalLightDirection[0] = sunDirection.x;
+        settings.directionalLightDirection[1] = sunDirection.y;
+        settings.directionalLightDirection[2] = sunDirection.z;
+    }
+    for (int i = 0; i < 3; ++i) {
+        settings.directionalLightColor[i] = data[3 + i];
+        settings.fogColor[i] = data[21 + i];
+    }
+    settings.directionalLightIntensity = data[6];
+    settings.directionalLightEnabled = data[7] >= 0.5f;
+    settings.skyLightEnabled = data[8] >= 0.5f;
+    settings.skyLightIntensity = data[9];
+    settings.skyAtmosphereEnabled = data[10] >= 0.5f;
+    settings.atmosphereRayleigh = data[11];
+    settings.atmosphereMie = data[12];
+    settings.volumetricCloudsEnabled = data[13] >= 0.5f;
+    settings.cloudCoverage = data[14];
+    settings.cloudDensity = data[15];
+    settings.cloudSpeed = data[16];
+    settings.heightFogEnabled = data[17] >= 0.5f;
+    settings.fogDensity = data[18];
+    settings.fogHeight = data[19];
+    settings.fogFalloff = data[20];
+    settings.bloomEnabled = data[24] >= 0.5f;
+    settings.bloomIntensity = data[25];
+    settings.colorContrast = data[26];
+    settings.colorSaturation = data[27];
+    gRenderer.setSettings(settings);
+}
+
+JNIEXPORT void JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeSetPhysicsEnabled(
     JNIEnv*,
     jclass,
@@ -1071,7 +1857,7 @@ Java_com_novaingine_v2_NativeBridge_nativeSaveScene(
     std::ofstream file(temporaryPath, std::ios::out | std::ios::trunc);
     if (!file) return JNI_FALSE;
     file << std::setprecision(9);
-    file << "NOVA_PROJECT 2\n";
+    file << "NOVA_PROJECT 5\n";
     file << gScene.objectCount() << " " << gScene.selectedId() << " "
          << gSculptMeshId << "\n";
     file << gCamera.position.x << " " << gCamera.position.y << " " << gCamera.position.z << " "
@@ -1093,13 +1879,22 @@ Java_com_novaingine_v2_NativeBridge_nativeSaveScene(
 
     file << gCustomMeshes.size() << "\n";
     for (const auto& entry : gCustomMeshes) {
-        const auto& vertices = entry.second.getVertices();
-        const auto& indices = entry.second.getIndices();
+        const nova::Mesh* meshToSave = &entry.second;
+        for (const auto& tileEntry : gLandscapeWorldTiles) {
+            if (tileEntry.second.objectId == entry.first) {
+                meshToSave = &tileEntry.second.fullMesh;
+                break;
+            }
+        }
+        const auto& vertices = meshToSave->getVertices();
+        const auto& indices = meshToSave->getIndices();
         file << entry.first << " " << vertices.size() << " " << indices.size() << "\n";
         for (const auto& v : vertices) {
             file << v.position.x << " " << v.position.y << " " << v.position.z << " "
                  << v.normal.x << " " << v.normal.y << " " << v.normal.z << " "
-                 << v.u << " " << v.v << "\n";
+                 << v.u << " " << v.v << " "
+                 << v.layerWeights[0] << " " << v.layerWeights[1] << " "
+                 << v.layerWeights[2] << " " << v.layerWeights[3] << "\n";
         }
         for (uint32_t index : indices) file << index << " ";
         file << "\n";
@@ -1138,6 +1933,56 @@ Java_com_novaingine_v2_NativeBridge_nativeSaveScene(
              << node.value << " " << node.compareValue << " " << node.condition << "\n";
     }
 
+    file << gVoxelCaves.size() << "\n";
+    for (const VoxelCaveRecord& cave : gVoxelCaves) {
+        file << cave.objectId << " " << cave.volume.radius() << " "
+             << cave.volume.path().size() << "\n";
+        for (const nova::Vec3& point : cave.volume.path())
+            file << point.x << " " << point.y << " " << point.z << "\n";
+    }
+
+    std::vector<std::pair<uint32_t, const nova::LandscapeSystem*>> landscapesToSave;
+    for (const nova::SceneObject& object : gScene.getObjects()) {
+        if (object.name == "Landscape Terrain" && gLandscape.valid())
+            landscapesToSave.emplace_back(object.id, &gLandscape);
+    }
+    for (const auto& tile : gLandscapeWorldTiles)
+        if (tile.second.data.valid())
+            landscapesToSave.emplace_back(tile.second.objectId, &tile.second.data);
+
+    file << landscapesToSave.size() << "\n";
+    for (const auto& landscapeEntry : landscapesToSave) {
+        const uint32_t objectId = landscapeEntry.first;
+        const nova::LandscapeSystem& data = *landscapeEntry.second;
+        const auto& baseHeights = data.baseHeights();
+        const auto& baseWeights = data.baseWeights();
+        file << objectId << " " << data.width() << " " << data.height() << " "
+             << data.spacing() << " " << data.originX() << " " << data.originZ() << "\n";
+        file << baseHeights.size() << "\n";
+        for (float height : baseHeights) file << height << " ";
+        file << "\n";
+        file << baseWeights.size() << "\n";
+        for (const auto& weight : baseWeights)
+            file << weight[0] << " " << weight[1] << " " << weight[2] << " " << weight[3] << "\n";
+        file << data.layers().size() << "\n";
+        for (const auto& layer : data.layers()) {
+            file << std::quoted(layer.name) << " " << layer.visible << " " << layer.locked << " "
+                 << layer.heightAlpha << " " << layer.paintAlpha << "\n";
+            file << layer.heightDelta.size() << "\n";
+            for (float delta : layer.heightDelta) file << delta << " ";
+            file << "\n";
+            file << layer.paintDelta.size() << "\n";
+            for (const auto& delta : layer.paintDelta)
+                file << delta[0] << " " << delta[1] << " " << delta[2] << " " << delta[3] << "\n";
+        }
+        file << data.splines().size() << "\n";
+        for (const auto& spline : data.splines()) {
+            file << spline.size() << "\n";
+            for (const auto& point : spline)
+                file << point.x << " " << point.z << " " << point.width << "\n";
+        }
+    }
+
     file.flush();
     const bool written = file.good();
     file.close();
@@ -1170,7 +2015,8 @@ Java_com_novaingine_v2_NativeBridge_nativeLoadScene(
     uint32_t selectedId = 0, sculptMeshId = 0;
     if (!(file >> magic >> version)) return JNI_FALSE;
     const bool legacy = magic == "NOVA_SCENE" && version == 1;
-    const bool current = magic == "NOVA_PROJECT" && version == 2;
+    const bool current = magic == "NOVA_PROJECT" && (version == 2 || version == 3 || version == 4 || version == 5);
+    const bool hasLayerWeights = current && version >= 3;
     if (!legacy && !current) return JNI_FALSE;
     if (!(file >> objectCount) || objectCount > 10000) return JNI_FALSE;
     if (current && !(file >> selectedId >> sculptMeshId)) return JNI_FALSE;
@@ -1234,6 +2080,14 @@ Java_com_novaingine_v2_NativeBridge_nativeLoadScene(
                 if (!(file >> vertex.position.x >> vertex.position.y >> vertex.position.z
                       >> vertex.normal.x >> vertex.normal.y >> vertex.normal.z
                       >> vertex.u >> vertex.v)) return JNI_FALSE;
+                if (hasLayerWeights) {
+                    for (float& weight : vertex.layerWeights) {
+                        if (!(file >> weight) || !std::isfinite(weight)) return JNI_FALSE;
+                        weight = std::clamp(weight, 0.0f, 1.0f);
+                    }
+                } else {
+                    vertex.layerWeights[0] = 1.0f;
+                }
                 if (!std::isfinite(vertex.position.x) || !std::isfinite(vertex.position.y) ||
                     !std::isfinite(vertex.position.z) || !std::isfinite(vertex.normal.x) ||
                     !std::isfinite(vertex.normal.y) || !std::isfinite(vertex.normal.z) ||
@@ -1319,6 +2173,123 @@ Java_com_novaingine_v2_NativeBridge_nativeLoadScene(
         }
     }
 
+    std::vector<VoxelCaveRecord> loadedVoxelCaves;
+    if (current && version >= 4) {
+        size_t caveCount = 0;
+        if (!(file >> caveCount) || caveCount > 128) return JNI_FALSE;
+        loadedVoxelCaves.reserve(caveCount);
+        for (size_t c = 0; c < caveCount; ++c) {
+            uint32_t objectId = 0;
+            float radius = 0.0f;
+            size_t pointCount = 0;
+            if (!(file >> objectId >> radius >> pointCount) ||
+                objectId == 0 || pointCount < 2 || pointCount > 1024 ||
+                !loadedScene.find(objectId)) return JNI_FALSE;
+            std::vector<nova::Vec3> path;
+            path.reserve(pointCount);
+            for (size_t p = 0; p < pointCount; ++p) {
+                nova::Vec3 point;
+                if (!(file >> point.x >> point.y >> point.z) ||
+                    !std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z))
+                    return JNI_FALSE;
+                path.push_back(point);
+            }
+            VoxelCaveRecord record;
+            record.objectId = objectId;
+            if (!record.volume.build(path, radius, 0.5f)) return JNI_FALSE;
+            loadedVoxelCaves.push_back(std::move(record));
+        }
+    }
+
+    struct LoadedLandscapeState {
+        int width = 0, height = 0;
+        float spacing = 0.5f, originX = 0.0f, originZ = 0.0f;
+        std::vector<float> baseHeights;
+        std::vector<std::array<float,4>> baseWeights;
+        std::vector<nova::LandscapeSystem::Layer> layers;
+        std::vector<std::vector<nova::LandscapeSystem::SplinePoint>> splines;
+    };
+    std::unordered_map<uint32_t, LoadedLandscapeState> loadedLandscapeStates;
+    if (current && version >= 5) {
+        size_t landscapeCount = 0;
+        if (!(file >> landscapeCount) || landscapeCount > 256) return JNI_FALSE;
+        for (size_t landscapeIndex = 0; landscapeIndex < landscapeCount; ++landscapeIndex) {
+            uint32_t objectId = 0;
+            LoadedLandscapeState state;
+            if (!(file >> objectId >> state.width >> state.height >> state.spacing
+                       >> state.originX >> state.originZ) ||
+                objectId == 0 || !loadedScene.find(objectId) ||
+                state.width != 129 || state.height != 129 ||
+                !std::isfinite(state.spacing) || state.spacing <= 0.0f ||
+                !std::isfinite(state.originX) || !std::isfinite(state.originZ))
+                return JNI_FALSE;
+            const size_t expectedSamples = 129u * 129u;
+            size_t count = 0;
+            if (!(file >> count) || count != expectedSamples) return JNI_FALSE;
+            state.baseHeights.resize(count);
+            for (float& value : state.baseHeights)
+                if (!(file >> value) || !std::isfinite(value) || std::fabs(value) > 100000.0f)
+                    return JNI_FALSE;
+            if (!(file >> count) || count != expectedSamples) return JNI_FALSE;
+            state.baseWeights.resize(count);
+            for (auto& weights : state.baseWeights) {
+                float total = 0.0f;
+                for (float& value : weights) {
+                    if (!(file >> value) || !std::isfinite(value)) return JNI_FALSE;
+                    value = std::clamp(value, 0.0f, 1.0f);
+                    total += value;
+                }
+                if (total < 1e-6f) weights = {1.0f, 0.0f, 0.0f, 0.0f};
+                else for (float& value : weights) value /= total;
+            }
+            size_t layerCount = 0;
+            if (!(file >> layerCount) || layerCount == 0 || layerCount > 32) return JNI_FALSE;
+            state.layers.reserve(layerCount);
+            for (size_t layerIndex = 0; layerIndex < layerCount; ++layerIndex) {
+                nova::LandscapeSystem::Layer layer;
+                if (!(file >> std::quoted(layer.name) >> layer.visible >> layer.locked
+                           >> layer.heightAlpha >> layer.paintAlpha) ||
+                    layer.name.size() > 256 || !std::isfinite(layer.heightAlpha) ||
+                    !std::isfinite(layer.paintAlpha)) return JNI_FALSE;
+                layer.heightAlpha = std::clamp(layer.heightAlpha, 0.0f, 1.0f);
+                layer.paintAlpha = std::clamp(layer.paintAlpha, 0.0f, 1.0f);
+                if (!(file >> count) || count != expectedSamples) return JNI_FALSE;
+                layer.heightDelta.resize(count);
+                for (float& value : layer.heightDelta)
+                    if (!(file >> value) || !std::isfinite(value) || std::fabs(value) > 100000.0f)
+                        return JNI_FALSE;
+                if (!(file >> count) || count != expectedSamples) return JNI_FALSE;
+                layer.paintDelta.resize(count);
+                for (auto& weights : layer.paintDelta)
+                    for (float& value : weights)
+                        if (!(file >> value) || !std::isfinite(value) || std::fabs(value) > 10.0f)
+                            return JNI_FALSE;
+                state.layers.push_back(std::move(layer));
+            }
+            size_t splineCount = 0;
+            if (!(file >> splineCount) || splineCount > 4096) return JNI_FALSE;
+            state.splines.reserve(splineCount);
+            for (size_t splineIndex = 0; splineIndex < splineCount; ++splineIndex) {
+                size_t pointCount = 0;
+                if (!(file >> pointCount) || pointCount < 2 || pointCount > 4096)
+                    return JNI_FALSE;
+                std::vector<nova::LandscapeSystem::SplinePoint> spline;
+                spline.reserve(pointCount);
+                for (size_t pointIndex = 0; pointIndex < pointCount; ++pointIndex) {
+                    nova::LandscapeSystem::SplinePoint point;
+                    if (!(file >> point.x >> point.z >> point.width) ||
+                        !std::isfinite(point.x) || !std::isfinite(point.z) ||
+                        !std::isfinite(point.width) || point.width < 0.5f || point.width > 32.0f)
+                        return JNI_FALSE;
+                    spline.push_back(point);
+                }
+                state.splines.push_back(std::move(spline));
+            }
+            if (!loadedLandscapeStates.emplace(objectId, std::move(state)).second)
+                return JNI_FALSE;
+        }
+    }
+
     std::lock_guard<std::mutex> lock(engineMutex);
     while (gSculptJobsPending.load(std::memory_order_acquire) != 0) {
         std::this_thread::yield();
@@ -1326,11 +2297,76 @@ Java_com_novaingine_v2_NativeBridge_nativeLoadScene(
     std::lock_guard<std::mutex> sculptLock(gSculptDataMutex);
     recordUndo(true);
     gRenderer.releaseAllMeshes();
+    gRenderer.clearTerrainTextures();
     gScene = std::move(loadedScene);
     if (current && selectedId != 0) gScene.select(selectedId);
     gUndoStack.clear();
     gRedoStack.clear();
     gCustomMeshes = std::move(loadedMeshes);
+    gLandscape = nova::LandscapeSystem();
+    gLandscapeWorldTiles.clear();
+    gVoxelCaves = std::move(loadedVoxelCaves);
+
+    auto restoreLandscapeData = [&](nova::LandscapeSystem& data, const nova::Mesh& mesh,
+                                     uint32_t objectId, float originX, float originZ) -> bool {
+        const auto& vertices = mesh.getVertices();
+        if (vertices.size() != 129u * 129u) return false;
+        auto stateIt = loadedLandscapeStates.find(objectId);
+        const float spacing = stateIt != loadedLandscapeStates.end() ?
+            stateIt->second.spacing : 0.5f;
+        const float savedOriginX = stateIt != loadedLandscapeStates.end() ?
+            stateIt->second.originX : originX;
+        const float savedOriginZ = stateIt != loadedLandscapeStates.end() ?
+            stateIt->second.originZ : originZ;
+        if (!data.initialize(129, 129, spacing, savedOriginX, savedOriginZ)) return false;
+        std::vector<float> heights(vertices.size());
+        std::vector<std::array<float,4>> weights(vertices.size());
+        for (size_t i = 0; i < vertices.size(); ++i) {
+            heights[i] = std::clamp(vertices[i].position.y, -100000.0f, 100000.0f);
+            for (int c = 0; c < 4; ++c) weights[i][c] = vertices[i].layerWeights[c];
+        }
+        if (!data.setBaseHeights(heights) || !data.setBaseWeights(weights)) return false;
+        if (stateIt != loadedLandscapeStates.end()) {
+            const LoadedLandscapeState& state = stateIt->second;
+            if (!data.setBaseHeights(state.baseHeights) ||
+                !data.setBaseWeights(state.baseWeights) ||
+                !data.restoreLayers(state.layers) ||
+                !data.restoreSplines(state.splines)) return false;
+        }
+        std::vector<uint8_t> triangleCount(128u * 128u, 0);
+        const auto& indices = mesh.getIndices();
+        for (size_t i = 0; i + 2 < indices.size(); i += 3) {
+            const uint32_t a = indices[i], b = indices[i+1], c = indices[i+2];
+            const int minX = std::min({static_cast<int>(a % 129u), static_cast<int>(b % 129u), static_cast<int>(c % 129u)});
+            const int minZ = std::min({static_cast<int>(a / 129u), static_cast<int>(b / 129u), static_cast<int>(c / 129u)});
+            if (minX < 128 && minZ < 128) {
+                auto& count = triangleCount[static_cast<size_t>(minZ * 128 + minX)];
+                if (count < 2) ++count;
+            }
+        }
+        for (int z = 0; z < 128; ++z) for (int x = 0; x < 128; ++x)
+            if (triangleCount[static_cast<size_t>(z * 128 + x)] < 2) data.setHole(x, z, true);
+        data.buildChunks(gLandscapeChunkSize);
+        return true;
+    };
+
+    for (const nova::SceneObject& object : gScene.getObjects()) {
+        auto meshIt = gCustomMeshes.find(object.id);
+        if (meshIt == gCustomMeshes.end()) continue;
+        if (object.name == "Landscape Terrain") {
+            restoreLandscapeData(gLandscape, meshIt->second, object.id, -32.0f, -36.0f);
+        } else if (object.name.rfind("Landscape Tile ", 0) == 0) {
+            int tileX = 0, tileZ = 0;
+            if (std::sscanf(object.name.c_str(), "Landscape Tile %d %d", &tileX, &tileZ) != 2) continue;
+            LandscapeWorldTile tile;
+            tile.tileX = tileX; tile.tileZ = tileZ; tile.objectId = object.id;
+            if (!restoreLandscapeData(tile.data, meshIt->second, object.id,
+                    landscapeTileOriginX(tileX), landscapeTileOriginZ(tileZ))) continue;
+            tile.fullMesh = meshIt->second;
+            tile.loaded = true; tile.lod = 0;
+            gLandscapeWorldTiles.emplace(landscapeTileKey(tileX, tileZ), std::move(tile));
+        }
+    }
     gSculptMasks = std::move(loadedMasks);
     gSculptMesh = std::move(loadedSculpt);
     gSculptMeshId = current ? sculptMeshId : 0;
@@ -1338,6 +2374,8 @@ Java_com_novaingine_v2_NativeBridge_nativeLoadScene(
     gVisualScriptStarted = false;
     if (current) gCamera = loadedCamera;
     else gCamera.reset();
+    gTerrainLodLevel = -1;
+    gTerrainChunksDirty = true;
     gSculptMode = false;
     gSculptStrokeActive = false;
     gHasPreviousSculptHit = false;
@@ -1724,6 +2762,9 @@ Java_com_novaingine_v2_NativeBridge_nativeEnterSculptMode(JNIEnv*, jclass) {
     gRenderer.setSculptCursor(false, nova::Vec3(), nova::Vec3(0,1,0), 0.18f);
     gRenderer.releaseAllMeshes();
     gScene.clear();
+    gLandscape = nova::LandscapeSystem();
+    gLandscapeWorldTiles.clear();
+    gVoxelCaves.clear();
     gCustomMeshes.clear();
     gSculptMasks.clear();
     { std::lock_guard<std::mutex> qlock(gSculptQueueMutex); gSculptQueue.clear(); }
@@ -1974,7 +3015,7 @@ Java_com_novaingine_v2_NativeBridge_nativeSculptSelectedMesh(
     const float cz = std::clamp(static_cast<float>(czValue), -1000.0f, 1000.0f);
     const float radius = std::clamp(static_cast<float>(radiusValue), 0.01f, 100.0f);
     const float strength = std::clamp(static_cast<float>(strengthValue), 0.001f, 2.0f);
-    const int mode = std::clamp(static_cast<int>(modeValue), 0, 3);
+    const int mode = std::clamp(static_cast<int>(modeValue), 0, 6);
     const bool symmetry = symmetryValue == JNI_TRUE;
     const nova::Mesh& source = found->second;
     std::vector<nova::Vertex> vertices = source.getVertices();
@@ -2327,43 +3368,146 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateTerrain(
     std::lock_guard<std::mutex> lock(engineMutex);
     if (!gInitialized) return JNI_FALSE;
 
-    recordUndo();
+    // Replace the old block terrain with one connected, editable heightfield.
+    recordUndo(true);
     std::vector<uint32_t> oldTerrain;
     for (const nova::SceneObject& object : gScene.getObjects()) {
-        if (object.name.rfind("Terrain Tile ", 0) == 0) {
+        if (object.name == "Landscape Terrain" ||
+            object.name.rfind("Terrain Tile ", 0) == 0 ||
+            object.name.rfind("Landscape Chunk ", 0) == 0 ||
+            object.name.rfind("Landscape Tile ", 0) == 0 ||
+            object.name == "Landscape Voxel Cave") {
             oldTerrain.push_back(object.id);
         }
     }
-    for (uint32_t id : oldTerrain) gScene.removeObject(id);
+    gLandscapeWorldTiles.clear();
+    gVoxelCaves.clear();
+    for (uint32_t id : oldTerrain) {
+        gRenderer.releaseMesh(id);
+        gCustomMeshes.erase(id);
+        gSculptMasks.erase(id);
+        gScene.removeObject(id);
+    }
 
-    const nova::Color grass(0.25f, 0.42f, 0.17f, 1.0f);
-    for (int z = -5; z <= 5; ++z) {
-        for (int x = -5; x <= 5; ++x) {
-            const float height = 0.15f;
-            nova::Transform transform;
-            transform.position = nova::Vec3(
-                static_cast<float>(x),
-                -0.08f + height * 0.5f,
-                -4.0f + static_cast<float>(z)
+    gLandscape.initialize(129, 129, 0.5f, -32.0f, -36.0f);
+    gLandscape.buildChunks(gLandscapeChunkSize);
+    constexpr int resolution = 129;
+    constexpr float halfExtent = 32.0f;
+    constexpr float spacing = (halfExtent * 2.0f) / (resolution - 1);
+    std::vector<nova::Vertex> vertices;
+    std::vector<uint32_t> indices;
+    vertices.reserve(static_cast<size_t>(resolution) * resolution);
+    indices.reserve(static_cast<size_t>(resolution - 1) * (resolution - 1) * 6);
+
+    for (int z = 0; z < resolution; ++z) {
+        for (int x = 0; x < resolution; ++x) {
+            const float u = static_cast<float>(x) / (resolution - 1);
+            const float v = static_cast<float>(z) / (resolution - 1);
+            const float px = -halfExtent + x * spacing;
+            const float pz = -4.0f - halfExtent + z * spacing;
+            vertices.emplace_back(
+                nova::Vec3(px, 0.0f, pz),
+                nova::Vec3(0.0f, 1.0f, 0.0f), u, v
             );
-            transform.scale = nova::Vec3(0.96f, height, 0.96f);
-            uint32_t id = gScene.addObject(
-                "Terrain Tile " + std::to_string(x) + " " + std::to_string(z),
-                nova::PrimitiveType::Cube,
-                transform,
-                grass
-            );
-            nova::SceneObject* tile = gScene.find(id);
-            if (tile) {
-                tile->material.baseColor = nova::Vec3(grass.r, grass.g, grass.b);
-                tile->material.roughness = 0.96f;
-                tile->material.metallic = 0.0f;
-            }
+            vertices.back().layerWeights[0] = 1.0f;
         }
     }
-    gScene.deselect();
-    gRenderer.releaseAllMeshes();
+    for (int z = 0; z < resolution - 1; ++z) {
+        for (int x = 0; x < resolution - 1; ++x) {
+            const uint32_t a = static_cast<uint32_t>(z * resolution + x);
+            const uint32_t b = a + 1;
+            const uint32_t c = a + static_cast<uint32_t>(resolution);
+            const uint32_t d = c + 1;
+            indices.insert(indices.end(), {a, c, b, b, c, d});
+        }
+    }
+
+    nova::Mesh terrainMesh(std::move(vertices), std::move(indices));
+    terrainMesh.recalculateNormals();
+    if (!terrainMesh.isValid()) return JNI_FALSE;
+
+    const nova::Color grass(0.28f, 0.40f, 0.19f, 1.0f);
+    nova::Transform transform;
+    const uint32_t terrainId = gScene.addObject(
+        "Landscape Terrain", nova::PrimitiveType::Plane, transform, grass
+    );
+    nova::SceneObject* terrain = gScene.find(terrainId);
+    if (!terrain) return JNI_FALSE;
+    terrain->material.baseColor = nova::Vec3(grass.r, grass.g, grass.b);
+    terrain->material.roughness = 0.94f;
+    terrain->material.metallic = 0.0f;
+
+    gCustomMeshes[terrainId] = terrainMesh;
+    if (!gRenderer.uploadMesh(terrainId, terrainMesh)) {
+        gCustomMeshes.erase(terrainId);
+        gScene.removeObject(terrainId);
+        return JNI_FALSE;
+    }
+    terrain->visible = false;
+    gTerrainLodLevel = -1;
+    gTerrainChunksDirty = true;
+    gScene.select(terrainId);
     return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeCreateLandscapeWorldTile(
+    JNIEnv* env, jclass, jint tileX, jint tileZ, jfloatArray heightArray
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized || !heightArray || env->GetArrayLength(heightArray) != 129 * 129)
+        return JNI_FALSE;
+    std::vector<float> heights(129u * 129u);
+    env->GetFloatArrayRegion(heightArray, 0, static_cast<jsize>(heights.size()), heights.data());
+    if (env->ExceptionCheck()) { env->ExceptionClear(); return JNI_FALSE; }
+    for (float& value : heights) {
+        if (!std::isfinite(value)) return JNI_FALSE;
+        value = std::clamp(value, -12.0f, 24.0f);
+    }
+    recordUndo(true);
+    return createLandscapeWorldTile(static_cast<int>(tileX), static_cast<int>(tileZ), heights)
+        ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeCopyMainLandscapeTile(
+    JNIEnv*, jclass, jint tileX, jint tileZ
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized || !gLandscape.valid()) return JNI_FALSE;
+    const std::vector<float> heights = gLandscape.heights();
+    const std::vector<std::array<float,4>> weights = gLandscape.weights();
+    recordUndo(true);
+    if (!createLandscapeWorldTile(static_cast<int>(tileX), static_cast<int>(tileZ), heights))
+        return JNI_FALSE;
+    auto found = gLandscapeWorldTiles.find(landscapeTileKey(static_cast<int>(tileX), static_cast<int>(tileZ)));
+    if (found == gLandscapeWorldTiles.end()) return JNI_FALSE;
+    found->second.data.setBaseWeights(weights);
+    return syncWorldTileMeshFromData(found->second) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeRemoveLandscapeWorldTile(
+    JNIEnv*, jclass, jint tileX, jint tileZ
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized || (tileX == 0 && tileZ == 0)) return JNI_FALSE;
+    const uint64_t key = landscapeTileKey(static_cast<int>(tileX), static_cast<int>(tileZ));
+    auto found = gLandscapeWorldTiles.find(key);
+    if (found == gLandscapeWorldTiles.end()) return JNI_FALSE;
+    recordUndo(true);
+    const uint32_t id = found->second.objectId;
+    gRenderer.releaseMesh(id);
+    gCustomMeshes.erase(id);
+    gScene.removeObject(id);
+    gLandscapeWorldTiles.erase(found);
+    return JNI_TRUE;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeGetLandscapeWorldTileCount(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    return static_cast<jint>(gLandscapeWorldTiles.size());
 }
 
 JNIEXPORT jboolean JNICALL
@@ -2372,79 +3516,471 @@ Java_com_novaingine_v2_NativeBridge_nativeSculptTerrain(
     jfloat radiusValue, jfloat strengthValue, jint modeValue
 ) {
     std::lock_guard<std::mutex> lock(engineMutex);
-    if (!gInitialized) return JNI_FALSE;
+    if (!gInitialized || (!gLandscape.valid() && gLandscapeWorldTiles.empty())) return JNI_FALSE;
+    const float x = static_cast<float>(centerXValue);
+    const float z = static_cast<float>(centerZValue);
+    nova::LandscapeSystem* target = landscapeAtWorld(x, z);
+    if (!target) return JNI_FALSE;
+    const float radius=std::clamp(static_cast<float>(radiusValue),0.5f,32.0f);
+    const float strength=std::clamp(static_cast<float>(strengthValue),0.005f,8.0f);
+    const int mode=std::clamp(static_cast<int>(modeValue),0,6);
+    recordUndo(true);
+    return target->sculpt(x,z,radius,strength,mode) && syncLandscapeAtWorld(x,z)
+        ? JNI_TRUE : JNI_FALSE;
+}
 
-    const float centerX = static_cast<float>(centerXValue);
-    const float centerZ = static_cast<float>(centerZValue);
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetTerrainHeights(
+    JNIEnv* env, jclass, jfloatArray heightArray
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized || !heightArray || env->GetArrayLength(heightArray) != 129*129 || !gLandscape.valid()) return JNI_FALSE;
+    std::vector<float> heights(129u*129u);
+    env->GetFloatArrayRegion(heightArray,0,static_cast<jsize>(heights.size()),heights.data());
+    if(env->ExceptionCheck()){env->ExceptionClear();return JNI_FALSE;}
+    recordUndo(true);
+    gLandscape.initialize(129,129,0.5f,-32.0f,-36.0f);
+    if(!gLandscape.setBaseHeights(heights))return JNI_FALSE;
+    return syncLandscapeMeshFromData()?JNI_TRUE:JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetTerrainTexture(
+    JNIEnv* env, jclass, jint layer, jint mapType, jint width, jint height, jintArray pixelArray
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized || !pixelArray || layer < 0 || layer >= 4 ||
+        mapType < 0 || mapType >= 3 || width < 1 || height < 1 ||
+        width > 2048 || height > 2048) return JNI_FALSE;
+    const jsize count = env->GetArrayLength(pixelArray);
+    if (count != width * height) return JNI_FALSE;
+    std::vector<jint> argb(static_cast<size_t>(count));
+    env->GetIntArrayRegion(pixelArray, 0, count, argb.data());
+    if (env->ExceptionCheck()) { env->ExceptionClear(); return JNI_FALSE; }
+    std::vector<uint8_t> rgba(static_cast<size_t>(count) * 4u);
+    for (jsize i = 0; i < count; ++i) {
+        const uint32_t pixel = static_cast<uint32_t>(argb[static_cast<size_t>(i)]);
+        const size_t out = static_cast<size_t>(i) * 4u;
+        rgba[out + 0] = static_cast<uint8_t>((pixel >> 16) & 0xFFu);
+        rgba[out + 1] = static_cast<uint8_t>((pixel >> 8) & 0xFFu);
+        rgba[out + 2] = static_cast<uint8_t>(pixel & 0xFFu);
+        rgba[out + 3] = 255u;
+    }
+    return gRenderer.setTerrainTexture(layer, mapType, width, height, rgba.data())
+        ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetTerrainHeightmapPng16(
+    JNIEnv* env, jclass, jbyteArray pngArray
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized || !gLandscape.valid() || !pngArray) return JNI_FALSE;
+    const jsize length = env->GetArrayLength(pngArray);
+    if (length < 64 || length > 16 * 1024 * 1024) return JNI_FALSE;
+    std::vector<uint8_t> bytes(static_cast<size_t>(length));
+    env->GetByteArrayRegion(pngArray, 0, length, reinterpret_cast<jbyte*>(bytes.data()));
+    if (env->ExceptionCheck()) { env->ExceptionClear(); return JNI_FALSE; }
+    std::vector<uint16_t> samples;
+    int width = 0, height = 0;
+    if (!decodeGray16Png(bytes.data(), bytes.size(), samples, width, height) ||
+        width != 129 || height != 129 || samples.size() != 129u * 129u) return JNI_FALSE;
+    std::vector<float> heights(samples.size());
+    for (size_t i = 0; i < samples.size(); ++i)
+        heights[i] = -12.0f + (static_cast<float>(samples[i]) / 65535.0f) * 36.0f;
+    recordUndo(true);
+    gLandscape.initialize(129, 129, 0.5f, -32.0f, -36.0f);
+    if (!gLandscape.setBaseHeights(heights)) return JNI_FALSE;
+    return syncLandscapeMeshFromData() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jfloatArray JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeGetTerrainHeights(JNIEnv* env, jclass) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized || !gLandscape.valid()) return nullptr;
+    const auto heights = gLandscape.heights();
+    jfloatArray result = env->NewFloatArray(static_cast<jsize>(heights.size()));
+    if (result) env->SetFloatArrayRegion(result, 0, static_cast<jsize>(heights.size()), heights.data());
+    return result;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSculptTerrainAtScreen(
+    JNIEnv*, jclass, jfloat screenX, jfloat screenY,
+    jfloat radiusValue, jfloat strengthValue, jint modeValue, jint phase
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if(!gInitialized||(!gLandscape.valid()&&gLandscapeWorldTiles.empty()))return JNI_FALSE;
+    if(phase==1){gTerrainStrokeActive=true;gTerrainStrokeHasUndo=false;}
+    if(phase==2){gTerrainStrokeActive=false;gTerrainStrokeHasUndo=false;gRenderer.setSculptCursor(false,nova::Vec3(),nova::Vec3(0,1,0),0.18f);return JNI_TRUE;}
+    float hitX=0,hitZ=0,hitY=0;
+    if(!terrainScreenHit(screenX,screenY,hitX,hitZ,hitY)){gRenderer.setSculptCursor(false,nova::Vec3(),nova::Vec3(0,1,0),0.18f);return JNI_FALSE;}
+    const float radius=std::clamp(static_cast<float>(radiusValue),0.5f,24.0f);
+    const float strength=std::clamp(static_cast<float>(strengthValue),0.005f,2.5f);
+    const int mode=std::clamp(static_cast<int>(modeValue),0,6);
+    if(!gTerrainStrokeActive||!gTerrainStrokeHasUndo){recordUndo(true);if(gTerrainStrokeActive)gTerrainStrokeHasUndo=true;}
+    nova::LandscapeSystem* target = landscapeAtWorld(hitX, hitZ);
+    if (!target) return JNI_FALSE;
+    const bool changed = target->sculpt(hitX, hitZ, radius, strength, mode);
+    gRenderer.setSculptCursor(true,nova::Vec3(hitX,hitY+0.02f,hitZ),nova::Vec3(0,1,0),radius);
+    if(!changed)return JNI_FALSE;
+    return syncLandscapeAtWorld(hitX, hitZ)?JNI_TRUE:JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativePaintTerrainAtScreen(
+    JNIEnv*, jclass, jfloat screenX, jfloat screenY,
+    jfloat radiusValue, jfloat strengthValue, jint material, jint phase
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if(!gInitialized||(!gLandscape.valid()&&gLandscapeWorldTiles.empty()))return JNI_FALSE;
+    if(phase==1){gTerrainStrokeActive=true;gTerrainStrokeHasUndo=false;}
+    if(phase==2){gTerrainStrokeActive=false;gTerrainStrokeHasUndo=false;gRenderer.setSculptCursor(false,nova::Vec3(),nova::Vec3(0,1,0),0.18f);return JNI_TRUE;}
+    float x=0,z=0,y=0;if(!terrainScreenHit(screenX,screenY,x,z,y))return JNI_FALSE;
+    if(!gTerrainStrokeActive||!gTerrainStrokeHasUndo){recordUndo(true);if(gTerrainStrokeActive)gTerrainStrokeHasUndo=true;}
+    const float radius=std::clamp(static_cast<float>(radiusValue),0.5f,24.0f);
+    const float strength=std::clamp(static_cast<float>(strengthValue),0.0f,1.0f);
+    const int layer=std::clamp(static_cast<int>(material),0,3);
+    nova::LandscapeSystem* target = landscapeAtWorld(x, z);
+    if (!target) return JNI_FALSE;
+    bool changed = target->paint(x,z,radius,strength,layer);
+    gRenderer.setSculptCursor(true,nova::Vec3(x,y+0.02f,z),nova::Vec3(0,1,0),radius);
+    return changed&&syncLandscapeAtWorld(x,z)?JNI_TRUE:JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeRunTerrainErosion(
+    JNIEnv*, jclass, jint type, jint iterations, jfloat strength
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if(!gInitialized||!gLandscape.valid())return JNI_FALSE;
+    recordUndo(true);
+    bool ok=false;
+    if(type==0)ok=gLandscape.hydraulicErosion(iterations,0.8f,2.2f,
+        std::clamp(static_cast<float>(strength),0.001f,1.0f),0.28f);
+    else ok=gLandscape.thermalErosion(iterations,
+        std::clamp(0.08f+strength*0.35f,0.02f,2.0f),
+        std::clamp(0.04f+strength*0.08f,0.005f,0.35f));
+    return ok&&syncLandscapeMeshFromData()?JNI_TRUE:JNI_FALSE;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeAddLandscapeLayer(JNIEnv* env,jclass,jstring nameValue) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if(!gInitialized||!gLandscape.valid()||!nameValue)return -1;
+    const char* chars=env->GetStringUTFChars(nameValue,nullptr);
+    if(!chars)return -1;std::string name(chars);env->ReleaseStringUTFChars(nameValue,chars);
+    recordUndo(true);return gLandscape.addLayer(name);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSelectLandscapeLayer(JNIEnv*,jclass,jint index) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    return gLandscape.selectLayer(index)?JNI_TRUE:JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetLandscapeLayerState(
+    JNIEnv*,jclass,jint index,jboolean visible,jboolean locked,jfloat heightAlpha,jfloat paintAlpha
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if(!gInitialized)return JNI_FALSE;recordUndo(true);
+    bool ok=gLandscape.setLayerState(index,visible==JNI_TRUE,locked==JNI_TRUE,heightAlpha,paintAlpha);
+    return ok&&syncLandscapeMeshFromData()?JNI_TRUE:JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeMoveLandscapeLayer(JNIEnv*,jclass,jint from,jint to) {
+    std::lock_guard<std::mutex> lock(engineMutex);if(!gInitialized)return JNI_FALSE;
+    recordUndo(true);bool ok=gLandscape.moveLayer(from,to);
+    return ok&&syncLandscapeMeshFromData()?JNI_TRUE:JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeDeleteLandscapeLayer(JNIEnv*,jclass,jint index) {
+    std::lock_guard<std::mutex> lock(engineMutex);if(!gInitialized)return JNI_FALSE;
+    recordUndo(true);bool ok=gLandscape.deleteLayer(index);
+    return ok&&syncLandscapeMeshFromData()?JNI_TRUE:JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetTerrainHoleAtScreen(
+    JNIEnv*,jclass,jfloat screenX,jfloat screenY,jboolean makeHole
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if(!gInitialized||(!gLandscape.valid()&&gLandscapeWorldTiles.empty()))return JNI_FALSE;
+    float x=0,z=0,y=0;if(!terrainScreenHit(screenX,screenY,x,z,y,true))return JNI_FALSE;
+    nova::LandscapeSystem* target = landscapeAtWorld(x,z);
+    if (!target) return JNI_FALSE;
+    const int gx=std::clamp(static_cast<int>((x-target->originX())/target->spacing()),0,target->width()-2);
+    const int gz=std::clamp(static_cast<int>((z-target->originZ())/target->spacing()),0,target->height()-2);
+    recordUndo(true);
+    return target->setHole(gx,gz,makeHole==JNI_TRUE)&&syncLandscapeAtWorld(x,z)?JNI_TRUE:JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeAddLandscapeSpline(
+    JNIEnv* env,jclass,jfloatArray pointArray
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if(!gInitialized||(!gLandscape.valid()&&gLandscapeWorldTiles.empty())||!pointArray)return JNI_FALSE;
+    const jsize count=env->GetArrayLength(pointArray);
+    if(count<9||count%3!=0||count>1536)return JNI_FALSE;
+    std::vector<jfloat> values(static_cast<size_t>(count));
+    env->GetFloatArrayRegion(pointArray,0,count,values.data());
+    if(env->ExceptionCheck()){env->ExceptionClear();return JNI_FALSE;}
+    std::vector<nova::LandscapeSystem::SplinePoint> controls;
+    controls.reserve(static_cast<size_t>(count/3));
+    for(jsize i=0;i<count;i+=3) {
+        if(!std::isfinite(values[i])||!std::isfinite(values[i+1])||!std::isfinite(values[i+2]))
+            return JNI_FALSE;
+        controls.push_back({values[i],values[i+1],std::clamp(values[i+2],0.5f,32.0f)});
+    }
+    // Catmull-Rom sampling converts editable control points into a smooth terrain-conforming road path.
+    std::vector<nova::LandscapeSystem::SplinePoint> points;
+    constexpr int samplesPerSegment = 8;
+    points.reserve((controls.size()-1)*samplesPerSegment+1);
+    for(size_t segment=0;segment+1<controls.size();++segment) {
+        const auto& p0=controls[segment==0?segment:segment-1];
+        const auto& p1=controls[segment];
+        const auto& p2=controls[segment+1];
+        const auto& p3=controls[std::min(segment+2,controls.size()-1)];
+        for(int sample=0;sample<samplesPerSegment;++sample) {
+            const float t=static_cast<float>(sample)/samplesPerSegment;
+            const float t2=t*t,t3=t2*t;
+            auto curve=[&](float a,float b,float c,float d) {
+                return 0.5f*((2.0f*b)+(-a+c)*t+(2.0f*a-5.0f*b+4.0f*c-d)*t2+
+                             (-a+3.0f*b-3.0f*c+d)*t3);
+            };
+            points.push_back({curve(p0.x,p1.x,p2.x,p3.x),
+                              curve(p0.z,p1.z,p2.z,p3.z),
+                              std::clamp(curve(p0.width,p1.width,p2.width,p3.width),0.5f,32.0f)});
+        }
+    }
+    points.push_back(controls.back());
+    nova::LandscapeSystem* target = landscapeAtWorld(points.front().x, points.front().z);
+    if (!target) return JNI_FALSE;
+    for (const auto& point : points) {
+        const float gx = (point.x - target->originX()) / target->spacing();
+        const float gz = (point.z - target->originZ()) / target->spacing();
+        if (gx < 0.0f || gz < 0.0f || gx > target->width()-1 || gz > target->height()-1)
+            return JNI_FALSE;
+    }
+    recordUndo(true);
+    if (!target->addSpline(points) || !syncLandscapeAtWorld(points.front().x, points.front().z))
+        return JNI_FALSE;
+
+    // Build a real terrain-conforming road ribbon, not just a stored spline or height imprint.
+    const std::vector<float> heights = target->heights();
+    std::vector<nova::Vertex> roadVertices;
+    std::vector<uint32_t> roadIndices;
+    roadVertices.reserve(points.size() * 2);
+    roadIndices.reserve((points.size() - 1) * 6);
+    float distanceAlong = 0.0f;
+    for (size_t i = 0; i < points.size(); ++i) {
+        const auto& point = points[i];
+        const auto& previous = points[i == 0 ? 0 : i - 1];
+        const auto& next = points[i + 1 < points.size() ? i + 1 : i];
+        float tangentX = next.x - previous.x;
+        float tangentZ = next.z - previous.z;
+        const float tangentLength = std::sqrt(tangentX*tangentX + tangentZ*tangentZ);
+        if (tangentLength < 1e-5f) { tangentX = 1.0f; tangentZ = 0.0f; }
+        else { tangentX /= tangentLength; tangentZ /= tangentLength; }
+        const float normalX = -tangentZ;
+        const float normalZ = tangentX;
+        const float gx = std::clamp((point.x - target->originX()) / target->spacing(),
+                                    0.0f, static_cast<float>(target->width() - 1));
+        const float gz = std::clamp((point.z - target->originZ()) / target->spacing(),
+                                    0.0f, static_cast<float>(target->height() - 1));
+        const int ix = std::clamp(static_cast<int>(std::round(gx)), 0, target->width() - 1);
+        const int iz = std::clamp(static_cast<int>(std::round(gz)), 0, target->height() - 1);
+        const float roadY = heights[static_cast<size_t>(iz * target->width() + ix)] + 0.055f;
+        const float halfWidth = point.width * 0.5f;
+        const nova::Vec3 left(point.x + normalX*halfWidth, roadY, point.z + normalZ*halfWidth);
+        const nova::Vec3 right(point.x - normalX*halfWidth, roadY, point.z - normalZ*halfWidth);
+        if (i > 0) {
+            const float dx = point.x - previous.x, dz = point.z - previous.z;
+            distanceAlong += std::sqrt(dx*dx + dz*dz);
+        }
+        roadVertices.emplace_back(left, nova::Vec3(0,1,0), 0.0f, distanceAlong * 0.12f);
+        roadVertices.emplace_back(right, nova::Vec3(0,1,0), 1.0f, distanceAlong * 0.12f);
+        if (i > 0) {
+            const uint32_t base = static_cast<uint32_t>((i - 1) * 2);
+            roadIndices.insert(roadIndices.end(), {base, base+2, base+1, base+1, base+2, base+3});
+        }
+    }
+    nova::Mesh roadMesh(std::move(roadVertices), std::move(roadIndices));
+    if (!roadMesh.isValid()) return JNI_FALSE;
+    roadMesh.recalculateNormals();
+    const nova::Color roadColor(0.12f, 0.13f, 0.14f, 1.0f);
+    nova::Transform roadTransform;
+    const uint32_t roadId = gScene.addObject("Landscape Road Spline",
+        nova::PrimitiveType::Cube, roadTransform, roadColor);
+    nova::SceneObject* roadObject = gScene.find(roadId);
+    if (!roadObject) return JNI_FALSE;
+    roadObject->material.baseColor = nova::Vec3(roadColor.r, roadColor.g, roadColor.b);
+    roadObject->material.roughness = 0.88f;
+    roadObject->material.metallic = 0.0f;
+    roadObject->isStatic = true;
+    gCustomMeshes[roadId] = std::move(roadMesh);
+    if (!gRenderer.uploadMesh(roadId, gCustomMeshes[roadId])) {
+        gCustomMeshes.erase(roadId);
+        gScene.removeObject(roadId);
+        return JNI_FALSE;
+    }
+    return JNI_TRUE;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeGetLandscapeLayerCount(JNIEnv*,jclass) {
+    std::lock_guard<std::mutex> lock(engineMutex);return static_cast<jint>(gLandscape.layers().size());
+}
+JNIEXPORT jstring JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeGetLandscapeLayerName(JNIEnv* env,jclass,jint index) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    const auto& layers=gLandscape.layers();if(index<0||index>=static_cast<jint>(layers.size()))return nullptr;
+    return env->NewStringUTF(layers[static_cast<size_t>(index)].name.c_str());
+}
+
+JNIEXPORT jfloatArray JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeGetLandscapeLayerState(JNIEnv* env,jclass,jint index) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    const auto& layers=gLandscape.layers();
+    if(index<0||index>=static_cast<jint>(layers.size()))return nullptr;
+    const auto& layer=layers[static_cast<size_t>(index)];
+    const jfloat values[4]={layer.visible?1.0f:0.0f,layer.locked?1.0f:0.0f,layer.heightAlpha,layer.paintAlpha};
+    jfloatArray result=env->NewFloatArray(4);if(result)env->SetFloatArrayRegion(result,0,4,values);return result;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeGetLandscapeChunkCount(JNIEnv*,jclass) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    size_t count = gLandscape.valid() ? gLandscape.chunks().size() : 0;
+    for (const auto& tile : gLandscapeWorldTiles) count += tile.second.data.chunks().size();
+    return static_cast<jint>(count);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetLandscapeChunkSize(JNIEnv*,jclass,jint size) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if(!gLandscape.valid() && gLandscapeWorldTiles.empty())return JNI_FALSE;
+    recordUndo(true);
+    gLandscapeChunkSize = std::clamp(static_cast<int>(size), 8, 128);
+    if (gLandscape.valid()) {
+        removeLandscapeChunkObjects();
+        gLandscape.buildChunks(gLandscapeChunkSize);
+    }
+    for (auto& tile : gLandscapeWorldTiles) tile.second.data.buildChunks(gLandscapeChunkSize);
+    gTerrainChunksDirty = true;
+    return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetSelectedRigidBody(
+    JNIEnv*,jclass,jboolean enabled,jfloat mass,jfloat restitution,jfloat friction
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if(!gInitialized)return JNI_FALSE;
+    nova::SceneObject* selected=gScene.selected();if(!selected||selected->name=="Landscape Terrain")return JNI_FALSE;
+    if(enabled==JNI_TRUE){
+        LandscapeRigidBody body;
+        body.mass=std::clamp(static_cast<float>(mass),0.05f,1000.0f);
+        body.restitution=std::clamp(static_cast<float>(restitution),0.0f,0.9f);
+        body.friction=std::clamp(static_cast<float>(friction),0.0f,2.0f);
+        gLandscapeRigidBodies[selected->id]=body;
+    }else gLandscapeRigidBodies.erase(selected->id);
+    return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeCreateLandscapeCave(
+    JNIEnv* env, jclass, jfloatArray pathArray, jfloat radiusValue
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized || (!gLandscape.valid() && gLandscapeWorldTiles.empty()) || !pathArray)
+        return JNI_FALSE;
+    const jsize count = env->GetArrayLength(pathArray);
+    if (count < 6 || count % 3 != 0 || count > 3072) return JNI_FALSE;
+    std::vector<jfloat> raw(static_cast<size_t>(count));
+    env->GetFloatArrayRegion(pathArray, 0, count, raw.data());
+    if (env->ExceptionCheck()) { env->ExceptionClear(); return JNI_FALSE; }
+
+    std::vector<nova::Vec3> path;
+    path.reserve(static_cast<size_t>(count / 3));
+    for (jsize i = 0; i < count; i += 3) {
+        if (!std::isfinite(raw[i]) || !std::isfinite(raw[i+1]) || !std::isfinite(raw[i+2]))
+            return JNI_FALSE;
+        path.emplace_back(raw[i], raw[i+1], raw[i+2]);
+    }
     const float radius = std::clamp(static_cast<float>(radiusValue), 0.5f, 8.0f);
-    const float strength = std::clamp(static_cast<float>(strengthValue), 0.02f, 1.5f);
-    const int mode = std::clamp(static_cast<int>(modeValue), 0, 3);
-
-    std::vector<nova::SceneObject*> tiles;
-    for (nova::SceneObject& object : gScene.getObjects()) {
-        if (object.name.rfind("Terrain Tile ", 0) == 0) tiles.push_back(&object);
+    if (path.size() == 2) {
+        const nova::Vec3 requestedStart = path.front();
+        const nova::Vec3 requestedEnd = path.back();
+        bool startGroundFound = false, endGroundFound = false;
+        const float startGround = terrainHeightAt(requestedStart.x, requestedStart.z, startGroundFound);
+        const float endGround = terrainHeightAt(requestedEnd.x, requestedEnd.z, endGroundFound);
+        const float startY = startGroundFound ? startGround - 0.08f : requestedStart.y + radius;
+        const float endY = endGroundFound ? endGround - 0.08f : requestedEnd.y + radius;
+        const float tunnelDepth = std::min(std::min(requestedStart.y, requestedEnd.y),
+            std::min(startY, endY) - radius * 0.65f);
+        const nova::Vec3 control((requestedStart.x + requestedEnd.x) * 0.5f,
+            tunnelDepth, (requestedStart.z + requestedEnd.z) * 0.5f);
+        path.clear();
+        constexpr int curveSamples = 17;
+        for (int i = 0; i < curveSamples; ++i) {
+            const float t = static_cast<float>(i) / (curveSamples - 1);
+            const float oneMinus = 1.0f - t;
+            path.emplace_back(
+                oneMinus*oneMinus*requestedStart.x + 2.0f*oneMinus*t*control.x + t*t*requestedEnd.x,
+                oneMinus*oneMinus*startY + 2.0f*oneMinus*t*control.y + t*t*endY,
+                oneMinus*oneMinus*requestedStart.z + 2.0f*oneMinus*t*control.z + t*t*requestedEnd.z
+            );
+        }
     }
-    if (tiles.empty()) return JNI_FALSE;
+    nova::VoxelCaveSystem caveVolume;
+    if (!caveVolume.build(path, radius, 0.5f)) return JNI_FALSE;
+    nova::Mesh caveMesh = caveVolume.buildSurfaceMesh();
+    if (!caveMesh.isValid() || caveMesh.getVertices().empty()) return JNI_FALSE;
 
-    const SceneSnapshot beforeSculpt = captureScene();
-    std::vector<float> oldHeights;
-    oldHeights.reserve(tiles.size());
-    for (const nova::SceneObject* tile : tiles) {
-        oldHeights.push_back(tile->transform.scale.y);
+    recordUndo(true);
+    const nova::Color caveColor(0.20f, 0.18f, 0.16f, 1.0f);
+    nova::Transform transform;
+    const uint32_t caveId = gScene.addObject("Landscape Voxel Cave",
+        nova::PrimitiveType::Sphere, transform, caveColor);
+    nova::SceneObject* caveObject = gScene.find(caveId);
+    if (!caveObject) return JNI_FALSE;
+    caveObject->material.baseColor = nova::Vec3(caveColor.r, caveColor.g, caveColor.b);
+    caveObject->material.roughness = 0.96f;
+    caveObject->material.metallic = 0.0f;
+    caveObject->isStatic = false;
+    gCustomMeshes[caveId] = std::move(caveMesh);
+    if (!gRenderer.uploadMesh(caveId, gCustomMeshes[caveId])) {
+        gCustomMeshes.erase(caveId);
+        gScene.removeObject(caveId);
+        return JNI_FALSE;
     }
+    VoxelCaveRecord record;
+    record.objectId = caveId;
+    record.volume = std::move(caveVolume);
+    gVoxelCaves.push_back(std::move(record));
 
-    bool changed = false;
-    for (size_t i = 0; i < tiles.size(); ++i) {
-        nova::SceneObject& tile = *tiles[i];
-        const float dx = tile.transform.position.x - centerX;
-        const float dz = tile.transform.position.z - centerZ;
-        const float distance = std::sqrt(dx * dx + dz * dz);
-        if (distance > radius) continue;
-
-        const float falloff = 1.0f - distance / radius;
-        const float smoothFalloff = falloff * falloff * (3.0f - 2.0f * falloff);
-        float height = oldHeights[i];
-
-        if (mode == 0) {
-            height += strength * smoothFalloff;
-        } else if (mode == 1) {
-            height -= strength * smoothFalloff;
-        } else if (mode == 2) {
-            float sum = 0.0f;
-            int count = 0;
-            for (size_t j = 0; j < tiles.size(); ++j) {
-                const float nx = tiles[j]->transform.position.x - tile.transform.position.x;
-                const float nz = tiles[j]->transform.position.z - tile.transform.position.z;
-                if (nx * nx + nz * nz <= 2.1f) {
-                    sum += oldHeights[j];
-                    ++count;
-                }
+    // Open the terrain at both cave portals; the SDF volume supplies the internal walls.
+    for (const nova::Vec3& portal : {path.front(), path.back()}) {
+        nova::LandscapeSystem* target = landscapeAtWorld(portal.x, portal.z);
+        if (!target) continue;
+        const int centerX = static_cast<int>((portal.x - target->originX()) / target->spacing());
+        const int centerZ = static_cast<int>((portal.z - target->originZ()) / target->spacing());
+        const int cells = std::max(1, static_cast<int>(std::ceil(radius / target->spacing())));
+        for (int z = std::max(0, centerZ - cells); z <= std::min(target->height()-2, centerZ + cells); ++z) {
+            for (int x = std::max(0, centerX - cells); x <= std::min(target->width()-2, centerX + cells); ++x) {
+                const float dx = (x - centerX) * target->spacing();
+                const float dz = (z - centerZ) * target->spacing();
+                if (dx*dx + dz*dz <= radius*radius) target->setHole(x, z, true);
             }
-            if (count > 0) {
-                const float average = sum / static_cast<float>(count);
-                height += (average - height) * std::clamp(strength, 0.0f, 1.0f) * smoothFalloff;
-            }
-        } else {
-            const float targetHeight = 0.75f;
-            height += (targetHeight - height) * std::clamp(strength, 0.0f, 1.0f) * smoothFalloff;
         }
-
-        height = std::clamp(height, 0.12f, 4.5f);
-        if (std::fabs(height - oldHeights[i]) > 0.0001f) {
-            tile.transform.scale.y = height;
-            tile.transform.position.y = -0.08f + height * 0.5f;
-            changed = true;
-        }
+        syncLandscapeAtWorld(portal.x, portal.z);
     }
-
-    if (changed) {
-        gUndoStack.push_back(beforeSculpt);
-        if (gUndoStack.size() > MAX_UNDO_STEPS) {
-            gUndoStack.erase(gUndoStack.begin());
-        }
-        gRedoStack.clear();
-    }
-    return changed ? JNI_TRUE : JNI_FALSE;
+    return JNI_TRUE;
 }
 
 JNIEXPORT jint JNICALL
@@ -2566,6 +4102,10 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateEmptyScene(
     gSculptMeshId = 0;
     gRenderer.setSculptCursor(false, nova::Vec3(), nova::Vec3(0,1,0), 0.18f);
     gScene.clear();
+    gLandscape = nova::LandscapeSystem();
+    gLandscapeWorldTiles.clear();
+    gVoxelCaves.clear();
+    gLandscapeRigidBodies.clear();
     gCustomMeshes.clear();
     gSculptMasks.clear();
     gVisualScript = nova::VisualScript();
@@ -2573,6 +4113,7 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateEmptyScene(
     gUndoStack.clear();
     gRedoStack.clear();
     gRenderer.releaseAllMeshes();
+    gRenderer.clearTerrainTextures();
     gCamera.reset();
     gPhysicsEnabled = false;
     gVerticalVelocity = 0.0f;
@@ -2600,10 +4141,15 @@ Java_com_novaingine_v2_NativeBridge_nativeResetScene(
     gSculptMeshDirty.store(false,std::memory_order_release);
     gSculptMeshId = 0;
     gRenderer.setSculptCursor(false, nova::Vec3(), nova::Vec3(0,1,0), 0.18f);
-    nova::SceneFactory::buildDefaultScene(gScene);
+    nova::SceneFactory::buildShowcaseScene(gScene);
+    gLandscape = nova::LandscapeSystem();
+    gLandscapeWorldTiles.clear();
+    gVoxelCaves.clear();
+    gLandscapeRigidBodies.clear();
     gCustomMeshes.clear();
     gSculptMasks.clear();
     gRenderer.releaseAllMeshes();
+    gRenderer.clearTerrainTextures();
     gCamera.reset();
     gVerticalVelocity = 0.0f;
     gPhysicsGrounded = false;

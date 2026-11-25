@@ -136,6 +136,7 @@ precision highp float;
 layout(location=0) in vec3 aPosition;
 layout(location=1) in vec3 aNormal;
 layout(location=2) in vec2 aUV;
+layout(location=3) in vec4 aLayerWeights;
 
 uniform mat4 uViewProjection;
 uniform mat4 uModel;
@@ -144,6 +145,7 @@ uniform mat4 uLightViewProjection;
 out vec3 vWorldPosition;
 out vec3 vNormal;
 out vec2 vUV;
+out vec4 vLayerWeights;
 out vec4 vShadowPosition;
 
 void main() {
@@ -151,6 +153,7 @@ void main() {
     vWorldPosition = world.xyz;
     vNormal = normalize(mat3(uModel) * aNormal);
     vUV = aUV;
+    vLayerWeights = aLayerWeights;
     vShadowPosition = uLightViewProjection * world;
     gl_Position = uViewProjection * world;
 }
@@ -163,6 +166,7 @@ precision highp float;
 in vec3 vWorldPosition;
 in vec3 vNormal;
 in vec2 vUV;
+in vec4 vLayerWeights;
 in vec4 vShadowPosition;
 
 uniform vec4 uColor;
@@ -178,10 +182,59 @@ uniform int uUseShadows;
 uniform int uViewMode;
 uniform float uShadowStrength;
 uniform float uExposure;
+uniform float uDirectionalLightIntensity;
+uniform float uSkyLightIntensity;
+uniform int uDirectionalLightEnabled;
+uniform int uSkyLightEnabled;
+uniform int uFogEnabled;
+uniform float uFogDensity;
+uniform float uFogHeight;
+uniform float uFogFalloff;
+uniform vec3 uFogColor;
+uniform int uTerrainMaterial;
+uniform int uTerrainAlbedoMask;
+uniform int uTerrainNormalMask;
+uniform int uTerrainRoughnessMask;
+uniform float uTerrainTextureTiling;
+uniform sampler2D uTerrainAlbedo0;
+uniform sampler2D uTerrainNormal0;
+uniform sampler2D uTerrainRoughness0;
+uniform sampler2D uTerrainAlbedo1;
+uniform sampler2D uTerrainNormal1;
+uniform sampler2D uTerrainRoughness1;
+uniform sampler2D uTerrainAlbedo2;
+uniform sampler2D uTerrainNormal2;
+uniform sampler2D uTerrainRoughness2;
+uniform sampler2D uTerrainAlbedo3;
+uniform sampler2D uTerrainNormal3;
+uniform sampler2D uTerrainRoughness3;
+
 
 out vec4 fragColor;
 
 const float PI = 3.14159265358979323846;
+
+float terrainHash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+float terrainNoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = terrainHash(i);
+    float b = terrainHash(i + vec2(1.0, 0.0));
+    float c = terrainHash(i + vec2(0.0, 1.0));
+    float d = terrainHash(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+float terrainFbm(vec2 p) {
+    float value = 0.0, amplitude = 0.5;
+    for (int i = 0; i < 4; ++i) {
+        value += terrainNoise(p) * amplitude;
+        p *= 2.03;
+        amplitude *= 0.5;
+    }
+    return value;
+}
 
 float shadowAmount(vec4 position) {
     if (position.w <= 0.0) return 0.0;
@@ -268,6 +321,66 @@ void main() {
         vec3(2.2)
     );
 
+    if (uTerrainMaterial == 1) {
+        vec2 terrainUV = vWorldPosition.xz * max(uTerrainTextureTiling, 0.001);
+        float detail = terrainFbm(vWorldPosition.xz * 0.42);
+        vec3 grass = mix(vec3(0.075, 0.16, 0.045), vec3(0.22, 0.34, 0.10), detail);
+        vec3 rock = mix(vec3(0.19, 0.19, 0.18), vec3(0.42, 0.40, 0.36), detail);
+        vec3 sand = mix(vec3(0.42, 0.32, 0.18), vec3(0.72, 0.58, 0.34), detail);
+        vec3 snow = mix(vec3(0.68, 0.74, 0.78), vec3(0.96, 0.98, 1.0), detail);
+        if ((uTerrainAlbedoMask & 1) != 0) grass = texture(uTerrainAlbedo0, terrainUV).rgb;
+        if ((uTerrainAlbedoMask & 2) != 0) rock = texture(uTerrainAlbedo1, terrainUV).rgb;
+        if ((uTerrainAlbedoMask & 4) != 0) sand = texture(uTerrainAlbedo2, terrainUV).rgb;
+        if ((uTerrainAlbedoMask & 8) != 0) snow = texture(uTerrainAlbedo3, terrainUV).rgb;
+        float steepness = 1.0 - clamp(N.y, 0.0, 1.0);
+        float exposedRock = smoothstep(0.28, 0.82, steepness) * 0.28;
+        vec4 weights = max(vLayerWeights, vec4(0.0));
+        weights.x *= 1.0 - exposedRock;
+        weights.y = max(weights.y, exposedRock);
+        float weightSum = max(dot(weights, vec4(1.0)), 0.0001);
+        weights /= weightSum;
+        vec3 baseTerrain = grass * weights.x + rock * weights.y + sand * weights.z + snow * weights.w;
+        albedo = pow(max(baseTerrain, vec3(0.001)), vec3(2.2));
+
+        vec4 layerRoughness = vec4(0.92, 0.78, 0.88, 0.72);
+        if ((uTerrainRoughnessMask & 1) != 0) layerRoughness.x = texture(uTerrainRoughness0, terrainUV).r;
+        if ((uTerrainRoughnessMask & 2) != 0) layerRoughness.y = texture(uTerrainRoughness1, terrainUV).r;
+        if ((uTerrainRoughnessMask & 4) != 0) layerRoughness.z = texture(uTerrainRoughness2, terrainUV).r;
+        if ((uTerrainRoughnessMask & 8) != 0) layerRoughness.w = texture(uTerrainRoughness3, terrainUV).r;
+        roughness = clamp(dot(layerRoughness, weights), 0.04, 1.0);
+        metallic = 0.0;
+
+        vec3 tangentNormal = vec3(0.0, 0.0, 1.0);
+        vec3 weightedNormal = vec3(0.0);
+        float normalWeight = 0.0;
+        if ((uTerrainNormalMask & 1) != 0) {
+            weightedNormal += (texture(uTerrainNormal0, terrainUV).xyz * 2.0 - 1.0) * weights.x;
+            normalWeight += weights.x;
+        }
+        if ((uTerrainNormalMask & 2) != 0) {
+            weightedNormal += (texture(uTerrainNormal1, terrainUV).xyz * 2.0 - 1.0) * weights.y;
+            normalWeight += weights.y;
+        }
+        if ((uTerrainNormalMask & 4) != 0) {
+            weightedNormal += (texture(uTerrainNormal2, terrainUV).xyz * 2.0 - 1.0) * weights.z;
+            normalWeight += weights.z;
+        }
+        if ((uTerrainNormalMask & 8) != 0) {
+            weightedNormal += (texture(uTerrainNormal3, terrainUV).xyz * 2.0 - 1.0) * weights.w;
+            normalWeight += weights.w;
+        }
+        if (normalWeight > 0.0001) {
+            tangentNormal = normalize(weightedNormal / normalWeight);
+            vec3 dp1 = dFdx(vWorldPosition);
+            vec3 dp2 = dFdy(vWorldPosition);
+            vec2 duv1 = dFdx(terrainUV);
+            vec2 duv2 = dFdy(terrainUV);
+            vec3 tangent = normalize(dp1 * duv2.y - dp2 * duv1.y);
+            vec3 bitangent = normalize(-dp1 * duv2.x + dp2 * duv1.x);
+            N = normalize(mat3(tangent, bitangent, N) * tangentNormal);
+        }
+    }
+
     // Material inspection modes bypass lighting and display the raw value.
     if (uViewMode == 5) {
         fragColor = vec4(N * 0.5 + 0.5, 1.0);
@@ -284,9 +397,10 @@ void main() {
 
     // Preserve the Task 1 hemisphere ambient, with reduced diffuse response
     // on metals and a small ambient specular term so metals remain visible.
-    vec3 skyColor = pow(vec3(110.0, 155.0, 214.0) / 255.0, vec3(2.2));
     vec3 groundColor = pow(vec3(122.0, 116.0, 104.0) / 255.0, vec3(2.2));
-    vec3 hemiColor = mix(groundColor, skyColor, N.y * 0.5 + 0.5);
+    vec3 hemiColor = uSkyLightEnabled == 1
+        ? mix(groundColor, uAmbientColor, N.y * 0.5 + 0.5) * uSkyLightIntensity
+        : vec3(0.025);
 
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
     vec3 ambientDiffuse = hemiColor * albedo * (1.0 - metallic);
@@ -326,7 +440,8 @@ void main() {
         clamp(shadow * uShadowStrength, 0.0, 0.95);
 
     vec3 direct = (kd * albedo / PI + specular) *
-                  sunColor * sunIntensity * NdotLRaw *
+                  uLightColor * uDirectionalLightIntensity *
+                  float(uDirectionalLightEnabled) * NdotLRaw *
                   shadowVisibility;
 
     // World-space concrete tiling: grout, subtle slab variation and fine
@@ -365,6 +480,17 @@ void main() {
         result = albedo;
     } else if (uViewMode == 3) {
         result = vec3(NdotLRaw);
+    }
+
+    // Exponential height fog: density falls with altitude and accumulates
+    // with camera distance. This is a mobile-friendly analytic approximation.
+    if (uFogEnabled == 1 && uFogDensity > 0.0001) {
+        float viewDistance = length(uCameraPosition - vWorldPosition);
+        float altitude = max(vWorldPosition.y - uFogHeight, 0.0);
+        float heightFactor = exp(-altitude * max(uFogFalloff, 0.001));
+        float fogAmount = 1.0 - exp(-uFogDensity * viewDistance * heightFactor);
+        vec3 fogLinear = pow(clamp(uFogColor, 0.0, 1.0), vec3(2.2));
+        result = mix(result, fogLinear, clamp(fogAmount, 0.0, 0.92));
     }
 
     // Task 1 exposure, ACES fit, clamp, and sRGB output remain unchanged.
@@ -436,14 +562,30 @@ uniform sampler2D uMask;
 uniform vec2 uTexelSize;
 uniform float uThickness;
 uniform int uHasSelection;
+uniform float uBloomIntensity;
+uniform float uColorContrast;
+uniform float uColorSaturation;
+uniform int uBloomEnabled;
 
 out vec4 fragColor;
 
 void main() {
     vec4 sceneColor = texture(uScene, vUV);
-
+    vec3 graded = sceneColor.rgb;
+    float luminance = dot(graded, vec3(0.2126, 0.7152, 0.0722));
+    graded = mix(vec3(luminance), graded, max(uColorSaturation, 0.0));
+    graded = (graded - 0.5) * max(uColorContrast, 0.0) + 0.5;
+    if (uBloomEnabled == 1 && uBloomIntensity > 0.001) {
+        vec2 texel = uTexelSize * 2.0;
+        vec3 glow = vec3(0.0);
+        glow += max(texture(uScene, vUV + vec2(texel.x, 0.0)).rgb - 0.72, 0.0);
+        glow += max(texture(uScene, vUV - vec2(texel.x, 0.0)).rgb - 0.72, 0.0);
+        glow += max(texture(uScene, vUV + vec2(0.0, texel.y)).rgb - 0.72, 0.0);
+        glow += max(texture(uScene, vUV - vec2(0.0, texel.y)).rgb - 0.72, 0.0);
+        graded += glow * (uBloomIntensity * 0.25);
+    }
     if (uHasSelection == 0) {
-        fragColor = sceneColor;
+        fragColor = vec4(clamp(graded, 0.0, 1.0), sceneColor.a);
         return;
     }
 
@@ -464,7 +606,7 @@ void main() {
     vec3 orange = vec3(1.0, 0.36, 0.0);
 
     fragColor = vec4(
-        mix(sceneColor.rgb, orange, clamp(outline, 0.0, 1.0)),
+        mix(graded, orange, clamp(outline, 0.0, 1.0)),
         sceneColor.a
     );
 }
@@ -478,6 +620,14 @@ in vec2 vUV;
 uniform mat4 uViewProjection;
 uniform vec3 uCameraPosition;
 uniform vec3 uSunDirection;
+uniform float uTime;
+uniform float uCloudCoverage;
+uniform float uCloudDensity;
+uniform float uCloudSpeed;
+uniform float uAtmosphereRayleigh;
+uniform float uAtmosphereMie;
+uniform int uCloudsEnabled;
+uniform int uAtmosphereEnabled;
 out vec4 fragColor;
 
 float hash31(vec3 p) {
@@ -529,21 +679,52 @@ void main() {
     vec3 zenith = vec3(0.16, 0.34, 0.62);
     float skyGradient = smoothstep(-0.02, 0.92, ray.y);
     vec3 sky = mix(horizon, zenith, skyGradient);
+    if (uAtmosphereEnabled == 1) {
+        float rayleigh = clamp(uAtmosphereRayleigh, 0.0, 3.0);
+        float mie = clamp(uAtmosphereMie, 0.0, 2.0);
+        float horizonHaze = exp(-max(ray.y, 0.0) * (5.0 + rayleigh * 2.0));
+        sky = mix(sky, vec3(0.79, 0.85, 0.91),
+                  horizonHaze * (0.12 + 0.12 * rayleigh));
+        sky += vec3(1.0, 0.72, 0.48) *
+               pow(max(dot(ray, normalize(uSunDirection)), 0.0), 8.0) * mie * 0.035;
+    }
 
-    // Rayleigh-like horizon haze and a warmer band around the sun.
-    float horizonHaze = exp(-max(ray.y, 0.0) * 7.0);
-    sky = mix(sky, vec3(0.79, 0.85, 0.91), horizonHaze * 0.24);
-
-    // Two broad world-direction cloud layers with soft multi-octave edges.
-    float cloudHeight = max(ray.y + 0.19, 0.10);
-    vec2 cloudPlane = ray.xz / cloudHeight;
-    float cloudField = cloudFbm(vec3(cloudPlane * 1.05, 2.8));
-    float cloudMask = smoothstep(0.48, 0.68, cloudField);
-    cloudMask *= smoothstep(-0.035, 0.20, ray.y);
-    float underside = clamp(0.78 + ray.y * 0.38, 0.62, 1.0);
-    vec3 cloudColor = mix(vec3(0.67, 0.72, 0.79),
-                          vec3(0.98, 0.985, 1.0), underside);
-    sky = mix(sky, cloudColor, cloudMask * 0.82);
+    // Low-cost cloud-volume ray march. Six density samples through a
+    // world-space cloud slab keep the feature practical on mobile GPUs.
+    if (uCloudsEnabled == 1 && ray.y > 0.015) {
+        const float cloudBase = 26.0;
+        const float cloudTop = 38.0;
+        float tEnter = max((cloudBase - uCameraPosition.y) / ray.y, 0.0);
+        float tExit = max((cloudTop - uCameraPosition.y) / ray.y, 0.0);
+        if (tExit > tEnter) {
+            float transmittance = 1.0;
+            vec3 cloudAccumulation = vec3(0.0);
+            float coverage = clamp(uCloudCoverage, 0.0, 1.0);
+            float densityScale = clamp(uCloudDensity, 0.0, 1.0);
+            for (int stepIndex = 0; stepIndex < 6; ++stepIndex) {
+                float fraction = (float(stepIndex) + 0.5) / 6.0;
+                float distanceAlongRay = mix(tEnter, tExit, fraction);
+                vec3 samplePosition = uCameraPosition + ray * distanceAlongRay;
+                samplePosition += vec3(uTime * uCloudSpeed, 0.0,
+                                       uTime * uCloudSpeed * 0.37);
+                float shapeNoise = noise3(samplePosition * 0.055);
+                float cloudThreshold = 0.78 - coverage * 0.42;
+                float localDensity = smoothstep(
+                    cloudThreshold - 0.10, cloudThreshold + 0.10, shapeNoise
+                ) * densityScale;
+                float stepOpacity = 1.0 - exp(
+                    -localDensity * 0.32 * (tExit - tEnter) / 6.0
+                );
+                float sunLighting = 0.68 + 0.32 *
+                    max(dot(normalize(uSunDirection), normalize(vec3(0.25, 1.0, 0.15))), 0.0);
+                vec3 cloudColor = mix(vec3(0.48, 0.53, 0.62),
+                                      vec3(0.98, 0.985, 1.0), sunLighting);
+                cloudAccumulation += transmittance * stepOpacity * cloudColor;
+                transmittance *= 1.0 - stepOpacity;
+            }
+            sky = sky * transmittance + cloudAccumulation;
+        }
+    }
 
     vec3 sunDirection = normalize(uSunDirection);
     float sunDot = dot(ray, sunDirection);
@@ -700,6 +881,16 @@ void Renderer::shutdown() {
     destroyFullscreenQuad();
     destroyGridGeometry();
     destroyLineGeometry();
+
+    for (int layer = 0; layer < 4; ++layer) {
+        for (int mapType = 0; mapType < 3; ++mapType) {
+            if (terrainTextures_[layer][mapType]) {
+                glDeleteTextures(1, &terrainTextures_[layer][mapType]);
+                terrainTextures_[layer][mapType] = 0;
+            }
+        }
+    }
+    for (auto& mask : terrainTextureMask_) mask = 0;
 
     if (whiteTexture_) {
         glDeleteTextures(1, &whiteTexture_);
@@ -1068,9 +1259,9 @@ void Renderer::endFrame() {
 
 Mat4 Renderer::calculateLightViewProjection() const {
     nova::Vec3 direction(
-        lightDirection_[0],
-        lightDirection_[1],
-        lightDirection_[2]
+        settings_.directionalLightDirection[0],
+        settings_.directionalLightDirection[1],
+        settings_.directionalLightDirection[2]
     );
 
     direction = nova::normalize(direction);
@@ -1146,6 +1337,7 @@ void Renderer::bindObjectUniforms(
     );
     setFloatUniform(program, "uRoughness", object.material.roughness);
     setFloatUniform(program, "uMetallic", object.material.metallic);
+    setIntUniform(program, "uTerrainMaterial", (object.name == "Landscape Terrain" || object.name.rfind("Landscape Chunk ", 0) == 0 || object.name.rfind("Landscape Tile ", 0) == 0) ? 1 : 0);
 }
 
 bool Renderer::ensureObjectGPU(const SceneObject& object) {
@@ -1230,6 +1422,12 @@ bool Renderer::uploadMesh(uint32_t objectId, const Mesh& mesh) {
         reinterpret_cast<void*>(offsetof(nova::Vertex, u))
     );
 
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(
+        3, 4, GL_FLOAT, GL_FALSE, sizeof(nova::Vertex),
+        reinterpret_cast<void*>(offsetof(nova::Vertex, layerWeights))
+    );
+
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffer.indexBuffer);
     glBufferData(
         GL_ELEMENT_ARRAY_BUFFER,
@@ -1270,6 +1468,51 @@ void Renderer::releaseGPUBuffer(GPUBuffer& buffer) {
     if (buffer.vao) glDeleteVertexArrays(1, &buffer.vao);
 
     buffer = GPUBuffer{};
+}
+
+bool Renderer::setTerrainTexture(int layer, int mapType, int width, int height, const uint8_t* rgbaPixels) {
+    if (!initialized_ || !rgbaPixels || layer < 0 || layer >= 4 ||
+        mapType < 0 || mapType >= 3 || width < 1 || height < 1 ||
+        width > 4096 || height > 4096) return false;
+
+    GLuint& texture = terrainTextures_[layer][mapType];
+    if (texture) {
+        glDeleteTextures(1, &texture);
+        texture = 0;
+    }
+    glGenTextures(1, &texture);
+    if (!texture) return false;
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, rgbaPixels);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    const GLenum error = glGetError();
+    if (error != GL_NO_ERROR) {
+        NOVA_LOGE("Terrain texture upload failed (layer=%d map=%d GL=%u)", layer, mapType, error);
+        glDeleteTextures(1, &texture);
+        texture = 0;
+        terrainTextureMask_[mapType] &= ~(1u << layer);
+        return false;
+    }
+    terrainTextureMask_[mapType] |= (1u << layer);
+    return true;
+}
+
+void Renderer::clearTerrainTextures() {
+    for (int layer = 0; layer < 4; ++layer) {
+        for (int mapType = 0; mapType < 3; ++mapType) {
+            GLuint& texture = terrainTextures_[layer][mapType];
+            if (texture) glDeleteTextures(1, &texture);
+            texture = 0;
+        }
+    }
+    for (auto& mask : terrainTextureMask_) mask = 0;
 }
 
 void Renderer::releaseMesh(uint32_t objectId) {
@@ -1376,10 +1619,20 @@ void Renderer::renderSky(const Camera& camera) {
     );
     setVec3Uniform(
         skyProgram_, "uSunDirection",
-        -lightDirection_[0], -lightDirection_[1], -lightDirection_[2]
+        -settings_.directionalLightDirection[0],
+        -settings_.directionalLightDirection[1],
+        -settings_.directionalLightDirection[2]
     );
 
     glBindVertexArray(fullscreenVAO_);
+    setFloatUniform(skyProgram_, "uTime", elapsedTime_);
+    setFloatUniform(skyProgram_, "uCloudCoverage", settings_.cloudCoverage);
+    setFloatUniform(skyProgram_, "uCloudDensity", settings_.cloudDensity);
+    setFloatUniform(skyProgram_, "uCloudSpeed", settings_.cloudSpeed);
+    setFloatUniform(skyProgram_, "uAtmosphereRayleigh", settings_.atmosphereRayleigh);
+    setFloatUniform(skyProgram_, "uAtmosphereMie", settings_.atmosphereMie);
+    setIntUniform(skyProgram_, "uCloudsEnabled", settings_.volumetricCloudsEnabled ? 1 : 0);
+    setIntUniform(skyProgram_, "uAtmosphereEnabled", settings_.skyAtmosphereEnabled ? 1 : 0);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
     glBindVertexArray(0);
@@ -1484,26 +1737,42 @@ void Renderer::renderObject(
         setVec3Uniform(
             sceneProgram_,
             "uLightDirection",
-            lightDirection_[0],
-            lightDirection_[1],
-            lightDirection_[2]
+            settings_.directionalLightDirection[0],
+            settings_.directionalLightDirection[1],
+            settings_.directionalLightDirection[2]
         );
 
         setVec3Uniform(
             sceneProgram_,
             "uLightColor",
-            lightColor_[0],
-            lightColor_[1],
-            lightColor_[2]
+            settings_.directionalLightColor[0],
+            settings_.directionalLightColor[1],
+            settings_.directionalLightColor[2]
         );
 
         setVec3Uniform(
             sceneProgram_,
             "uAmbientColor",
-            ambientColor_[0],
-            ambientColor_[1],
-            ambientColor_[2]
+            settings_.skyLightColor[0],
+            settings_.skyLightColor[1],
+            settings_.skyLightColor[2]
         );
+
+        setFloatUniform(sceneProgram_, "uDirectionalLightIntensity",
+                        settings_.directionalLightIntensity);
+        setFloatUniform(sceneProgram_, "uSkyLightIntensity",
+                        settings_.skyLightIntensity);
+        setIntUniform(sceneProgram_, "uDirectionalLightEnabled",
+                      settings_.directionalLightEnabled ? 1 : 0);
+        setIntUniform(sceneProgram_, "uSkyLightEnabled",
+                      settings_.skyLightEnabled ? 1 : 0);
+        setIntUniform(sceneProgram_, "uFogEnabled",
+                      settings_.heightFogEnabled ? 1 : 0);
+        setFloatUniform(sceneProgram_, "uFogDensity", settings_.fogDensity);
+        setFloatUniform(sceneProgram_, "uFogHeight", settings_.fogHeight);
+        setFloatUniform(sceneProgram_, "uFogFalloff", settings_.fogFalloff);
+        setVec3Uniform(sceneProgram_, "uFogColor",
+                       settings_.fogColor[0], settings_.fogColor[1], settings_.fogColor[2]);
 
         setIntUniform(
             sceneProgram_,
@@ -1519,6 +1788,49 @@ void Renderer::renderObject(
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, shadowTarget_.depthTexture);
         setIntUniform(sceneProgram_, "uShadowMap", 1);
+
+        const bool isTerrain = object.name == "Landscape Terrain" ||
+                               object.name.rfind("Landscape Chunk ", 0) == 0;
+        setIntUniform(sceneProgram_, "uTerrainAlbedoMask", isTerrain ? static_cast<int>(terrainTextureMask_[0]) : 0);
+        setIntUniform(sceneProgram_, "uTerrainNormalMask", isTerrain ? static_cast<int>(terrainTextureMask_[1]) : 0);
+        setIntUniform(sceneProgram_, "uTerrainRoughnessMask", isTerrain ? static_cast<int>(terrainTextureMask_[2]) : 0);
+        setFloatUniform(sceneProgram_, "uTerrainTextureTiling", 0.12f);
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, terrainTextures_[0][0] ? terrainTextures_[0][0] : whiteTexture_);
+        setIntUniform(sceneProgram_, "uTerrainAlbedo0", 2);
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_2D, terrainTextures_[0][1] ? terrainTextures_[0][1] : whiteTexture_);
+        setIntUniform(sceneProgram_, "uTerrainNormal0", 3);
+        glActiveTexture(GL_TEXTURE4);
+        glBindTexture(GL_TEXTURE_2D, terrainTextures_[0][2] ? terrainTextures_[0][2] : whiteTexture_);
+        setIntUniform(sceneProgram_, "uTerrainRoughness0", 4);
+        glActiveTexture(GL_TEXTURE5);
+        glBindTexture(GL_TEXTURE_2D, terrainTextures_[1][0] ? terrainTextures_[1][0] : whiteTexture_);
+        setIntUniform(sceneProgram_, "uTerrainAlbedo1", 5);
+        glActiveTexture(GL_TEXTURE6);
+        glBindTexture(GL_TEXTURE_2D, terrainTextures_[1][1] ? terrainTextures_[1][1] : whiteTexture_);
+        setIntUniform(sceneProgram_, "uTerrainNormal1", 6);
+        glActiveTexture(GL_TEXTURE7);
+        glBindTexture(GL_TEXTURE_2D, terrainTextures_[1][2] ? terrainTextures_[1][2] : whiteTexture_);
+        setIntUniform(sceneProgram_, "uTerrainRoughness1", 7);
+        glActiveTexture(GL_TEXTURE8);
+        glBindTexture(GL_TEXTURE_2D, terrainTextures_[2][0] ? terrainTextures_[2][0] : whiteTexture_);
+        setIntUniform(sceneProgram_, "uTerrainAlbedo2", 8);
+        glActiveTexture(GL_TEXTURE9);
+        glBindTexture(GL_TEXTURE_2D, terrainTextures_[2][1] ? terrainTextures_[2][1] : whiteTexture_);
+        setIntUniform(sceneProgram_, "uTerrainNormal2", 9);
+        glActiveTexture(GL_TEXTURE10);
+        glBindTexture(GL_TEXTURE_2D, terrainTextures_[2][2] ? terrainTextures_[2][2] : whiteTexture_);
+        setIntUniform(sceneProgram_, "uTerrainRoughness2", 10);
+        glActiveTexture(GL_TEXTURE11);
+        glBindTexture(GL_TEXTURE_2D, terrainTextures_[3][0] ? terrainTextures_[3][0] : whiteTexture_);
+        setIntUniform(sceneProgram_, "uTerrainAlbedo3", 11);
+        glActiveTexture(GL_TEXTURE12);
+        glBindTexture(GL_TEXTURE_2D, terrainTextures_[3][1] ? terrainTextures_[3][1] : whiteTexture_);
+        setIntUniform(sceneProgram_, "uTerrainNormal3", 12);
+        glActiveTexture(GL_TEXTURE13);
+        glBindTexture(GL_TEXTURE_2D, terrainTextures_[3][2] ? terrainTextures_[3][2] : whiteTexture_);
+        setIntUniform(sceneProgram_, "uTerrainRoughness3", 13);
         glActiveTexture(GL_TEXTURE0);
     }
 
@@ -1631,6 +1943,10 @@ void Renderer::renderSelectionOutline() {
     glDepthMask(GL_FALSE);
 
     outlineProgram_.use();
+    setFloatUniform(outlineProgram_, "uBloomIntensity", settings_.bloomIntensity);
+    setFloatUniform(outlineProgram_, "uColorContrast", settings_.colorContrast);
+    setFloatUniform(outlineProgram_, "uColorSaturation", settings_.colorSaturation);
+    setIntUniform(outlineProgram_, "uBloomEnabled", settings_.bloomEnabled ? 1 : 0);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, sceneTarget_.colorTexture);
@@ -1868,12 +2184,13 @@ void Renderer::setSculptCursor(bool visible, const Vec3& point, const Vec3& norm
     sculptCursorPoint_ = point;
     sculptCursorNormal_ = normalize(normal);
     if (length(sculptCursorNormal_) < 0.0001f) sculptCursorNormal_ = Vec3(0.0f, 1.0f, 0.0f);
-    sculptCursorRadius_ = std::clamp(radius, 0.005f, 5.0f);
+    sculptCursorRadius_ = std::clamp(radius, 0.005f, 32.0f);
 }
 
 void Renderer::render(Scene& scene, Camera& camera) {
     if (!initialized_ || !viewportEnabled_) return;
 
+    elapsedTime_ += 0.016f;
     updateStatistics(scene);
 
     renderShadowMap(scene, camera);
@@ -1927,6 +2244,21 @@ void Renderer::setSettings(const RendererSettings& settings) {
         settings_.shadowResolution != settings.shadowResolution;
 
     settings_ = settings;
+    for (int i = 0; i < 3; ++i) {
+        settings_.directionalLightColor[i] = std::clamp(settings_.directionalLightColor[i], 0.0f, 4.0f);
+        settings_.skyLightColor[i] = std::clamp(settings_.skyLightColor[i], 0.0f, 4.0f);
+        settings_.fogColor[i] = std::clamp(settings_.fogColor[i], 0.0f, 1.0f);
+    }
+    settings_.directionalLightIntensity = std::clamp(settings_.directionalLightIntensity, 0.0f, 20.0f);
+    settings_.skyLightIntensity = std::clamp(settings_.skyLightIntensity, 0.0f, 4.0f);
+    settings_.cloudCoverage = std::clamp(settings_.cloudCoverage, 0.0f, 1.0f);
+    settings_.cloudDensity = std::clamp(settings_.cloudDensity, 0.0f, 1.0f);
+    settings_.cloudSpeed = std::clamp(settings_.cloudSpeed, 0.0f, 0.05f);
+    settings_.fogDensity = std::clamp(settings_.fogDensity, 0.0f, 0.08f);
+    settings_.fogFalloff = std::clamp(settings_.fogFalloff, 0.001f, 4.0f);
+    settings_.bloomIntensity = std::clamp(settings_.bloomIntensity, 0.0f, 2.0f);
+    settings_.colorContrast = std::clamp(settings_.colorContrast, 0.0f, 2.0f);
+    settings_.colorSaturation = std::clamp(settings_.colorSaturation, 0.0f, 2.0f);
 
     if (shadowResolutionChanged && initialized_) {
         createShadowTarget();

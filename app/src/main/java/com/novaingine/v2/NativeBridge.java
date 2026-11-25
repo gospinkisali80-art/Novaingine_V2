@@ -95,9 +95,12 @@ public final class NativeBridge {
 
     public static native void nativeSetExposure(float exposure);
 
+    public static native void nativeSetWorldEnvironment(float[] values);
+
     public static native void nativeSetPhysicsEnabled(
             boolean enabled
     );
+    public static native boolean nativeSetSelectedRigidBody(boolean enabled, float mass, float restitution, float friction);
 
     public static native void nativeSetPaused(
             boolean paused
@@ -120,6 +123,32 @@ public final class NativeBridge {
     public static native boolean nativeSculptTerrain(
             float centerX, float centerZ, float radius, float strength, int mode
     );
+    public static native boolean nativeSculptTerrainAtScreen(
+            float screenX, float screenY, float radius, float strength, int mode, int phase
+    );
+    public static native boolean nativeSetTerrainHeights(float[] heights);
+    public static native boolean nativeSetTerrainHeightmapPng16(byte[] pngBytes);
+    public static native boolean nativeSetTerrainTexture(int layer, int mapType, int width, int height, int[] argbPixels);
+    public static native boolean nativePaintTerrainAtScreen(float screenX, float screenY, float radius, float strength, int material, int phase);
+    public static native boolean nativeRunTerrainErosion(int type, int iterations, float strength);
+    public static native int nativeAddLandscapeLayer(String name);
+    public static native boolean nativeSelectLandscapeLayer(int index);
+    public static native boolean nativeSetLandscapeLayerState(int index, boolean visible, boolean locked, float heightAlpha, float paintAlpha);
+    public static native boolean nativeMoveLandscapeLayer(int from, int to);
+    public static native boolean nativeDeleteLandscapeLayer(int index);
+    public static native boolean nativeSetTerrainHoleAtScreen(float screenX, float screenY, boolean makeHole);
+    public static native boolean nativeAddLandscapeSpline(float[] points);
+    public static native boolean nativeCreateLandscapeCave(float[] pathPoints, float radius);
+    public static native boolean nativeCreateLandscapeWorldTile(int tileX, int tileZ, float[] heights);
+    public static native boolean nativeCopyMainLandscapeTile(int tileX, int tileZ);
+    public static native boolean nativeRemoveLandscapeWorldTile(int tileX, int tileZ);
+    public static native int nativeGetLandscapeWorldTileCount();
+    public static native int nativeGetLandscapeChunkCount();
+    public static native int nativeGetLandscapeLayerCount();
+    public static native String nativeGetLandscapeLayerName(int index);
+    public static native float[] nativeGetLandscapeLayerState(int index);
+    public static native boolean nativeSetLandscapeChunkSize(int quadsPerChunk);
+    public static native float[] nativeGetTerrainHeights();
 
     public static native int nativeImportGlb(String path);
     public static native int nativeCreateSculptMesh(int shape, int density);

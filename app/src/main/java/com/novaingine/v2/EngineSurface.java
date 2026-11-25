@@ -37,6 +37,14 @@ public final class EngineSurface extends GLSurfaceView
     private volatile int sculptSymmetryAxis = 0;
     private volatile boolean sculptSubtract;
     private boolean sculptStrokeActive;
+    private volatile boolean terrainSculptMode;
+    private volatile int terrainBrushMode;
+    private volatile float terrainBrushRadius = 5.0f;
+    private volatile float terrainBrushStrength = 0.35f;
+    private volatile boolean terrainPaintMode;
+    private volatile boolean terrainHoleMode;
+    private volatile boolean terrainHoleValue = true;
+    private volatile int terrainMaterial = 0;
 
     public EngineSurface(Context context) {
         super(context);
@@ -129,6 +137,12 @@ public final class EngineSurface extends GLSurfaceView
             int imported = NativeBridge.nativeImportGlb(path);
             if (callback != null) post(() -> callback.accept(imported));
         });
+    }
+
+    public void setWorldEnvironment(float[] values) {
+        if (values == null || values.length < 28) return;
+        float[] copy = java.util.Arrays.copyOf(values, 28);
+        queueEvent(() -> NativeBridge.nativeSetWorldEnvironment(copy));
     }
 
     public void setManualSculptWorkspace(boolean enabled) {
@@ -319,15 +333,211 @@ public final class EngineSurface extends GLSurfaceView
         return NativeBridge.nativeClearFoliage();
     }
 
-    public boolean createTerrain() {
-        return NativeBridge.nativeCreateTerrain();
+    public void setTerrainSculptMode(boolean enabled, int brushMode, float radius, float strength) {
+        terrainBrushMode = Math.max(0, Math.min(6, brushMode));
+        terrainBrushRadius = Math.max(0.5f, Math.min(24.0f, radius));
+        terrainBrushStrength = Math.max(0.005f, Math.min(2.5f, strength));
+        terrainSculptMode = enabled;
+        if (enabled) { terrainPaintMode = false; terrainHoleMode = false; }
     }
 
-    public boolean sculptTerrain(
-            float centerX, float centerZ, float radius, float strength, int mode) {
-        return NativeBridge.nativeSculptTerrain(
-                centerX, centerZ, radius, strength, mode
-        );
+    private void terrainStroke(float x, float y, int phase) {
+        final int mode = terrainBrushMode;
+        final float radius = terrainBrushRadius;
+        final float strength = terrainBrushStrength;
+        queueEvent(() -> NativeBridge.nativeSculptTerrainAtScreen(
+                x, y, radius, strength, mode, phase));
+    }
+
+    public void setTerrainPaintMode(boolean enabled, int material, float radius, float strength) {
+        terrainPaintMode = enabled;
+        terrainHoleMode = false;
+        terrainSculptMode = false;
+        terrainMaterial = Math.max(0, Math.min(3, material));
+        terrainBrushRadius = Math.max(0.5f, Math.min(24.0f, radius));
+        terrainBrushStrength = Math.max(0.0f, Math.min(1.0f, strength));
+    }
+
+    public void setTerrainHoleMode(boolean enabled, boolean makeHole) {
+        terrainHoleMode = enabled;
+        terrainHoleValue = makeHole;
+        terrainPaintMode = false;
+        terrainSculptMode = false;
+    }
+
+    public void runTerrainErosion(int type, int iterations, float strength, java.util.function.Consumer<Boolean> callback) {
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeRunTerrainErosion(type, iterations, strength);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
+    }
+
+    public void selectLandscapeLayer(int index, java.util.function.Consumer<Boolean> callback) {
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeSelectLandscapeLayer(index);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
+    }
+
+    public void getLandscapeLayers(java.util.function.Consumer<String[]> callback) {
+        queueEvent(() -> {
+            int count = NativeBridge.nativeGetLandscapeLayerCount();
+            String[] names = new String[Math.max(0, count)];
+            for (int i = 0; i < names.length; i++) names[i] = NativeBridge.nativeGetLandscapeLayerName(i);
+            if (callback != null) post(() -> callback.accept(names));
+        });
+    }
+
+    public void getLandscapeLayerState(int index, java.util.function.Consumer<float[]> callback) {
+        queueEvent(() -> {
+            float[] state = NativeBridge.nativeGetLandscapeLayerState(index);
+            if (callback != null) post(() -> callback.accept(state));
+        });
+    }
+
+    public void moveLandscapeLayer(int from, int to, java.util.function.Consumer<Boolean> callback) {
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeMoveLandscapeLayer(from, to);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
+    }
+
+    public void deleteLandscapeLayer(int index, java.util.function.Consumer<Boolean> callback) {
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeDeleteLandscapeLayer(index);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
+    }
+
+    public void getLandscapeChunkCount(java.util.function.IntConsumer callback) {
+        queueEvent(() -> {
+            int count = NativeBridge.nativeGetLandscapeChunkCount();
+            if (callback != null) post(() -> callback.accept(count));
+        });
+    }
+
+    public void addLandscapeLayer(String name, java.util.function.IntConsumer callback) {
+        queueEvent(() -> {
+            int index = NativeBridge.nativeAddLandscapeLayer(name);
+            if (callback != null) post(() -> callback.accept(index));
+        });
+    }
+
+    public void setLandscapeLayerState(int index, boolean visible, boolean locked, float heightAlpha, float paintAlpha, java.util.function.Consumer<Boolean> callback) {
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeSetLandscapeLayerState(index, visible, locked, heightAlpha, paintAlpha);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
+    }
+
+    public void addLandscapeSpline(float[] points, java.util.function.Consumer<Boolean> callback) {
+        float[] copy = points.clone();
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeAddLandscapeSpline(copy);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
+    }
+
+    public void createLandscapeCave(float[] pathPoints, float radius, java.util.function.Consumer<Boolean> callback) {
+        float[] copy = pathPoints.clone();
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeCreateLandscapeCave(copy, radius);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
+    }
+
+    public void createLandscapeWorldTile(int tileX, int tileZ, float[] heights,
+                                         java.util.function.Consumer<Boolean> callback) {
+        float[] copy = heights.clone();
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeCreateLandscapeWorldTile(tileX, tileZ, copy);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
+    }
+
+    public void copyMainLandscapeTile(int tileX, int tileZ, java.util.function.Consumer<Boolean> callback) {
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeCopyMainLandscapeTile(tileX, tileZ);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
+    }
+
+    public void removeLandscapeWorldTile(int tileX, int tileZ, java.util.function.Consumer<Boolean> callback) {
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeRemoveLandscapeWorldTile(tileX, tileZ);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
+    }
+
+    public void getLandscapeWorldTileCount(java.util.function.IntConsumer callback) {
+        queueEvent(() -> {
+            int count = NativeBridge.nativeGetLandscapeWorldTileCount();
+            if (callback != null) post(() -> callback.accept(count));
+        });
+    }
+
+    public void setLandscapeChunkSize(int size, java.util.function.Consumer<Boolean> callback) {
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeSetLandscapeChunkSize(size);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
+    }
+
+    private void terrainPaintStroke(float x, float y, int phase) {
+        final int material = terrainMaterial;
+        final float radius = terrainBrushRadius;
+        final float strength = terrainBrushStrength;
+        queueEvent(() -> NativeBridge.nativePaintTerrainAtScreen(x, y, radius, strength, material, phase));
+    }
+
+    public void createTerrain(java.util.function.Consumer<Boolean> callback) {
+        queueEvent(() -> {
+            boolean created = NativeBridge.nativeCreateTerrain();
+            if (callback != null) post(() -> callback.accept(created));
+        });
+    }
+
+    public void setTerrainHeightmapPng16(byte[] pngBytes, java.util.function.Consumer<Boolean> callback) {
+        byte[] copy = pngBytes.clone();
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeSetTerrainHeightmapPng16(copy);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
+    }
+
+    public void setTerrainTexture(int layer, int mapType, int width, int height, int[] argbPixels,
+                                  java.util.function.Consumer<Boolean> callback) {
+        int[] copy = argbPixels.clone();
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeSetTerrainTexture(layer, mapType, width, height, copy);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
+    }
+
+    public void setTerrainHeights(float[] heights, java.util.function.Consumer<Boolean> callback) {
+        float[] copy = heights.clone();
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeSetTerrainHeights(copy);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
+    }
+
+    public void getTerrainHeights(java.util.function.Consumer<float[]> callback) {
+        queueEvent(() -> {
+            float[] heights = NativeBridge.nativeGetTerrainHeights();
+            if (callback != null) post(() -> callback.accept(heights));
+        });
+    }
+
+    public void sculptTerrain(
+            float centerX, float centerZ, float radius, float strength, int mode,
+            java.util.function.Consumer<Boolean> callback) {
+        queueEvent(() -> {
+            boolean changed = NativeBridge.nativeSculptTerrain(
+                    centerX, centerZ, radius, strength, mode
+            );
+            if (callback != null) post(() -> callback.accept(changed));
+        });
     }
 
     public String[] getSceneObjects() {
@@ -362,6 +572,14 @@ public final class EngineSurface extends GLSurfaceView
     public void updateSelectedTransform(float[] values) {
         float[] copy=values.clone();
         queueEvent(() -> NativeBridge.nativeUpdateSelectedTransform(copy));
+    }
+
+    public void setSelectedRigidBody(boolean enabled, float mass, float restitution, float friction,
+                                     java.util.function.Consumer<Boolean> callback) {
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeSetSelectedRigidBody(enabled, mass, restitution, friction);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
     }
 
     public void setPhysicsEnabled(boolean enabled) {
@@ -485,6 +703,50 @@ public final class EngineSurface extends GLSurfaceView
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
+
+        if (terrainHoleMode) {
+            if (event.getActionMasked() == MotionEvent.ACTION_UP) {
+                final float x = event.getX(), y = event.getY();
+                final boolean makeHole = terrainHoleValue;
+                queueEvent(() -> NativeBridge.nativeSetTerrainHoleAtScreen(x, y, makeHole));
+            }
+            return true;
+        }
+
+        if (terrainPaintMode) {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    terrainPaintStroke(event.getX(), event.getY(), 1);
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    if (event.getPointerCount() == 1) terrainPaintStroke(event.getX(), event.getY(), 0);
+                    return true;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    terrainPaintStroke(-1.0f, -1.0f, 2);
+                    return true;
+                default: return true;
+            }
+        }
+
+        if (terrainSculptMode) {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    terrainStroke(event.getX(), event.getY(), 1);
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    if (event.getPointerCount() == 1) {
+                        terrainStroke(event.getX(), event.getY(), 0);
+                    }
+                    return true;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    terrainStroke(-1.0f, -1.0f, 2);
+                    return true;
+                default:
+                    return true;
+            }
+        }
 
         switch (event.getActionMasked()) {
 
