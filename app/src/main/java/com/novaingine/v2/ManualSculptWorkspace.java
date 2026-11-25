@@ -130,7 +130,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
         save.setOnClickListener(v -> {
             File folder = activity.getExternalFilesDir(null);
             if (folder == null) { Toast.makeText(activity, "Save folder unavailable.", Toast.LENGTH_LONG).show(); return; }
-            File file = new File(folder, "Novaingine_Sculpt_Scene.nova");
+            File file = new File(folder, "Meshy3D_Scene.nova");
             engine.saveSceneAsync(file.getAbsolutePath(), ok -> Toast.makeText(activity,
                     ok ? "Scene saved: " + file.getAbsolutePath() : "Scene save failed.",
                     Toast.LENGTH_LONG).show());
@@ -157,7 +157,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         Toast.makeText(activity, message, Toast.LENGTH_LONG).show();
                     })).show();
         });
-        TextView project = label("NOVAINGINE  •  SCULPT WORKSPACE", 11, Color.WHITE, true);
+        TextView project = label("MESHY3D  •  3D EDITOR", 11, Color.WHITE, true);
         project.setGravity(Gravity.CENTER);
         top.addView(project, new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1));
         TextView undo = button("↶");
@@ -371,56 +371,42 @@ public final class ManualSculptWorkspace extends FrameLayout {
         viewportSpacer.setBackgroundColor(Color.TRANSPARENT);
         workArea.addView(viewportSpacer, new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1));
 
-        // Right-side modelling and scene rail, like the reference.
-        LinearLayout rightRail = new LinearLayout(activity);
-        rightRail.setOrientation(LinearLayout.VERTICAL);
-        rightRail.setGravity(Gravity.CENTER_HORIZONTAL);
-        rightRail.setPadding(dp(3), dp(5), dp(3), dp(5));
-        rightRail.setBackgroundColor(0xE9161719);
-        rightResizeHandle = createResizeHandle(false, rightRail);
+        // Blender-style right editor: scene hierarchy above, editable properties below.
+        LinearLayout rightEditor = new LinearLayout(activity);
+        rightEditor.setOrientation(LinearLayout.VERTICAL);
+        rightEditor.setPadding(dp(5), dp(5), dp(5), dp(5));
+        rightEditor.setBackgroundColor(0xF01B2027);
+        rightResizeHandle = createResizeHandle(false, rightEditor);
         workArea.addView(rightResizeHandle, new LinearLayout.LayoutParams(dp(6), LayoutParams.MATCH_PARENT));
-        workArea.addView(rightRail, new LinearLayout.LayoutParams(dp(43), LayoutParams.MATCH_PARENT));
-        rightDock = rightRail;
-        TextView scene = button("▤");
-        rightRail.addView(scene, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)));
-        scene.setOnClickListener(v -> showSceneObjects());
-        TextView layers = button("▱");
-        rightRail.addView(layers, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)));
-        layers.setOnClickListener(v -> showSceneObjects());
-        TextView shapes = button("◇");
-        rightRail.addView(shapes, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)));
+        workArea.addView(rightEditor, new LinearLayout.LayoutParams(dp(226), LayoutParams.MATCH_PARENT));
+        rightDock = rightEditor;
+        LinearLayout sceneTabs = new LinearLayout(activity);
+        sceneTabs.setGravity(Gravity.CENTER_VERTICAL);
+        rightEditor.addView(sceneTabs, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(36)));
+        FrameLayout rightContent = new FrameLayout(activity);
+        rightEditor.addView(rightContent, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1));
+        TextView outlinerTab = button("OUTLINER");
+        sceneTabs.addView(outlinerTab, new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1));
+        outlinerTab.setOnClickListener(v -> showDockPanel("Objects", rightContent, touch));
+        TextView propertiesTab = button("PROPERTIES");
+        sceneTabs.addView(propertiesTab, new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1));
+        propertiesTab.setOnClickListener(v -> showDockPanel("Properties", rightContent, touch));
+        TextView shapes = button("+ SHAPE");
+        rightEditor.addView(shapes, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
         shapes.setOnClickListener(v -> showShapes());
-        TextView color = button("●");
-        color.setContentDescription("Material color");
-        rightRail.addView(color, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)));
+        TextView color = button("MATERIAL COLOR");
+        rightEditor.addView(color, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
         color.setOnClickListener(v -> showMaterialColorPicker());
-        TextView transform = button("XYZ");
-        rightRail.addView(transform, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)));
+        TextView transform = button("XYZ TRANSFORM");
+        rightEditor.addView(transform, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
         transform.setOnClickListener(v -> showTransformEditor(touch));
-        TextView orbit = button("◎");
-        rightRail.addView(orbit, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)));
-        orbit.setOnClickListener(v -> {
-            orbitMode = !orbitMode;
-            sculptEnabled = !orbitMode;
-            applyOptions();
-            status.setText(orbitMode ? "Orbit mode: drag to rotate the selected object." : "Sculpt mode active.");
-        });
-        TextView symmetryRight = button("Y");
-        rightRail.addView(symmetryRight, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)));
-        symmetryRight.setOnClickListener(v -> {
-            symmetryAxis = symmetryAxis == 1 ? -1 : 1;
-            symmetryRight.setText(symmetryAxis == 1 ? "Y" : "Ø");
-            applyOptions();
-        });
-        TextView export = button("⇧");
-        rightRail.addView(export, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)));
-        export.setOnClickListener(v -> exportMesh());
+        showDockPanel("Objects", rightContent, touch);
 
         bottomDock = new LinearLayout(activity);
         bottomDock.setOrientation(LinearLayout.VERTICAL);
         bottomDock.setBackgroundColor(0xF01B2027);
-        bottomDock.setVisibility(View.GONE);
-        root.addView(bottomDock, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0));
+        bottomDock.setVisibility(View.VISIBLE);
+        root.addView(bottomDock, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(126)));
         View dockGrip = new View(activity);
         dockGrip.setBackgroundColor(ACCENT);
         bottomDock.addView(dockGrip, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(6)));
@@ -443,7 +429,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
             dockTabs.addView(tab, new LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
             tab.setOnClickListener(v -> showDockPanel(dockName, dockBody, touch));
         }
-        showDockPanel("Console", dockBody, touch);
+        showDockPanel("Timeline", dockBody, touch);
 
         // Bottom brush shelf: persistent shortcuts, not a close/drawer control.
         HorizontalScrollView shelfScroll = new HorizontalScrollView(activity);
@@ -525,7 +511,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
         scroll.addView(panel);
         host.addView(scroll, new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
         if ("Console".equals(name)) {
-            panel.addView(label("NOVAINGINE CONSOLE", 11, ACCENT, true));
+            panel.addView(label("MESHY3D CONSOLE", 11, ACCENT, true));
             String[] objects = engine.getSceneObjects();
             float[] transform = engine.getSelectedTransform();
             panel.addView(label("Renderer FPS: " + engine.getFps(), 10, Color.WHITE, false));
@@ -535,7 +521,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
             panel.addView(refresh);
             refresh.setOnClickListener(v -> showDockPanel("Console", host, touch));
         } else if ("Objects".equals(name)) {
-            panel.addView(label("SCENE HIERARCHY", 11, ACCENT, true));
+            panel.addView(label("OUTLINER  •  SCENE COLLECTION", 11, ACCENT, true));
             String[] objects = engine.getSceneObjects();
             if (objects == null || objects.length == 0) {
                 panel.addView(label("No objects in the scene. Use SHAPES to create one.", 10, Color.WHITE, false));
@@ -561,7 +547,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
             panel.addView(refresh);
             refresh.setOnClickListener(v -> showDockPanel("Objects", host, touch));
         } else if ("Properties".equals(name)) {
-            panel.addView(label("TRANSFORM PROPERTIES", 11, ACCENT, true));
+            panel.addView(label("OBJECT PROPERTIES  •  TRANSFORM", 11, ACCENT, true));
             float[] values = engine.getSelectedTransform();
             if (values == null || values.length < 9) {
                 panel.addView(label("Select an object in the viewport or Objects tab.", 10, Color.WHITE, false));
@@ -575,7 +561,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 edit.setOnClickListener(v -> showTransformEditor(touch));
             }
         } else if ("Timeline".equals(name)) {
-            panel.addView(label("TRANSFORM TIMELINE", 11, ACCENT, true));
+            panel.addView(label("TIMELINE  •  KEYFRAMES", 11, ACCENT, true));
             TextView info = label("Keyframes: " + transformKeyframes.size() + "  •  1.2 seconds between keys", 10, Color.WHITE, false);
             panel.addView(info);
             TextView addKey = button("ADD KEYFRAME FROM SELECTED OBJECT");
@@ -667,7 +653,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
         boolean show = bottomDock.getVisibility() != View.VISIBLE;
         bottomDock.setVisibility(show ? View.VISIBLE : View.GONE);
         LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) bottomDock.getLayoutParams();
-        lp.height = show ? dp(150) : 0;
+        lp.height = show ? dp(126) : 0;
         bottomDock.setLayoutParams(lp);
     }
 
