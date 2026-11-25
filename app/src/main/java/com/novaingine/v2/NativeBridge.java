@@ -122,6 +122,9 @@ public final class NativeBridge {
     public static native boolean nativeSculptTerrain(
             float centerX, float centerZ, float radius, float strength, int mode
     );
+    public static native boolean nativeSculptTerrainAtScreen(
+            float screenX, float screenY, float radius, float strength, int mode, int phase
+    );
 
     public static native int nativeImportGlb(String path);
     public static native int nativeCreateSculptMesh(int shape, int density);
