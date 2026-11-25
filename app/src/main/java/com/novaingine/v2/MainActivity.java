@@ -2108,6 +2108,7 @@ public final class MainActivity extends Activity
                     if (centeredStatisticsText != null) centeredStatisticsText.setVisibility(View.GONE);
                     if (editorPanels != null) editorPanels.setVisibility(View.GONE);
                     openManualSculpting();
+                    loadMeshyDocumentIntoWorkspace(activeMeshyDocument);
                     android.widget.Toast.makeText(this, "Opened Meshy3D: "+activeMeshyDocument.getName(), android.widget.Toast.LENGTH_SHORT).show();
                 }).setNegativeButton("Cancel", null).show();
     }
@@ -2132,13 +2133,46 @@ public final class MainActivity extends Activity
             return;
         }
         try {
-            String document = "{\n  \"format\": \"Meshy3D\",\n  \"version\": 1,\n  \"objects\": [{\"name\": \"Cube\", \"type\": \"MESH_CUBE\", \"location\": [0,0,0], \"rotation\": [0,0,0], \"scale\": [1,1,1]}]\n}\n";
-            try (java.io.FileOutputStream out = new java.io.FileOutputStream(activeMeshyDocument)) {
-                out.write(document.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            if (manualSculptWorkspace == null) {
+                android.widget.Toast.makeText(this, "Meshy3D workspace is not open.", android.widget.Toast.LENGTH_SHORT).show();
+                return;
             }
-            android.widget.Toast.makeText(this, "Meshy3D document saved.", android.widget.Toast.LENGTH_SHORT).show();
+            org.json.JSONObject document = manualSculptWorkspace.exportMeshyDocumentState();
+            document.put("projectName", activeMeshyProjectDirectory == null
+                    ? activeMeshyDocument.getName() : activeMeshyProjectDirectory.getName());
+            document.put("savedAt", System.currentTimeMillis());
+            try (java.io.FileOutputStream out = new java.io.FileOutputStream(activeMeshyDocument)) {
+                out.write((document.toString(2) + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                out.flush();
+                out.getFD().sync();
+            }
+            android.widget.Toast.makeText(this, "Meshy3D mesh and workspace saved.", android.widget.Toast.LENGTH_SHORT).show();
         } catch (Exception e) {
             android.widget.Toast.makeText(this, "Meshy3D save failed: " + e.getMessage(), android.widget.Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void loadMeshyDocumentIntoWorkspace(File documentFile) {
+        if (documentFile == null || !documentFile.isFile() || manualSculptWorkspace == null) return;
+        try {
+            byte[] bytes;
+            try (java.io.FileInputStream in = new java.io.FileInputStream(documentFile);
+                 java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream()) {
+                byte[] buffer = new byte[8192];
+                int count;
+                while ((count = in.read(buffer)) != -1) out.write(buffer, 0, count);
+                bytes = out.toByteArray();
+            }
+            org.json.JSONObject document = new org.json.JSONObject(
+                    new String(bytes, java.nio.charset.StandardCharsets.UTF_8));
+            if (!manualSculptWorkspace.importMeshyDocumentState(document)) {
+                android.widget.Toast.makeText(this,
+                        "This document uses an unsupported or incomplete mesh format. The current mesh was not replaced.",
+                        android.widget.Toast.LENGTH_LONG).show();
+            }
+        } catch (Exception error) {
+            android.widget.Toast.makeText(this, "Could not load Meshy3D document: " + error.getMessage(),
+                    android.widget.Toast.LENGTH_LONG).show();
         }
     }
 
