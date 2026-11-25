@@ -3561,7 +3561,68 @@ Java_com_novaingine_v2_NativeBridge_nativeAddLandscapeSpline(
             return JNI_FALSE;
     }
     recordUndo(true);
-    return target->addSpline(points)&&syncLandscapeAtWorld(points.front().x,points.front().z)?JNI_TRUE:JNI_FALSE;
+    if (!target->addSpline(points) || !syncLandscapeAtWorld(points.front().x, points.front().z))
+        return JNI_FALSE;
+
+    // Build a real terrain-conforming road ribbon, not just a stored spline or height imprint.
+    const std::vector<float> heights = target->heights();
+    std::vector<nova::Vertex> roadVertices;
+    std::vector<uint32_t> roadIndices;
+    roadVertices.reserve(points.size() * 2);
+    roadIndices.reserve((points.size() - 1) * 6);
+    float distanceAlong = 0.0f;
+    for (size_t i = 0; i < points.size(); ++i) {
+        const auto& point = points[i];
+        const auto& previous = points[i == 0 ? 0 : i - 1];
+        const auto& next = points[i + 1 < points.size() ? i + 1 : i];
+        float tangentX = next.x - previous.x;
+        float tangentZ = next.z - previous.z;
+        const float tangentLength = std::sqrt(tangentX*tangentX + tangentZ*tangentZ);
+        if (tangentLength < 1e-5f) { tangentX = 1.0f; tangentZ = 0.0f; }
+        else { tangentX /= tangentLength; tangentZ /= tangentLength; }
+        const float normalX = -tangentZ;
+        const float normalZ = tangentX;
+        const float gx = std::clamp((point.x - target->originX()) / target->spacing(),
+                                    0.0f, static_cast<float>(target->width() - 1));
+        const float gz = std::clamp((point.z - target->originZ()) / target->spacing(),
+                                    0.0f, static_cast<float>(target->height() - 1));
+        const int ix = std::clamp(static_cast<int>(std::round(gx)), 0, target->width() - 1);
+        const int iz = std::clamp(static_cast<int>(std::round(gz)), 0, target->height() - 1);
+        const float roadY = heights[static_cast<size_t>(iz * target->width() + ix)] + 0.055f;
+        const float halfWidth = point.width * 0.5f;
+        const nova::Vec3 left(point.x + normalX*halfWidth, roadY, point.z + normalZ*halfWidth);
+        const nova::Vec3 right(point.x - normalX*halfWidth, roadY, point.z - normalZ*halfWidth);
+        if (i > 0) {
+            const float dx = point.x - previous.x, dz = point.z - previous.z;
+            distanceAlong += std::sqrt(dx*dx + dz*dz);
+        }
+        roadVertices.emplace_back(left, nova::Vec3(0,1,0), 0.0f, distanceAlong * 0.12f);
+        roadVertices.emplace_back(right, nova::Vec3(0,1,0), 1.0f, distanceAlong * 0.12f);
+        if (i > 0) {
+            const uint32_t base = static_cast<uint32_t>((i - 1) * 2);
+            roadIndices.insert(roadIndices.end(), {base, base+2, base+1, base+1, base+2, base+3});
+        }
+    }
+    nova::Mesh roadMesh(std::move(roadVertices), std::move(roadIndices));
+    if (!roadMesh.isValid()) return JNI_FALSE;
+    roadMesh.recalculateNormals();
+    const nova::Color roadColor(0.12f, 0.13f, 0.14f, 1.0f);
+    nova::Transform roadTransform;
+    const uint32_t roadId = gScene.addObject("Landscape Road Spline",
+        nova::PrimitiveType::Cube, roadTransform, roadColor);
+    nova::SceneObject* roadObject = gScene.find(roadId);
+    if (!roadObject) return JNI_FALSE;
+    roadObject->material.baseColor = nova::Vec3(roadColor.r, roadColor.g, roadColor.b);
+    roadObject->material.roughness = 0.88f;
+    roadObject->material.metallic = 0.0f;
+    roadObject->isStatic = true;
+    gCustomMeshes[roadId] = std::move(roadMesh);
+    if (!gRenderer.uploadMesh(roadId, gCustomMeshes[roadId])) {
+        gCustomMeshes.erase(roadId);
+        gScene.removeObject(roadId);
+        return JNI_FALSE;
+    }
+    return JNI_TRUE;
 }
 
 JNIEXPORT jint JNICALL
