@@ -110,6 +110,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private LinearLayout workspaceLeftDock;
     private LinearLayout workspaceRightDock;
     private LinearLayout workspaceBottomDock;
+    private final java.util.ArrayDeque<org.json.JSONObject> meshUndoStack = new java.util.ArrayDeque<>();
+    private final java.util.ArrayDeque<org.json.JSONObject> meshRedoStack = new java.util.ArrayDeque<>();
     private final Handler timelineHandler = new Handler(Looper.getMainLooper());
     private boolean timelinePlaying;
     private long timelineStartMs;
@@ -424,9 +426,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 if ("Move".equals(item) || "Rotate".equals(item) || "Scale".equals(item)
                         || "Transform".equals(item)) showTransformDialog(item.equals("Transform") ? "Move" : item);
                 else if ("Extrude Region".equals(item) || "Extrude".equals(item))
-                    showAmountDialog("Extrude distance", 0.05f, 2.0f, meshyViewport::extrudeMesh);
+                    showAmountDialog("Extrude distance", 0.05f, 2.0f, value -> { checkpointMeshEdit(); meshyViewport.extrudeMesh(value); });
                 else if ("Smooth Vertices".equals(item) || "Smooth".equals(item))
-                    showAmountDialog("Smoothing amount", 0.05f, 0.8f, value -> meshyViewport.smoothMesh(value, 2));
+                    showAmountDialog("Smoothing amount", 0.05f, 0.8f, value -> { checkpointMeshEdit(); meshyViewport.smoothMesh(value, 2); });
                 else if ("Mesh Statistics".equals(item) || "Vertex / Edge / Face Counts".equals(item)
                         || "Topology Overview".equals(item))
                     status.setText("Mesh | " + meshyViewport.getVertexCount() + " vertices | "
@@ -443,7 +445,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 break;
             case 3:
                 if ("Unwrap".equals(item) || "Smart UV Project".equals(item) || "Lightmap Pack".equals(item)) {
-                    meshyViewport.generatePlanarUv();
+                    checkpointMeshEdit(); meshyViewport.generatePlanarUv();
                     status.setText("UV Editing | Planar UV coordinates generated for "
                             + meshyViewport.getVertexCount() + " vertices");
                 } else if ("Export UV Layout".equals(item)) {
@@ -463,10 +465,10 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 if ("Base Color".equals(item) || "Viewport Display".equals(item)
                         || "New Material".equals(item) || "Material Preview".equals(item)) showPaintColorDialog();
                 else if ("Metallic".equals(item)) showAmountDialog("Metallic", 0f, 1f,
-                        value -> { meshyViewport.setMaterialParameters(value, meshyViewport.getRoughness());
+                        value -> { checkpointMeshEdit(); meshyViewport.setMaterialParameters(value, meshyViewport.getRoughness());
                             status.setText("Shading | Metallic " + value); });
                 else if ("Roughness".equals(item)) showAmountDialog("Roughness", 0.02f, 1f,
-                        value -> { meshyViewport.setMaterialParameters(meshyViewport.getMetallic(), value);
+                        value -> { checkpointMeshEdit(); meshyViewport.setMaterialParameters(meshyViewport.getMetallic(), value);
                             status.setText("Shading | Roughness " + value); });
                 else showWorkspaceActionInfo(item);
                 break;
@@ -489,7 +491,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 if ("Transform Geometry".equals(item) || "Set Position".equals(item) || "Move".equals(item))
                     showTransformDialog("Move");
                 else if ("Set Shade Smooth".equals(item) || "Smooth".equals(item)) {
-                    meshyViewport.smoothMesh(0.18f, 1);
+                    checkpointMeshEdit(); meshyViewport.smoothMesh(0.18f, 1);
                     status.setText("Geometry Nodes | Smooth operation evaluated on active mesh");
                 } else showWorkspaceActionInfo(item);
                 break;
@@ -521,6 +523,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         float x=Float.parseFloat(fields[0].getText().toString());
                         float y=Float.parseFloat(fields[1].getText().toString());
                         float z=Float.parseFloat(fields[2].getText().toString());
+                        checkpointMeshEdit();
                         meshyViewport.transformMesh(operation.equals("Move") ? 0 : operation.equals("Rotate") ? 1 : 2,
                                 x, y, z);
                         status.setText(WORKSPACE_NAMES[activeWorkspaceIndex] + " | " + operation + " applied to mesh");
@@ -552,7 +555,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
         String[] names={"Clay Grey","Warm Orange","Blue","Green","Red","White"};
         int[] colors={0xFF9DAAB7,0xFFE79A45,0xFF5D9BEA,0xFF63B887,0xFFD85B5B,0xFFF2F2F2};
         new android.app.AlertDialog.Builder(activity).setTitle("Mesh Material Color")
-                .setItems(names,(d,w)->{meshyViewport.setMeshTint(colors[w]);
+                .setItems(names,(d,w)->{checkpointMeshEdit(); meshyViewport.setMeshTint(colors[w]);
                     status.setText(WORKSPACE_NAMES[activeWorkspaceIndex]+" | Mesh material color updated");}).show();
     }
 
@@ -806,6 +809,29 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 ? "Meshy3D  |  Viewport Focus  •  Tap viewport to restore panels"
                 : "Meshy3D  |  " + WORKSPACE_NAMES[activeWorkspaceIndex] + " Workspace");
     }
+
+    public void checkpointMeshEdit() {
+        if (meshyViewport == null) return;
+        meshUndoStack.addLast(exportMeshyDocumentState());
+        while (meshUndoStack.size() > 40) meshUndoStack.removeFirst();
+        meshRedoStack.clear();
+    }
+
+    public boolean undoMeshEdit() {
+        if (meshUndoStack.isEmpty()) return false;
+        meshRedoStack.addLast(exportMeshyDocumentState());
+        org.json.JSONObject previous=meshUndoStack.removeLast();
+        return importMeshyDocumentState(previous);
+    }
+
+    public boolean redoMeshEdit() {
+        if (meshRedoStack.isEmpty()) return false;
+        meshUndoStack.addLast(exportMeshyDocumentState());
+        org.json.JSONObject next=meshRedoStack.removeLast();
+        return importMeshyDocumentState(next);
+    }
+
+    public int getMeshUndoCount() { return meshUndoStack.size(); }
 
     /** Return the live document state owned by this Meshy3D workspace. */
     public org.json.JSONObject exportMeshyDocumentState() {
