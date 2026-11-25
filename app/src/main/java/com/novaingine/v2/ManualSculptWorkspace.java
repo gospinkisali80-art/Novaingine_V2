@@ -408,15 +408,33 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         "End Frame: 250", "Keyframes"};
                 break;
             case 1:
-                tools = new String[]{"Vertex Select", "Edge Select", "Face Select", "Extrude", "Inset", "Bevel", "Loop Cut", "Subdivide"};
+                tools = new String[]{"Vertex", "Edge", "Face", "Move", "Rotate", "Scale", "Extrude", "Inset",
+                        "Bevel", "Loop Cut", "Knife", "Bisect", "Bridge", "Fill", "Subdivide",
+                        "Merge", "Dissolve", "Separate", "Spin", "Screw", "Shear", "Bend"};
                 leftTitle = "Modeling Tools";
-                leftItems = new String[]{"Select", "Transform", "Extrude", "Inset", "Bevel", "Loop Cut", "Subdivide",
-                        "Merge by Distance", "Knife Split"};
+                leftItems = new String[]{
+                        "SELECTION", "Vertex Select", "Edge Select", "Face Select", "Select All", "Select Linked",
+                        "Select Loops", "Select Similar", "TRANSFORM", "Move", "Rotate", "Scale", "Mirror",
+                        "Shrink / Fatten", "Shear", "Bend", "To Sphere", "Edge Slide", "Vertex Slide",
+                        "MESH EDIT", "Extrude Region", "Extrude Along Normals", "Extrude Individual Faces",
+                        "Inset Faces", "Bevel Edges", "Loop Cut", "Knife", "Bisect", "Poly Build",
+                        "Bridge Edge Loops", "Spin", "Screw", "Fill", "Grid Fill", "Bridge",
+                        "TOPOLOGY", "Subdivide", "Un-Subdivide", "Merge by Distance", "Dissolve Edges",
+                        "Dissolve Faces", "Limited Dissolve", "Delete Vertices", "Delete Edges",
+                        "Delete Faces", "Separate Selection", "Split", "Rip", "Decimate",
+                        "MESH CLEANUP", "Recalculate Normals", "Flip Normals", "Merge by Distance",
+                        "Degenerate Dissolve", "Make Planar", "Smooth Vertices", "Randomize",
+                        "SYMMETRY & MODIFIERS", "Symmetrize", "Bisect", "Mirror Modifier",
+                        "Subdivision Surface", "Solidify", "Bevel Modifier", "Weighted Normal",
+                        "Remesh", "Weld", "Triangulate", "Wireframe"
+                };
                 rightTitle = "Tool Properties";
-                rightItems = new String[]{"Active Tool", "Selection Mode", "Operation Amount", "Mesh Statistics",
-                        "Vertices", "Edges", "Faces"};
+                rightItems = new String[]{"Active Tool", "Selection Mode", "Operation Amount", "Offset",
+                        "Segments", "Profile", "Loop Cut Count", "Merge Threshold", "Mesh Statistics",
+                        "Vertices", "Edges", "Faces", "Normals", "Transform Orientation", "Pivot Point"};
                 bottomTitle = "Mesh Information";
-                bottomItems = new String[]{"Object Mode / Edit Mode", "Selected Mesh", "Topology Overview"};
+                bottomItems = new String[]{"Object Mode / Edit Mode", "Selected Mesh", "Topology Overview",
+                        "Vertex / Edge / Face Counts"};
                 break;
             case 2:
                 tools = new String[]{"Draw", "Smooth", "Grab", "Inflate", "Pinch", "Flatten", "Crease", "Mask"};
