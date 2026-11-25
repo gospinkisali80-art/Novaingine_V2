@@ -495,7 +495,15 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     checkpointMeshEdit();meshyViewport.markSeams(false);status.setText("UV Editing | Seams marked on selected edges");
                 } else if ("Clear Seam".equals(item)) {
                     checkpointMeshEdit();meshyViewport.markSeams(true);status.setText("UV Editing | Selected seams cleared");
-                } else if ("UV Canvas".equals(item) || "Image / UV View".equals(item)
+                } else if ("Pin".equals(item) || "Unpin".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.pinSelectedUvs("Pin".equals(item));
+                    status.setText("UV Editing | Selected UV coordinates "+("Pin".equals(item)?"pinned":"unpinned"));
+                } else if ("Pack Islands".equals(item) || "Average Islands Scale".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.packUvIslands();status.setText("UV Editing | UV islands packed into the 0–1 tile");
+                } else if ("Select Linked".equals(item)) {
+                    meshyViewport.selectLinkedUvIsland();status.setText("UV Editing | Linked seam-bounded region selected");
+                } else if ("Move UV".equals(item) || "Rotate UV".equals(item) || "Scale UV".equals(item)
+                        || "UV Canvas".equals(item) || "Image / UV View".equals(item)
                         || "UV Islands".equals(item)) {
                     if(meshyViewport.getUvIslandCount()==0)meshyViewport.unwrapMesh();
                     showUvEditor(false);
