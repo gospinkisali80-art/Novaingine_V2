@@ -23,6 +23,7 @@
 #include "../Renderer/Renderer.h"
 #include "../Physics/PhysicsWorld.h"
 #include "../Geometry/Mesh.h"
+#include "../Geometry/LandscapeSystem.h"
 #include "../Geometry/PrimitiveBuilder.h"
 #include "../Geometry/MeshSculptor.h"
 #include "../Geometry/MeshModeling.h"
@@ -41,6 +42,7 @@ std::mutex engineMutex;
 
 Renderer gRenderer;
 nova::Scene gScene;
+nova::LandscapeSystem gLandscape;
 std::unordered_map<uint32_t, nova::Mesh> gCustomMeshes;
 std::unordered_map<uint32_t, std::vector<float>> gSculptMasks;
 std::unique_ptr<nova::SculptMesh> gSculptMesh;
@@ -141,6 +143,8 @@ struct SceneSnapshot {
     std::unordered_map<uint32_t, nova::Mesh> customMeshes;
     std::unordered_map<uint32_t, std::vector<float>> sculptMasks;
     bool includesCustomMeshes = false;
+    bool includesLandscape = false;
+    nova::LandscapeSystem landscape;
     uint32_t selectedId = 0;
 };
 
@@ -152,6 +156,8 @@ SceneSnapshot captureScene(bool includeCustomMeshes = false) {
     SceneSnapshot snapshot;
     snapshot.objects = gScene.getObjects();
     snapshot.includesCustomMeshes = includeCustomMeshes;
+    snapshot.includesLandscape = includeCustomMeshes;
+    if (includeCustomMeshes) snapshot.landscape = gLandscape;
     if (includeCustomMeshes) { snapshot.customMeshes = gCustomMeshes; snapshot.sculptMasks = gSculptMasks; }
     snapshot.selectedId = gScene.selectedId();
     return snapshot;
@@ -168,6 +174,7 @@ void recordUndo(bool includeCustomMeshes = false) {
 void restoreScene(const SceneSnapshot& snapshot) {
     gScene.clear();
     if (snapshot.includesCustomMeshes) { gCustomMeshes = snapshot.customMeshes; gSculptMasks = snapshot.sculptMasks; }
+    if (snapshot.includesLandscape) gLandscape = snapshot.landscape;
     for (const nova::SceneObject& object : snapshot.objects) {
         gScene.addObject(object);
     }
@@ -313,6 +320,53 @@ bool makeScreenRay(float screenX, float screenY, nova::Vec3& ray) {
     if(!nearOk||!farOk)return false;
     ray=nova::normalize(farPoint-nearPoint);
     return nova::length(ray)>0.0001f;
+}
+
+bool syncLandscapeMeshFromData() {
+    nova::SceneObject* terrain = nullptr;
+    for (nova::SceneObject& object : gScene.getObjects()) {
+        if (object.name == "Landscape Terrain") { terrain = &object; break; }
+    }
+    if (!terrain || !gLandscape.valid()) return false;
+    auto meshIt = gCustomMeshes.find(terrain->id);
+    if (meshIt == gCustomMeshes.end()) return false;
+    const auto heights = gLandscape.heights();
+    const auto weights = gLandscape.weights();
+    if (heights.size() != 129u * 129u || weights.size() != heights.size()) return false;
+    std::vector<nova::Vertex> vertices = meshIt->second.getVertices();
+    if (vertices.size() != heights.size()) return false;
+    for (size_t i=0;i<vertices.size();++i) {
+        vertices[i].position.y = std::clamp(heights[i], -12.0f, 24.0f);
+        for (int c=0;c<4;++c) vertices[i].layerWeights[c] = weights[i][c];
+    }
+    std::vector<uint32_t> indices;
+    indices.reserve(128u*128u*6u);
+    for (int z=0;z<128;++z) for (int x=0;x<128;++x) {
+        if (gLandscape.isHole(x,z)) continue;
+        const uint32_t a=static_cast<uint32_t>(z*129+x), b=a+1, c=a+129, d=c+1;
+        indices.insert(indices.end(), {a,c,b,b,c,d});
+    }
+    nova::Mesh updated;
+    updated.setData(std::move(vertices), std::move(indices));
+    updated.recalculateNormals();
+    if (!updated.isValid()) return false;
+    meshIt->second = std::move(updated);
+    const bool ok = gRenderer.uploadMesh(terrain->id, meshIt->second);
+    if (ok) gTerrainLodLevel = -1;
+    return ok;
+}
+
+bool terrainScreenHit(float screenX, float screenY, float& hitX, float& hitZ, float& hitY) {
+    nova::Vec3 ray;
+    if (!makeScreenRay(screenX, screenY, ray)) return false;
+    const nova::Vec3 origin=gCamera.position;
+    for(float distance=0.15f;distance<=500.0f;distance+=0.12f){
+        const nova::Vec3 p=origin+ray*distance;
+        if(p.x < -32.0f || p.x > 32.0f || p.z < -36.0f || p.z > 28.0f) continue;
+        bool found=false;float h=terrainHeightAt(p.x,p.z,found);
+        if(found&&p.y<=h+0.04f){hitX=p.x;hitZ=p.z;hitY=h;return true;}
+    }
+    return false;
 }
 
 float terrainHeightAt(float worldX, float worldZ, bool& found) {
@@ -2487,6 +2541,7 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateTerrain(
         gScene.removeObject(id);
     }
 
+    gLandscape.initialize(129, 129, 0.5f, -32.0f, -36.0f);
     constexpr int resolution = 129;
     constexpr float halfExtent = 32.0f;
     constexpr float spacing = (halfExtent * 2.0f) / (resolution - 1);
@@ -2505,6 +2560,7 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateTerrain(
                 nova::Vec3(px, 0.0f, pz),
                 nova::Vec3(0.0f, 1.0f, 0.0f), u, v
             );
+            vertices.back().layerWeights[0] = 1.0f;
         }
     }
     for (int z = 0; z < resolution - 1; ++z) {
@@ -2549,160 +2605,30 @@ Java_com_novaingine_v2_NativeBridge_nativeSculptTerrain(
     jfloat radiusValue, jfloat strengthValue, jint modeValue
 ) {
     std::lock_guard<std::mutex> lock(engineMutex);
-    if (!gInitialized) return JNI_FALSE;
-
-    nova::SceneObject* terrain = nullptr;
-    for (nova::SceneObject& object : gScene.getObjects()) {
-        if (object.name == "Landscape Terrain") {
-            terrain = &object;
-            break;
-        }
-    }
-    if (!terrain) return JNI_FALSE;
-
-    auto meshIt = gCustomMeshes.find(terrain->id);
-    if (meshIt == gCustomMeshes.end()) return JNI_FALSE;
-
-    const float centerX = std::clamp(static_cast<float>(centerXValue), -64.0f, 64.0f);
-    const float centerZ = std::clamp(static_cast<float>(centerZValue), -68.0f, 60.0f);
-    const float radius = std::clamp(static_cast<float>(radiusValue), 0.5f, 32.0f);
-    const float strength = std::clamp(static_cast<float>(strengthValue), 0.005f, 8.0f);
-    const int mode = std::clamp(static_cast<int>(modeValue), 0, 6);
-
-    const nova::Mesh& sourceMesh = meshIt->second;
-    const auto& sourceVertices = sourceMesh.getVertices();
-    const auto& sourceIndices = sourceMesh.getIndices();
-    if (sourceVertices.size() != 129u * 129u) return JNI_FALSE;
-
-    std::vector<nova::Vertex> vertices = sourceVertices;
-    std::vector<float> oldHeights(vertices.size());
-    for (size_t i = 0; i < vertices.size(); ++i) {
-        oldHeights[i] = vertices[i].position.y;
-    }
-
-    bool changed = false;
-    constexpr int resolution = 129;
-    constexpr float spacing = 0.5f;
-    for (int z = 0; z < resolution; ++z) {
-        for (int x = 0; x < resolution; ++x) {
-            const size_t index = static_cast<size_t>(z * resolution + x);
-            const float dx = vertices[index].position.x - centerX;
-            const float dz = vertices[index].position.z - centerZ;
-            const float distance = std::sqrt(dx * dx + dz * dz);
-            if (distance > radius) continue;
-
-            const float t = std::clamp(1.0f - distance / radius, 0.0f, 1.0f);
-            const float falloff = t * t * (3.0f - 2.0f * t);
-            float height = oldHeights[index];
-
-            if (mode == 0) {
-                height += strength * falloff;
-            } else if (mode == 1) {
-                height -= strength * falloff;
-            } else if (mode == 2) {
-                float sum = 0.0f;
-                int count = 0;
-                for (int oz = -1; oz <= 1; ++oz) {
-                    for (int ox = -1; ox <= 1; ++ox) {
-                        const int nx = x + ox, nz = z + oz;
-                        if (nx < 0 || nx >= resolution || nz < 0 || nz >= resolution) continue;
-                        sum += oldHeights[static_cast<size_t>(nz * resolution + nx)];
-                        ++count;
-                    }
-                }
-                if (count > 0) {
-                    const float average = sum / static_cast<float>(count);
-                    height += (average - height) * std::clamp(strength, 0.0f, 1.0f) * falloff;
-                }
-            } else if (mode == 3) {
-                constexpr float flattenTarget = 0.0f;
-                height += (flattenTarget - height) *
-                    std::clamp(strength, 0.0f, 1.0f) * falloff;
-            } else if (mode == 4) {
-                const float wave = std::sin(vertices[index].position.x * 2.37f +
-                                            vertices[index].position.z * 1.91f) *
-                                   std::cos(vertices[index].position.z * 2.73f -
-                                            vertices[index].position.x * 0.83f);
-                height += wave * strength * 0.35f * falloff;
-            } else if (mode == 5) {
-                const float targetHeight =
-                    ((vertices[index].position.z - centerZ) / radius) * strength * 2.0f;
-                height += (targetHeight - height) * falloff;
-            } else {
-                float sum = 0.0f;
-                int count = 0;
-                for (int oz = -1; oz <= 1; ++oz) {
-                    for (int ox = -1; ox <= 1; ++ox) {
-                        const int nx = x + ox, nz = z + oz;
-                        if (nx < 0 || nx >= resolution || nz < 0 || nz >= resolution) continue;
-                        sum += oldHeights[static_cast<size_t>(nz * resolution + nx)];
-                        ++count;
-                    }
-                }
-                if (count > 0) {
-                    const float average = sum / static_cast<float>(count);
-                    const float excess = height - average;
-                    if (excess > 0.10f) {
-                        height -= std::min(excess - 0.10f,
-                                           strength * 0.22f * falloff);
-                    }
-                }
-            }
-
-            height = std::clamp(height, -12.0f, 24.0f);
-            if (std::fabs(height - oldHeights[index]) > 0.00001f) {
-                vertices[index].position.y = height;
-                changed = true;
-            }
-        }
-    }
-    if (!changed) return JNI_FALSE;
-
+    if (!gInitialized || !gLandscape.valid()) return JNI_FALSE;
+    const float x=std::clamp(static_cast<float>(centerXValue),-32.0f,32.0f);
+    const float z=std::clamp(static_cast<float>(centerZValue),-36.0f,28.0f);
+    const float radius=std::clamp(static_cast<float>(radiusValue),0.5f,32.0f);
+    const float strength=std::clamp(static_cast<float>(strengthValue),0.005f,8.0f);
+    const int mode=std::clamp(static_cast<int>(modeValue),0,6);
     recordUndo(true);
-    nova::Mesh updatedMesh;
-    updatedMesh.setData(std::move(vertices), sourceIndices);
-    updatedMesh.recalculateNormals();
-    if (!updatedMesh.isValid()) return JNI_FALSE;
-
-    meshIt->second = std::move(updatedMesh);
-    if (!gRenderer.uploadMesh(terrain->id, meshIt->second)) return JNI_FALSE;
-    gTerrainLodLevel = -1;
-    return JNI_TRUE;
+    return gLandscape.sculpt(x,z,radius,strength,mode) && syncLandscapeMeshFromData()
+        ? JNI_TRUE : JNI_FALSE;
 }
-
-
 
 JNIEXPORT jboolean JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeSetTerrainHeights(
     JNIEnv* env, jclass, jfloatArray heightArray
 ) {
     std::lock_guard<std::mutex> lock(engineMutex);
-    if (!gInitialized || !heightArray || env->GetArrayLength(heightArray) != 129 * 129) return JNI_FALSE;
-    nova::SceneObject* terrain = nullptr;
-    for (nova::SceneObject& object : gScene.getObjects()) {
-        if (object.name == "Landscape Terrain") { terrain = &object; break; }
-    }
-    if (!terrain) return JNI_FALSE;
-    auto meshIt = gCustomMeshes.find(terrain->id);
-    if (meshIt == gCustomMeshes.end()) return JNI_FALSE;
-    std::vector<jfloat> heights(129u * 129u);
-    env->GetFloatArrayRegion(heightArray, 0, static_cast<jsize>(heights.size()), heights.data());
-    if (env->ExceptionCheck()) { env->ExceptionClear(); return JNI_FALSE; }
-    std::vector<nova::Vertex> vertices = meshIt->second.getVertices();
-    const auto indices = meshIt->second.getIndices();
-    if (vertices.size() != heights.size()) return JNI_FALSE;
-    for (size_t i = 0; i < vertices.size(); ++i) {
-        vertices[i].position.y = std::clamp(static_cast<float>(heights[i]), -12.0f, 24.0f);
-    }
+    if (!gInitialized || !heightArray || env->GetArrayLength(heightArray) != 129*129 || !gLandscape.valid()) return JNI_FALSE;
+    std::vector<float> heights(129u*129u);
+    env->GetFloatArrayRegion(heightArray,0,static_cast<jsize>(heights.size()),heights.data());
+    if(env->ExceptionCheck()){env->ExceptionClear();return JNI_FALSE;}
     recordUndo(true);
-    nova::Mesh updated;
-    updated.setData(std::move(vertices), indices);
-    updated.recalculateNormals();
-    if (!updated.isValid()) return JNI_FALSE;
-    meshIt->second = std::move(updated);
-    const bool uploaded = gRenderer.uploadMesh(terrain->id, meshIt->second);
-    if (uploaded) gTerrainLodLevel = -1;
-    return uploaded ? JNI_TRUE : JNI_FALSE;
+    gLandscape.initialize(129,129,0.5f,-32.0f,-36.0f);
+    if(!gLandscape.setBaseHeights(heights))return JNI_FALSE;
+    return syncLandscapeMeshFromData()?JNI_TRUE:JNI_FALSE;
 }
 
 JNIEXPORT jfloatArray JNICALL
@@ -2721,134 +2647,35 @@ Java_com_novaingine_v2_NativeBridge_nativeGetTerrainHeights(
         for (size_t i = 0; i < vertices.size(); ++i) heights[i] = vertices[i].position.y;
         jfloatArray result = env->NewFloatArray(static_cast<jsize>(heights.size()));
         if (!result) return nullptr;
-        env->SetFloatArrayRegion(result, 0, static_cast<jsize>(heights.size()), heights.data());
-        return result;
-    }
-    return nullptr;
+     JNIEXPORT jfloatArray JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeGetTerrainHeights(JNIEnv* env, jclass) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if(!gInitialized||!gLandscape.valid())return nullptr;
+    const auto heights=gLandscape.heights();
+    jfloatArray result=env->NewFloatArray(static_cast<jsize>(heights.size()));
+    if(result)env->SetFloatArrayRegion(result,0,static_cast<jsize>(heights.size()),heights.data());
+    return result;
 }
 
 JNIEXPORT jboolean JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeSculptTerrainAtScreen(
-    JNIEnv*, jclass, jfloat screenXValue, jfloat screenYValue,
+    JNIEnv*, jclass, jfloat screenX, jfloat screenY,
     jfloat radiusValue, jfloat strengthValue, jint modeValue, jint phase
 ) {
     std::lock_guard<std::mutex> lock(engineMutex);
-    if (!gInitialized) return JNI_FALSE;
-
-    if (phase == 1) {
-        gTerrainStrokeActive = true;
-        gTerrainStrokeHasUndo = false;
-    } else if (phase == 2) {
-        gTerrainStrokeActive = false;
-        gTerrainStrokeHasUndo = false;
-        return JNI_TRUE;
-    }
-
-    nova::SceneObject* terrain = nullptr;
-    for (nova::SceneObject& object : gScene.getObjects()) {
-        if (object.name == "Landscape Terrain") { terrain = &object; break; }
-    }
-    if (!terrain) return JNI_FALSE;
-    auto meshIt = gCustomMeshes.find(terrain->id);
-    if (meshIt == gCustomMeshes.end()) return JNI_FALSE;
-
-    nova::Vec3 ray;
-    if (!makeScreenRay(static_cast<float>(screenXValue),
-                       static_cast<float>(screenYValue), ray) || ray.y >= -0.0001f) {
-        return JNI_FALSE;
-    }
-
-    const nova::Vec3 origin = gCamera.position;
-    float hitX = 0.0f, hitZ = 0.0f;
-    bool hit = false;
-    for (float distance = 0.15f; distance <= 400.0f; distance += 0.20f) {
-        const nova::Vec3 point = origin + ray * distance;
-        if (point.x < -32.0f || point.x > 32.0f ||
-            point.z < -36.0f || point.z > 28.0f) continue;
-        bool hasHeight = false;
-        const float ground = terrainHeightAt(point.x, point.z, hasHeight);
-        if (hasHeight && point.y <= ground) {
-            hitX = point.x;
-            hitZ = point.z;
-            hit = true;
-            break;
-        }
-    }
-    if (!hit) return JNI_FALSE;
-
-    const float radius = std::clamp(static_cast<float>(radiusValue), 0.5f, 24.0f);
-    const float strength = std::clamp(static_cast<float>(strengthValue), 0.005f, 2.5f);
-    const int mode = std::clamp(static_cast<int>(modeValue), 0, 6);
-    const auto& sourceVertices = meshIt->second.getVertices();
-    const auto& sourceIndices = meshIt->second.getIndices();
-    if (sourceVertices.size() != 129u * 129u) return JNI_FALSE;
-
-    std::vector<nova::Vertex> vertices = sourceVertices;
-    std::vector<float> oldHeights(vertices.size());
-    for (size_t i = 0; i < vertices.size(); ++i) oldHeights[i] = vertices[i].position.y;
-
-    bool changed = false;
-    constexpr int resolution = 129;
-    for (int z = 0; z < resolution; ++z) {
-        for (int x = 0; x < resolution; ++x) {
-            const size_t index = static_cast<size_t>(z * resolution + x);
-            const float dx = vertices[index].position.x - hitX;
-            const float dz = vertices[index].position.z - hitZ;
-            const float distance = std::sqrt(dx * dx + dz * dz);
-            if (distance > radius) continue;
-            const float t = std::clamp(1.0f - distance / radius, 0.0f, 1.0f);
-            const float falloff = t * t * (3.0f - 2.0f * t);
-            float height = oldHeights[index];
-
-            if (mode == 0) height += strength * falloff;
-            else if (mode == 1) height -= strength * falloff;
-            else if (mode == 2 || mode == 6) {
-                float sum = 0.0f; int count = 0;
-                for (int oz = -1; oz <= 1; ++oz) for (int ox = -1; ox <= 1; ++ox) {
-                    const int nx = x + ox, nz = z + oz;
-                    if (nx < 0 || nx >= resolution || nz < 0 || nz >= resolution) continue;
-                    sum += oldHeights[static_cast<size_t>(nz * resolution + nx)];
-                    ++count;
-                }
-                if (count > 0) {
-                    const float average = sum / static_cast<float>(count);
-                    if (mode == 2) height += (average - height) * std::clamp(strength, 0.0f, 1.0f) * falloff;
-                    else {
-                        const float excess = height - average;
-                        if (excess > 0.10f) height -= std::min(excess - 0.10f, strength * 0.22f * falloff);
-                    }
-                }
-            } else if (mode == 3) {
-                height += (0.0f - height) * std::clamp(strength, 0.0f, 1.0f) * falloff;
-            } else if (mode == 4) {
-                const float wave = std::sin(vertices[index].position.x * 2.37f + vertices[index].position.z * 1.91f) *
-                                   std::cos(vertices[index].position.z * 2.73f - vertices[index].position.x * 0.83f);
-                height += wave * strength * 0.35f * falloff;
-            } else if (mode == 5) {
-                const float target = ((vertices[index].position.z - hitZ) / radius) * strength * 2.0f;
-                height += (target - height) * falloff;
-            }
-            height = std::clamp(height, -12.0f, 24.0f);
-            if (std::fabs(height - oldHeights[index]) > 0.00001f) {
-                vertices[index].position.y = height;
-                changed = true;
-            }
-        }
-    }
-    if (!changed) return JNI_FALSE;
-
-    if (!gTerrainStrokeActive || !gTerrainStrokeHasUndo) {
-        recordUndo(true);
-        if (gTerrainStrokeActive) gTerrainStrokeHasUndo = true;
-    }
-    nova::Mesh updatedMesh;
-    updatedMesh.setData(std::move(vertices), sourceIndices);
-    updatedMesh.recalculateNormals();
-    if (!updatedMesh.isValid()) return JNI_FALSE;
-    meshIt->second = std::move(updatedMesh);
-    const bool uploaded = gRenderer.uploadMesh(terrain->id, meshIt->second);
-    if (uploaded) gTerrainLodLevel = -1;
-    return uploaded ? JNI_TRUE : JNI_FALSE;
+    if(!gInitialized||!gLandscape.valid())return JNI_FALSE;
+    if(phase==1){gTerrainStrokeActive=true;gTerrainStrokeHasUndo=false;}
+    if(phase==2){gTerrainStrokeActive=false;gTerrainStrokeHasUndo=false;gRenderer.setSculptCursor(false,nova::Vec3(),nova::Vec3(0,1,0),0.18f);return JNI_TRUE;}
+    float hitX=0,hitZ=0,hitY=0;
+    if(!terrainScreenHit(screenX,screenY,hitX,hitZ,hitY)){gRenderer.setSculptCursor(false,nova::Vec3(),nova::Vec3(0,1,0),0.18f);return JNI_FALSE;}
+    const float radius=std::clamp(static_cast<float>(radiusValue),0.5f,24.0f);
+    const float strength=std::clamp(static_cast<float>(strengthValue),0.005f,2.5f);
+    const int mode=std::clamp(static_cast<int>(modeValue),0,6);
+    if(!gTerrainStrokeActive||!gTerrainStrokeHasUndo){recordUndo(true);if(gTerrainStrokeActive)gTerrainStrokeHasUndo=true;}
+    const bool changed=gLandscape.sculpt(hitX,hitZ,radius,strength,mode);
+    gRenderer.setSculptCursor(true,nova::Vec3(hitX,hitY+0.02f,hitZ),nova::Vec3(0,1,0),radius);
+    if(!changed)return JNI_FALSE;
+    return syncLandscapeMeshFromData()?JNI_TRUE:JNI_FALSE;
 }
 
 JNIEXPORT jint JNICALL
