@@ -678,7 +678,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
             checkpointMeshEdit();core.evaluateGraph(graph);
             if(graph==0){meshyViewport.refreshFromDocument();status.setText("Geometry Nodes | "+core.getVertexCount()+" vertices, "+core.getFaceCount()+" faces evaluated");}
             else if(graph==1){meshyViewport.setMeshTint(core.getBaseColor());meshyViewport.setMaterialParameters(core.getMetallic(),core.getRoughness());status.setText("Shading | Shader graph evaluated");}
-            else {status.setText("Compositor | "+core.getCompositorNodeCount()+" image operations evaluated");showUvEditor(true);}
+            else {status.setText("Compositor | "+core.getCompositorNodeCount()+" image operations ready; they run on the next final render");}
             graphView.setNodes(core.getGraphNodeLabels(graph));
         });
         root.addView(actions,new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT,dp(44)));
@@ -756,7 +756,10 @@ public final class ManualSculptWorkspace extends FrameLayout {
         try {
             int width=Math.max(640,Math.min(1280,meshyViewport.getWidth()*2));
             int height=Math.max(360,Math.min(720,(int)(width*(meshyViewport.getHeight()/(float)Math.max(1,meshyViewport.getWidth())))));
-            android.graphics.Bitmap bitmap=meshyViewport.renderFinalImage(width,height);
+            android.graphics.Bitmap raw=meshyViewport.renderFinalImage(width,height);
+            int[] sourcePixels=new int[width*height];raw.getPixels(sourcePixels,0,width,0,0,width,height);raw.recycle();
+            int[] finalPixels=meshyViewport.getDocumentCore().evaluateCompositor(sourcePixels,width,height);
+            android.graphics.Bitmap bitmap=android.graphics.Bitmap.createBitmap(finalPixels,width,height,android.graphics.Bitmap.Config.ARGB_8888);
             File dir=new File(activity.getFilesDir(),"Meshy3D/Renders");
             if(!dir.exists()&&!dir.mkdirs())throw new java.io.IOException("Could not create render folder");
             File output=new File(dir,"Meshy3D-Render-"+System.currentTimeMillis()+".png");
