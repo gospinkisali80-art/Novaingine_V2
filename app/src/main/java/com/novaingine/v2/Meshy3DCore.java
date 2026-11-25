@@ -280,7 +280,25 @@ public final class Meshy3DCore {
         if(faceUvs==null)return null;float[][][] out=new float[faceUvs.length][][];
         for(int i=0;i<out.length;i++){out[i]=new float[faceUvs[i].length][2];for(int j=0;j<out[i].length;j++)out[i][j]=faceUvs[i][j].clone();}return out;
     }
-    public void selectUvIsland(int index){selectedUvIsland=index>=0&&index<islands.size()?index:-1;}
+    public void selectUvIsland(int index){
+        selectedUvIsland=index>=0&&index<islands.size()?index:-1;selectedFaces.clear();selectedVertices.clear();
+        if(selectedUvIsland>=0)for(int fi:islands.get(selectedUvIsland).faces){selectedFaces.set(fi);for(int id:faces.get(fi).vertices)selectedVertices.set(id);}
+    }
+    public void packUvIslands(){
+        if(faceUvs==null||islands.isEmpty())return;
+        int cols=Math.max(1,(int)Math.ceil(Math.sqrt(islands.size()))),rows=(int)Math.ceil(islands.size()/(float)cols);
+        float tw=1f/cols,th=1f/rows,margin=.025f;
+        for(int i=0;i<islands.size();i++){
+            UvIsland island=islands.get(i);float minU=Float.MAX_VALUE,minV=Float.MAX_VALUE,maxU=-Float.MAX_VALUE,maxV=-Float.MAX_VALUE;
+            for(int fi:island.faces)for(float[] uv:faceUvs[fi]){minU=Math.min(minU,uv[0]);minV=Math.min(minV,uv[1]);maxU=Math.max(maxU,uv[0]);maxV=Math.max(maxV,uv[1]);}
+            float rw=Math.max(.0001f,maxU-minU),rh=Math.max(.0001f,maxV-minV);
+            float scale=Math.min((tw-2*margin)/rw,(th-2*margin)/rh);
+            float usedW=rw*scale,usedH=rh*scale;
+            float ox=(i%cols)*tw+(tw-usedW)*.5f,oy=(i/cols)*th+(th-usedH)*.5f;
+            for(int fi:island.faces)for(float[] uv:faceUvs[fi]){uv[0]=ox+(uv[0]-minU)*scale;uv[1]=oy+(uv[1]-minV)*scale;}
+            island.minU=ox;island.minV=oy;island.maxU=ox+usedW;island.maxV=oy+usedH;
+        }revision++;
+    }
     public int getSelectedUvIsland(){return selectedUvIsland;}
     public void transformSelectedUv(float du,float dv,float scale,float angle){
         if(faceUvs==null||selectedUvIsland<0||selectedUvIsland>=islands.size())return;
