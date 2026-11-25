@@ -1442,8 +1442,9 @@ public final class MainActivity extends Activity
         textureHelp.setTextColor(Color.DKGRAY); textureHelp.setTextSize(11);
         content.addView(textureHelp);
         Spinner textureLayerPicker = new Spinner(this);
+        String[] textureLayerNames = {"Grass", "Rock", "Sand", "Snow"};
         ArrayAdapter<String> textureLayerAdapter = new ArrayAdapter<>(this,
-                android.R.layout.simple_spinner_item, materialNames);
+                android.R.layout.simple_spinner_item, textureLayerNames);
         textureLayerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         textureLayerPicker.setAdapter(textureLayerAdapter);
         content.addView(textureLayerPicker, new LinearLayout.LayoutParams(-1, dp(42)));
