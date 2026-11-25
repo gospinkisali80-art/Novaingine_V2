@@ -387,6 +387,9 @@ public final class Meshy3DCore {
             else if("Invert".equals(n.type)){for(int i=0;i<out.length;i++){int c=out[i];out[i]=0xFF000000|((255-((c>>16)&255))<<16)|((255-((c>>8)&255))<<8)|(255-(c&255));}}
             else if("Contrast".equals(n.type)){float f=(float)((259*(n.value+255))/(255*(259-n.value)));for(int i=0;i<out.length;i++){int c=out[i],r=clamp(f*(((c>>16)&255)-128)+128),g=clamp(f*(((c>>8)&255)-128)+128),b=clamp(f*((c&255)-128)+128);out[i]=0xFF000000|r<<16|g<<8|b;}}
             else if("Blur".equals(n.type)&&width>2&&height>2){int[] src=out.clone();int radius=Math.max(1,Math.min(8,Math.round(n.value)));for(int y=0;y<height;y++)for(int x=0;x<width;x++){int rr=0,gg=0,bb=0,count=0;for(int oy=-radius;oy<=radius;oy++)for(int ox=-radius;ox<=radius;ox++){int xx=x+ox,yy=y+oy;if(xx<0||yy<0||xx>=width||yy>=height)continue;int q=src[yy*width+xx];rr+=(q>>16)&255;gg+=(q>>8)&255;bb+=q&255;count++;}out[y*width+x]=0xFF000000|(rr/count)<<16|(gg/count)<<8|(bb/count);}}
+            else if("Color Balance".equals(n.type)){for(int i=0;i<out.length;i++){int c=out[i],r=clamp(((c>>16)&255)+n.value),g=clamp(((c>>8)&255)+n.value*.25f),b=clamp((c&255)-n.value);out[i]=0xFF000000|r<<16|g<<8|b;}}
+            else if("Alpha Over".equals(n.type)){int overlay=baseColor;for(int i=0;i<out.length;i++)out[i]=blend(out[i],overlay,.25f);}
+            else if("Composite".equals(n.type)){/* Final output node: retain the evaluated image. */}
         }return out;
     }
     private int clamp(float v){return Math.max(0,Math.min(255,Math.round(v)));}
