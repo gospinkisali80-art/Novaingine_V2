@@ -75,6 +75,9 @@ public final class Meshy3DViewport extends View {
     public void mergeSelected(float distance){document.mergeSelectedByDistance(distance);syncViewportFromCore();}
     public void smoothTopology(float amount,int iterations){document.smooth(amount,iterations);syncViewportFromCore();}
     public void markSeams(boolean clear){document.markSelectedSeams(clear);invalidate();}
+    public void pinSelectedUvs(boolean pin){document.pinSelectedUvs(pin);invalidate();}
+    public void packUvIslands(){document.packUvIslands();invalidate();}
+    public void selectLinkedUvIsland(){document.selectLinkedFromCurrent();invalidate();}
     public void unwrapMesh(){syncCoreFromViewport();document.unwrapPlanar();generatePlanarUv();invalidate();}
     public void createPaintTexture(int width,int height,int color){document.createTexture(width,height,color);}
     public void paintTexturePixel(int x,int y,int color,float radius,float opacity){
