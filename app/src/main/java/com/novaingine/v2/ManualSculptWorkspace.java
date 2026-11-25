@@ -331,7 +331,16 @@ public final class ManualSculptWorkspace extends FrameLayout {
 
     private void addDockItems(LinearLayout dock, String heading, String... items) {
         dock.addView(dockHeading(heading));
-        for (String item : items) dock.addView(dockItem(item, false));
+        ScrollView scroll = new ScrollView(activity);
+        scroll.setFillViewport(false);
+        scroll.setVerticalScrollBarEnabled(true);
+        LinearLayout content = new LinearLayout(activity);
+        content.setOrientation(LinearLayout.VERTICAL);
+        scroll.addView(content, new ScrollView.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        for (String item : items) content.addView(dockItem(item, false));
+        dock.addView(scroll, new LinearLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, 0, 1f));
     }
 
     private void renderWorkspaceLayout(int index) {
