@@ -8,7 +8,8 @@ public final class Meshy3DSoftwareRenderer {
     private Meshy3DSoftwareRenderer(){}
     private static final class V {float x,y,z,sx,sy,depth;V(float x,float y,float z){this.x=x;this.y=y;this.z=z;}}
     public static Bitmap render(float[][] vertices,int[][] faces,int width,int height,
-                                float yaw,float pitch,int color,float metallic,float roughness){
+                                float yaw,float pitch,int color,float metallic,float roughness,
+                                int[] texture,int textureWidth,int textureHeight,float[][][] faceUvs){
         width=Math.max(64,Math.min(2048,width));height=Math.max(64,Math.min(2048,height));
         int[] pixels=new int[width*height];float[] depth=new float[width*height];
         Arrays.fill(depth,Float.POSITIVE_INFINITY);
@@ -33,12 +34,17 @@ public final class Meshy3DSoftwareRenderer {
             if(dot(n,new float[]{-a.x,-a.y,5.2f-a.z})<=0)continue;
             for(int tri=1;tri<face.length-1;tri++)
                 raster(projected[face[0]],projected[face[tri]],projected[face[tri+1]],n,width,height,pixels,depth,
-                        br,bg,bb,metal,rough,light,view);
+                        br,bg,bb,metal,rough,light,view,
+                        faceUvs!=null&&fi<faceUvs.length&&faceUvs[fi].length>tri+1?faceUvs[fi][0]:null,
+                        faceUvs!=null&&fi<faceUvs.length&&faceUvs[fi].length>tri+1?faceUvs[fi][tri]:null,
+                        faceUvs!=null&&fi<faceUvs.length&&faceUvs[fi].length>tri+1?faceUvs[fi][tri+1]:null,
+                        texture,textureWidth,textureHeight);
         }
         return Bitmap.createBitmap(pixels,width,height,Bitmap.Config.ARGB_8888);
     }
     private static void raster(V a,V b,V c,float[] n,int w,int h,int[] pixels,float[] zbuf,
-                               float br,float bg,float bb,float metal,float rough,float[] light,float[] view){
+                               float br,float bg,float bb,float metal,float rough,float[] light,float[] view,
+                               float[] uva,float[] uvb,float[] uvc,int[] texture,int tw,int th){
         float area=edge(a.sx,a.sy,b.sx,b.sy,c.sx,c.sy);if(Math.abs(area)<.0001f)return;
         int minX=Math.max(0,(int)Math.floor(Math.min(a.sx,Math.min(b.sx,c.sx))));
         int maxX=Math.min(w-1,(int)Math.ceil(Math.max(a.sx,Math.max(b.sx,c.sx))));
@@ -56,10 +62,17 @@ public final class Meshy3DSoftwareRenderer {
             float wc=1-wa-wb;if(wa<0||wb<0||wc<0)continue;
             float z=wa*a.depth+wb*b.depth+wc*c.depth;int index=y*w+x;
             if(z>=zbuf[index])continue;zbuf[index]=z;
+            float texR=1,texG=1,texB=1;
+            if(texture!=null&&tw>0&&th>0&&uva!=null&&uvb!=null&&uvc!=null){
+                float u=wa*uva[0]+wb*uvb[0]+wc*uvc[0],v=wa*uva[1]+wb*uvb[1]+wc*uvc[1];
+                int tx=Math.max(0,Math.min(tw-1,(int)(u*(tw-1))));
+                int ty=Math.max(0,Math.min(th-1,(int)((1-v)*(th-1))));
+                int tex=texture[ty*tw+tx];texR=((tex>>16)&255)/255f;texG=((tex>>8)&255)/255f;texB=(tex&255)/255f;
+            }
             float fog=Math.max(.0f,Math.min(.35f,(z-3f)*.035f));
-            int r=clamp((br*diffuse+sr*specular)*(1-fog)*255+fog*80);
-            int g=clamp((bg*diffuse+sg*specular)*(1-fog)*255+fog*90);
-            int bl=clamp((bb*diffuse+sb*specular)*(1-fog)*255+fog*105);
+            int r=clamp((br*texR*diffuse+sr*specular)*(1-fog)*255+fog*80);
+            int g=clamp((bg*texG*diffuse+sg*specular)*(1-fog)*255+fog*90);
+            int bl=clamp((bb*texB*diffuse+sb*specular)*(1-fog)*255+fog*105);
             pixels[index]=0xFF000000|r<<16|g<<8|bl;
         }
     }
