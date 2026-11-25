@@ -127,6 +127,7 @@ public final class NativeBridge {
             float screenX, float screenY, float radius, float strength, int mode, int phase
     );
     public static native boolean nativeSetTerrainHeights(float[] heights);
+    public static native boolean nativeSetTerrainHeightmapPng16(byte[] pngBytes);
     public static native boolean nativeSetTerrainTexture(int layer, int mapType, int width, int height, int[] argbPixels);
     public static native boolean nativePaintTerrainAtScreen(float screenX, float screenY, float radius, float strength, int material, int phase);
     public static native boolean nativeRunTerrainErosion(int type, int iterations, float strength);
