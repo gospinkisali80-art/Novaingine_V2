@@ -136,6 +136,7 @@ precision highp float;
 layout(location=0) in vec3 aPosition;
 layout(location=1) in vec3 aNormal;
 layout(location=2) in vec2 aUV;
+layout(location=3) in vec4 aLayerWeights;
 
 uniform mat4 uViewProjection;
 uniform mat4 uModel;
@@ -144,6 +145,7 @@ uniform mat4 uLightViewProjection;
 out vec3 vWorldPosition;
 out vec3 vNormal;
 out vec2 vUV;
+out vec4 vLayerWeights;
 out vec4 vShadowPosition;
 
 void main() {
@@ -151,6 +153,7 @@ void main() {
     vWorldPosition = world.xyz;
     vNormal = normalize(mat3(uModel) * aNormal);
     vUV = aUV;
+    vLayerWeights = aLayerWeights;
     vShadowPosition = uLightViewProjection * world;
     gl_Position = uViewProjection * world;
 }
@@ -163,6 +166,7 @@ precision highp float;
 in vec3 vWorldPosition;
 in vec3 vNormal;
 in vec2 vUV;
+in vec4 vLayerWeights;
 in vec4 vShadowPosition;
 
 uniform vec4 uColor;
@@ -187,6 +191,7 @@ uniform float uFogDensity;
 uniform float uFogHeight;
 uniform float uFogFalloff;
 uniform vec3 uFogColor;
+uniform int uTerrainMaterial;
 
 out vec4 fragColor;
 
@@ -276,6 +281,18 @@ void main() {
         clamp(uBaseColor, vec3(0.0), vec3(1.0)),
         vec3(2.2)
     );
+
+    if (uTerrainMaterial == 1) {
+        float detail = 0.5 + 0.5 * sin(vWorldPosition.x * 2.7) * cos(vWorldPosition.z * 2.1);
+        vec3 grass = mix(vec3(0.075, 0.16, 0.045), vec3(0.22, 0.34, 0.10), detail);
+        vec3 rock = mix(vec3(0.19, 0.19, 0.18), vec3(0.42, 0.40, 0.36), detail);
+        vec3 sand = mix(vec3(0.42, 0.32, 0.18), vec3(0.72, 0.58, 0.34), detail);
+        vec3 snow = mix(vec3(0.68, 0.74, 0.78), vec3(0.96, 0.98, 1.0), detail);
+        vec3 baseTerrain = grass * vLayerWeights.x + rock * vLayerWeights.y + sand * vLayerWeights.z;
+        albedo = pow(max(mix(baseTerrain, snow, clamp(vLayerWeights.w, 0.0, 1.0)), vec3(0.001)), vec3(2.2));
+        roughness = mix(0.92, 0.72, clamp(vLayerWeights.w, 0.0, 1.0));
+        metallic = 0.0;
+    }
 
     // Material inspection modes bypass lighting and display the raw value.
     if (uViewMode == 5) {
@@ -1223,6 +1240,7 @@ void Renderer::bindObjectUniforms(
     );
     setFloatUniform(program, "uRoughness", object.material.roughness);
     setFloatUniform(program, "uMetallic", object.material.metallic);
+    setIntUniform(program, "uTerrainMaterial", object.name == "Landscape Terrain" ? 1 : 0);
 }
 
 bool Renderer::ensureObjectGPU(const SceneObject& object) {
@@ -1305,6 +1323,12 @@ bool Renderer::uploadMesh(uint32_t objectId, const Mesh& mesh) {
     glVertexAttribPointer(
         2, 2, GL_FLOAT, GL_FALSE, sizeof(nova::Vertex),
         reinterpret_cast<void*>(offsetof(nova::Vertex, u))
+    );
+
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(
+        3, 4, GL_FLOAT, GL_FALSE, sizeof(nova::Vertex),
+        reinterpret_cast<void*>(offsetof(nova::Vertex, layerWeights))
     );
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffer.indexBuffer);
