@@ -527,7 +527,6 @@ public final class ManualSculptWorkspace extends FrameLayout {
         if (workspaceLeftDock != null) workspaceLeftDock.setVisibility(visibility);
         if (workspaceRightDock != null) workspaceRightDock.setVisibility(visibility);
         if (workspaceBottomDock != null) workspaceBottomDock.setVisibility(visibility);
-        if (workspaceToolbar != null) workspaceToolbar.setVisibility(visibility);
         if (status != null) status.setText(viewportFocusMode
                 ? "Meshy3D  |  Viewport Focus  •  Tap viewport to restore panels"
                 : "Meshy3D  |  " + WORKSPACE_NAMES[activeWorkspaceIndex] + " Workspace");
