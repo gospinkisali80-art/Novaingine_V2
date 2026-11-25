@@ -120,8 +120,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
         setBackgroundColor(Color.TRANSPARENT);
         setClickable(false);
 
-        SculptTouchSurface viewportTouchSurface = new SculptTouchSurface();
-        addView(viewportTouchSurface, new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+        // Meshy3D owns this viewport and its starter cube; it is not the Novaingine GL scene.
+        Meshy3DViewport meshyViewport = new Meshy3DViewport(activity);
+        addView(meshyViewport, new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
         // Meshy3D is being rebuilt from the Blender reference one section at a time.
         // This pass contains ONLY the complete top header; the native viewport remains below.
