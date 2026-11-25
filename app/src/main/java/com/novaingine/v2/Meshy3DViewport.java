@@ -333,6 +333,24 @@ public final class Meshy3DViewport extends View {
         meshKeyframes.put(Math.max(0,frame),snapshot);
     }
     public void deleteMeshKeyframe(int frame){meshKeyframes.remove(Math.max(0,frame));}
+    public int getMeshKeyframeCount(){return meshKeyframes.size();}
+    public java.util.ArrayList<Integer> getMeshKeyframeFrames(){
+        java.util.ArrayList<Integer> frames=new java.util.ArrayList<>(meshKeyframes.keySet());
+        java.util.Collections.sort(frames);return frames;
+    }
+    public void applyAnimationFrame(float frame){
+        if(meshKeyframes.isEmpty())return;
+        java.util.ArrayList<Integer> keys=getMeshKeyframeFrames();
+        int before=keys.get(0),after=keys.get(keys.size()-1);
+        for(int k:keys){if(k<=frame)before=k;if(k>=frame){after=k;break;}}
+        float[][] a=meshKeyframes.get(before),b=meshKeyframes.get(after);
+        if(a==null||b==null||a.length!=vertices.length||b.length!=vertices.length)return;
+        float t=after==before?0f:Math.max(0f,Math.min(1f,(frame-before)/(float)(after-before)));
+        for(int i=0;i<vertices.length;i++)for(int axis=0;axis<3;axis++)
+            vertices[i][axis]=a[i][axis]+(b[i][axis]-a[i][axis])*t;
+        syncCoreFromViewport();invalidate();
+    }
+
 
     /** Apply a geometric transform to every vertex of the active Meshy3D object. */
     public void transformMesh(int operation, float x, float y, float z) {
