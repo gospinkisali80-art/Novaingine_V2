@@ -2712,28 +2712,12 @@ Java_com_novaingine_v2_NativeBridge_nativeSetTerrainHeights(
 }
 
 JNIEXPORT jfloatArray JNICALL
-Java_com_novaingine_v2_NativeBridge_nativeGetTerrainHeights(
-    JNIEnv* env, jclass
-) {
-    std::lock_guard<std::mutex> lock(engineMutex);
-    if (!gInitialized) return nullptr;
-    for (const nova::SceneObject& object : gScene.getObjects()) {
-        if (object.name != "Landscape Terrain") continue;
-        auto meshIt = gCustomMeshes.find(object.id);
-        if (meshIt == gCustomMeshes.end()) return nullptr;
-        const auto& vertices = meshIt->second.getVertices();
-        if (vertices.size() != 129u * 129u) return nullptr;
-        std::vector<jfloat> heights(vertices.size());
-        for (size_t i = 0; i < vertices.size(); ++i) heights[i] = vertices[i].position.y;
-        jfloatArray result = env->NewFloatArray(static_cast<jsize>(heights.size()));
-        if (!result) return nullptr;
-     JNIEXPORT jfloatArray JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeGetTerrainHeights(JNIEnv* env, jclass) {
     std::lock_guard<std::mutex> lock(engineMutex);
-    if(!gInitialized||!gLandscape.valid())return nullptr;
-    const auto heights=gLandscape.heights();
-    jfloatArray result=env->NewFloatArray(static_cast<jsize>(heights.size()));
-    if(result)env->SetFloatArrayRegion(result,0,static_cast<jsize>(heights.size()),heights.data());
+    if (!gInitialized || !gLandscape.valid()) return nullptr;
+    const auto heights = gLandscape.heights();
+    jfloatArray result = env->NewFloatArray(static_cast<jsize>(heights.size()));
+    if (result) env->SetFloatArrayRegion(result, 0, static_cast<jsize>(heights.size()), heights.data());
     return result;
 }
 
