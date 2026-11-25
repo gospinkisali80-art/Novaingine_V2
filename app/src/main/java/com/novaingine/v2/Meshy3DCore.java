@@ -242,6 +242,32 @@ public final class Meshy3DCore {
     }
     public int getUvIslandCount(){return islands.size();}
     public List<UvIsland> getUvIslands(){return Collections.unmodifiableList(islands);}
+    private int selectedUvIsland=-1;
+    public float[][][] copyFaceUvs(){
+        if(faceUvs==null)return null;float[][][] out=new float[faceUvs.length][][];
+        for(int i=0;i<out.length;i++){out[i]=new float[faceUvs[i].length][2];for(int j=0;j<out[i].length;j++)out[i][j]=faceUvs[i][j].clone();}return out;
+    }
+    public void selectUvIsland(int index){selectedUvIsland=index>=0&&index<islands.size()?index:-1;}
+    public int getSelectedUvIsland(){return selectedUvIsland;}
+    public void transformSelectedUv(float du,float dv,float scale,float angle){
+        if(faceUvs==null||selectedUvIsland<0||selectedUvIsland>=islands.size())return;
+        UvIsland island=islands.get(selectedUvIsland);float cx=0,cy=0;int n=0;
+        for(int fi:island.faces)for(float[] uv:faceUvs[fi]){cx+=uv[0];cy+=uv[1];n++;}
+        if(n==0)return;cx/=n;cy/=n;float co=(float)Math.cos(angle),si=(float)Math.sin(angle);
+        for(int fi:island.faces)for(float[] uv:faceUvs[fi]){
+            float x=(uv[0]-cx)*scale,y=(uv[1]-cy)*scale;
+            uv[0]=cx+x*co-y*si+du;uv[1]=cy+x*si+y*co+dv;
+        }revision++;
+    }
+    public int findUvIsland(float u,float v){
+        if(faceUvs==null)return -1;
+        for(int fi=0;fi<faceUvs.length;fi++){float[][] poly=faceUvs[fi];boolean inside=false;
+            for(int i=0,j=poly.length-1;i<poly.length;j=i++){
+                float xi=poly[i][0],yi=poly[i][1],xj=poly[j][0],yj=poly[j][1];
+                if(((yi>v)!=(yj>v))&&(u<(xj-xi)*(v-yi)/(yj-yi+1e-8f)+xi))inside=!inside;
+            }if(inside){for(int k=0;k<islands.size();k++)if(islands.get(k).faces.contains(fi))return k;}
+        }return -1;
+    }
     public void createTexture(int width,int height,int color){
         textureWidth=Math.max(16,Math.min(4096,width));textureHeight=Math.max(16,Math.min(4096,height));
         texturePixels=new int[textureWidth*textureHeight];Arrays.fill(texturePixels,color);revision++;
