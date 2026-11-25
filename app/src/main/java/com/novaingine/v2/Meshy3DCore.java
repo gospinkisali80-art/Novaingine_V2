@@ -210,12 +210,12 @@ public final class Meshy3DCore {
             for(int v:faces.get(fi).vertices){if(pin)pins.add((long)v);else pins.remove((long)v);}
         revision++;
     }
-    public void unwrapPlanar(){
-        faceUvs=new float[faces.size()][][];islands.clear();
-        // Create seams at hard normal discontinuities, preserving explicitly marked seams.
+    public void unwrapPlanar(){unwrapLSCM();}
+    public void unwrapLSCM(){
+        faceUvs=null;islands.clear();
+        // Sharp normal discontinuities become default seams; user seams are retained.
         for(Edge edge:edges)if(edge.faces.size()==2){
-            float[] a=normal(faces.get(edge.faces.get(0)).vertices);
-            float[] b=normal(faces.get(edge.faces.get(1)).vertices);
+            float[] a=normal(faces.get(edge.faces.get(0)).vertices),b=normal(faces.get(edge.faces.get(1)).vertices);
             float la=(float)Math.sqrt(a[0]*a[0]+a[1]*a[1]+a[2]*a[2]);
             float lb=(float)Math.sqrt(b[0]*b[0]+b[1]*b[1]+b[2]*b[2]);
             if(la>1e-6&&lb>1e-6){
@@ -224,35 +224,14 @@ public final class Meshy3DCore {
             }
         }
         rebuildIslands();
-        int cols=Math.max(1,(int)Math.ceil(Math.sqrt(islands.size())));
-        int rows=Math.max(1,(int)Math.ceil(islands.size()/(float)cols));
-        float tileW=1f/cols,tileH=1f/rows,margin=.035f;
-        for(int islandIndex=0;islandIndex<islands.size();islandIndex++){
-            UvIsland island=islands.get(islandIndex);
-            float[] n={0,0,0};for(int fi:island.faces){float[] fn=normal(faces.get(fi).vertices);for(int k=0;k<3;k++)n[k]+=fn[k];}
-            float nl=(float)Math.sqrt(n[0]*n[0]+n[1]*n[1]+n[2]*n[2]);if(nl<1e-6)nl=1;
-            for(int k=0;k<3;k++)n[k]/=nl;
-            int[] first=faces.get(island.faces.get(0)).vertices;float[] p0=vertices.get(first[0]),p1=vertices.get(first[1]);
-            float[] u={p1[0]-p0[0],p1[1]-p0[1],p1[2]-p0[2]};
-            float dot=u[0]*n[0]+u[1]*n[1]+u[2]*n[2];for(int k=0;k<3;k++)u[k]-=dot*n[k];
-            float ul=(float)Math.sqrt(u[0]*u[0]+u[1]*u[1]+u[2]*u[2]);if(ul<1e-6){u=new float[]{1,0,0};ul=1;}
-            for(int k=0;k<3;k++)u[k]/=ul;
-            float[] v={n[1]*u[2]-n[2]*u[1],n[2]*u[0]-n[0]*u[2],n[0]*u[1]-n[1]*u[0]};
-            HashMap<Integer,float[]> projected=new HashMap<>();float minU=Float.MAX_VALUE,minV=Float.MAX_VALUE,maxU=-Float.MAX_VALUE,maxV=-Float.MAX_VALUE;
-            for(int fi:island.faces)for(int id:faces.get(fi).vertices)if(!projected.containsKey(id)){
-                float[] p=vertices.get(id);float pu=p[0]*u[0]+p[1]*u[1]+p[2]*u[2],pv=p[0]*v[0]+p[1]*v[1]+p[2]*v[2];
-                projected.put(id,new float[]{pu,pv});minU=Math.min(minU,pu);maxU=Math.max(maxU,pu);minV=Math.min(minV,pv);maxV=Math.max(maxV,pv);
+        faceUvs=Meshy3DUvUnwrapper.unwrap(copyVertices(),copyFaces(),islands);
+        for(UvIsland island:islands){
+            island.minU=Float.MAX_VALUE;island.minV=Float.MAX_VALUE;
+            island.maxU=-Float.MAX_VALUE;island.maxV=-Float.MAX_VALUE;
+            for(int fi:island.faces)if(faceUvs[fi]!=null)for(float[] uv:faceUvs[fi]){
+                island.minU=Math.min(island.minU,uv[0]);island.minV=Math.min(island.minV,uv[1]);
+                island.maxU=Math.max(island.maxU,uv[0]);island.maxV=Math.max(island.maxV,uv[1]);
             }
-            float rangeU=Math.max(.0001f,maxU-minU),rangeV=Math.max(.0001f,maxV-minV);
-            float scale=Math.min((tileW-2*margin)/rangeU,(tileH-2*margin)/rangeV);
-            float usedW=rangeU*scale,usedH=rangeV*scale;
-            float ox=(islandIndex%cols)*tileW+(tileW-usedW)*.5f;
-            float oy=(islandIndex/cols)*tileH+(tileH-usedH)*.5f;
-            for(int fi:island.faces){int[] f=faces.get(fi).vertices;float[][] uv=new float[f.length][2];
-                for(int j=0;j<f.length;j++){float[] q=projected.get(f[j]);uv[j][0]=ox+(q[0]-minU)*scale;uv[j][1]=oy+(q[1]-minV)*scale;}
-                faceUvs[fi]=uv;
-            }
-            island.minU=ox;island.minV=oy;island.maxU=ox+usedW;island.maxV=oy+usedH;
         }
         revision++;
     }
