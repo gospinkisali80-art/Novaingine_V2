@@ -742,9 +742,14 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private void showPaintColorDialog() {
         String[] names={"Clay Grey","Warm Orange","Blue","Green","Red","White"};
         int[] colors={0xFF9DAAB7,0xFFE79A45,0xFF5D9BEA,0xFF63B887,0xFFD85B5B,0xFFF2F2F2};
-        new android.app.AlertDialog.Builder(activity).setTitle("Mesh Material Color")
-                .setItems(names,(d,w)->{checkpointMeshEdit(); meshyViewport.setMeshTint(colors[w]);
-                    status.setText(WORKSPACE_NAMES[activeWorkspaceIndex]+" | Mesh material color updated");}).show();
+        boolean texturePaint=activeWorkspaceIndex==4;
+        new android.app.AlertDialog.Builder(activity).setTitle(texturePaint?"Texture Brush Color":"Mesh Material Color")
+                .setItems(names,(d,w)->{
+                    checkpointMeshEdit();
+                    if(texturePaint)meshyViewport.setPaintBrush(colors[w],18f,.9f);
+                    else meshyViewport.setMeshTint(colors[w]);
+                    status.setText(WORKSPACE_NAMES[activeWorkspaceIndex]+" | "+(texturePaint?"Pixel paint brush color updated":"Mesh material color updated"));
+                }).show();
     }
 
     private void saveViewportRender() {
