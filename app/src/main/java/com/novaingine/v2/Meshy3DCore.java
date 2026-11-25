@@ -486,8 +486,10 @@ public final class Meshy3DCore {
     public float[][] copyVertices(){float[][] out=new float[vertices.size()][3];for(int i=0;i<out.length;i++)System.arraycopy(vertices.get(i),0,out[i],0,3);return out;}
     public int[][] copyFaces(){int[][] out=new int[faces.size()][];for(int i=0;i<out.length;i++)out[i]=faces.get(i).vertices.clone();return out;}
     public void replaceGeometry(float[][] v,int[][] f){
+        boolean sameTopology=v.length==vertices.size()&&f.length==faces.size();
         vertices.clear();for(float[] p:v)vertices.add(p.clone());faces.clear();
-        for(int[] ids:f)faces.add(new Face(ids.clone()));clearSelection();rebuildEdges();revision++;
+        for(int[] ids:f)faces.add(new Face(ids.clone()));
+        if(!sameTopology)clearSelection();rebuildEdges();revision++;
     }
     public void selectNearestVertex(float x,float y,float cx,float cy,float unit,float yaw,float pitch,boolean additive){
         int best=-1;float bestD=Float.MAX_VALUE;
