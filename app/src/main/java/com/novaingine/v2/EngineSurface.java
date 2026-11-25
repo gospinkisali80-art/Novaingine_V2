@@ -446,6 +446,29 @@ public final class EngineSurface extends GLSurfaceView
         });
     }
 
+    public void createLandscapeWorldTile(int tileX, int tileZ, float[] heights,
+                                         java.util.function.Consumer<Boolean> callback) {
+        float[] copy = heights.clone();
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeCreateLandscapeWorldTile(tileX, tileZ, copy);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
+    }
+
+    public void removeLandscapeWorldTile(int tileX, int tileZ, java.util.function.Consumer<Boolean> callback) {
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeRemoveLandscapeWorldTile(tileX, tileZ);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
+    }
+
+    public void getLandscapeWorldTileCount(java.util.function.IntConsumer callback) {
+        queueEvent(() -> {
+            int count = NativeBridge.nativeGetLandscapeWorldTileCount();
+            if (callback != null) post(() -> callback.accept(count));
+        });
+    }
+
     public void setLandscapeChunkSize(int size, java.util.function.Consumer<Boolean> callback) {
         queueEvent(() -> {
             boolean ok = NativeBridge.nativeSetLandscapeChunkSize(size);
