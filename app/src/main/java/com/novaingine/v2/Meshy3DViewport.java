@@ -594,7 +594,18 @@ public final class Meshy3DViewport extends View {
     /** Serialize the actual editable Meshy3D mesh and viewport state. */
     public org.json.JSONObject exportDocumentState() {
         try {
+            syncCoreFromViewport();
             org.json.JSONObject state = new org.json.JSONObject();
+            state.put("core",document.exportState());
+            int[] texture=document.getTexturePixels();
+            if(texture!=null){
+                android.graphics.Bitmap image=android.graphics.Bitmap.createBitmap(texture,
+                        document.getTextureWidth(),document.getTextureHeight(),android.graphics.Bitmap.Config.ARGB_8888);
+                java.io.ByteArrayOutputStream bytes=new java.io.ByteArrayOutputStream();
+                image.compress(android.graphics.Bitmap.CompressFormat.PNG,100,bytes);image.recycle();
+                state.put("texturePng",android.util.Base64.encodeToString(bytes.toByteArray(),android.util.Base64.NO_WRAP));
+                state.put("textureWidth",document.getTextureWidth());state.put("textureHeight",document.getTextureHeight());
+            }
             state.put("meshSubdivisions", MESH_SUBDIVISIONS);
             state.put("vertexCount", vertices.length);
             org.json.JSONArray vertexArray = new org.json.JSONArray();
@@ -640,6 +651,20 @@ public final class Meshy3DViewport extends View {
     public boolean importDocumentState(org.json.JSONObject state) {
         if (state == null) return false;
         try {
+            org.json.JSONObject coreState=state.optJSONObject("core");
+            if(coreState!=null){
+                if(!document.importState(coreState))return false;
+                vertices=document.copyVertices();faces=document.copyFaces();vertexMask=new float[vertices.length];
+                String png=state.optString("texturePng","");
+                if(!png.isEmpty()){
+                    byte[] data=android.util.Base64.decode(png,android.util.Base64.DEFAULT);
+                    android.graphics.Bitmap image=android.graphics.BitmapFactory.decodeByteArray(data,0,data.length);
+                    if(image!=null){
+                        int w=image.getWidth(),h=image.getHeight();int[] pixels=new int[w*h];
+                        image.getPixels(pixels,0,w,0,0,w,h);image.recycle();document.setTexturePixels(pixels,w,h);
+                    }
+                }
+            }
             org.json.JSONArray savedVertices = state.getJSONArray("vertices");
             if (savedVertices.length() != vertices.length) return false;
             org.json.JSONArray savedMask = state.optJSONArray("mask");
