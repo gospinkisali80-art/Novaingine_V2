@@ -1491,6 +1491,23 @@ Java_com_novaingine_v2_NativeBridge_nativeSetSelectedTransform(
 }
 
 
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetSelectedMaterialColor(
+    JNIEnv*, jclass, jfloat redValue, jfloat greenValue, jfloat blueValue
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized) return JNI_FALSE;
+    nova::SceneObject* object = gScene.selected();
+    if (!object) return JNI_FALSE;
+    const float red = std::clamp(static_cast<float>(redValue), 0.0f, 1.0f);
+    const float green = std::clamp(static_cast<float>(greenValue), 0.0f, 1.0f);
+    const float blue = std::clamp(static_cast<float>(blueValue), 0.0f, 1.0f);
+    recordUndo();
+    object->color = nova::Color(red, green, blue, 1.0f);
+    object->material.baseColor = nova::Vec3(red, green, blue);
+    return JNI_TRUE;
+}
+
 JNIEXPORT void JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeBeginTransformEdit(JNIEnv*, jclass) {
     std::lock_guard<std::mutex> lock(engineMutex);
