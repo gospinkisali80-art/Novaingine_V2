@@ -368,6 +368,29 @@ public final class EngineSurface extends GLSurfaceView
         });
     }
 
+    public void selectLandscapeLayer(int index, java.util.function.Consumer<Boolean> callback) {
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeSelectLandscapeLayer(index);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
+    }
+
+    public void getLandscapeLayers(java.util.function.Consumer<String[]> callback) {
+        queueEvent(() -> {
+            int count = NativeBridge.nativeGetLandscapeLayerCount();
+            String[] names = new String[Math.max(0, count)];
+            for (int i = 0; i < names.length; i++) names[i] = NativeBridge.nativeGetLandscapeLayerName(i);
+            if (callback != null) post(() -> callback.accept(names));
+        });
+    }
+
+    public void getLandscapeChunkCount(java.util.function.IntConsumer callback) {
+        queueEvent(() -> {
+            int count = NativeBridge.nativeGetLandscapeChunkCount();
+            if (callback != null) post(() -> callback.accept(count));
+        });
+    }
+
     public void addLandscapeLayer(String name, java.util.function.IntConsumer callback) {
         queueEvent(() -> {
             int index = NativeBridge.nativeAddLandscapeLayer(name);
