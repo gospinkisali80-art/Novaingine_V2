@@ -455,6 +455,13 @@ public final class EngineSurface extends GLSurfaceView
         });
     }
 
+    public void copyMainLandscapeTile(int tileX, int tileZ, java.util.function.Consumer<Boolean> callback) {
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeCopyMainLandscapeTile(tileX, tileZ);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
+    }
+
     public void removeLandscapeWorldTile(int tileX, int tileZ, java.util.function.Consumer<Boolean> callback) {
         queueEvent(() -> {
             boolean ok = NativeBridge.nativeRemoveLandscapeWorldTile(tileX, tileZ);
