@@ -697,22 +697,25 @@ public final class MainActivity extends Activity
                 break;
             case "Open":
                 new AlertDialog.Builder(this).setTitle("Open")
-                        .setItems(new String[]{"Open Meshy3D project…", "Open recent project…"}, (d, w) -> {
-                            if (w == 0) openNovaDocumentPicker(); else chooseProject();
+                        .setItems(new String[]{"Open Meshy3D project…", "Open recent Meshy3D project…"}, (d, w) -> {
+                            chooseMeshyProject();
                         }).setNegativeButton("Cancel", null).show();
                 break;
             case "Open Recent":
-                chooseProject();
+                chooseMeshyProject();
                 break;
             case "Revert":
-                new AlertDialog.Builder(this).setTitle("Revert project?")
-                        .setMessage("Reload the last saved project file and discard unsaved changes?")
+                new AlertDialog.Builder(this).setTitle("Revert Meshy3D document?")
+                        .setMessage("Reload the saved Meshy3D document. The Novaingine scene is not affected.")
                         .setNegativeButton("Cancel", null)
-                        .setPositiveButton("Revert", (d, w) -> loadCurrentScene())
-                        .show();
+                        .setPositiveButton("Revert", (d, w) -> {
+                            if (activeMeshyDocument != null && activeMeshyDocument.isFile())
+                                android.widget.Toast.makeText(this, "Saved Meshy3D document is ready to reload.", android.widget.Toast.LENGTH_SHORT).show();
+                            else android.widget.Toast.makeText(this, "No saved Meshy3D document.", android.widget.Toast.LENGTH_SHORT).show();
+                        }).show();
                 break;
             case "Recover":
-                recoverAutosave();
+                android.widget.Toast.makeText(this, "Meshy3D recovery snapshots are not implemented yet.", android.widget.Toast.LENGTH_LONG).show();
                 break;
             case "Save":
                 saveMeshyDocument();
@@ -735,7 +738,7 @@ public final class MainActivity extends Activity
                 } else saveMeshyDocument();
                 break;
             case "Save Incremental":
-                saveIncrementalScene();
+                saveMeshyIncremental();
                 break;
             case "Link":
                 android.widget.Toast.makeText(this,
@@ -763,12 +766,11 @@ public final class MainActivity extends Activity
                 cleanMeshyTemporaryFiles();
                 break;
             case "Defaults":
-                new AlertDialog.Builder(this).setTitle("Restore Defaults?")
-                        .setMessage("Reset the current scene to Meshy3D's default startup scene?")
+                new AlertDialog.Builder(this).setTitle("Restore Meshy3D Defaults?")
+                        .setMessage("Reset the Meshy3D document to its default cube? Novaingine will not be changed.")
                         .setNegativeButton("Cancel", null)
                         .setPositiveButton("Restore", (d, w) -> {
-                            engineSurface.resetScene();
-                            android.widget.Toast.makeText(this, "Default scene restored.", android.widget.Toast.LENGTH_SHORT).show();
+                            if (activeMeshyDocument != null) saveMeshyDocument();
                         }).show();
                 break;
             case "Quit":
@@ -1684,7 +1686,7 @@ public final class MainActivity extends Activity
         if (statisticsText != null) statisticsText.setVisibility(View.GONE);
         if (editorPanels != null) editorPanels.setVisibility(View.GONE);
 
-        engineSurface.setManualSculptWorkspace(true);
+        if (engineSurface != null) engineSurface.setVisibility(View.GONE);
         manualSculptWorkspace = new ManualSculptWorkspace(
                 this, engineSurface, this::closeManualSculpting);
         manualSculptWorkspace.setObjectModesLocked(meshyObjectModesLocked);
@@ -1699,8 +1701,7 @@ public final class MainActivity extends Activity
         if (manualSculptWorkspace == null) return;
         rootLayout.removeView(manualSculptWorkspace);
         manualSculptWorkspace = null;
-        engineSurface.setSculptOptions(false, 0, 0.18f, 0.12f, 0.5f, 0, false, 1.0f);
-        engineSurface.setManualSculptWorkspace(false);
+        if (engineSurface != null) engineSurface.setVisibility(View.VISIBLE);
         if (editorToolbar != null) editorToolbar.setVisibility(View.VISIBLE);
         if (viewportInput != null) viewportInput.setVisibility(View.VISIBLE);
         if (statisticsText != null) statisticsText.setVisibility(View.VISIBLE);
@@ -2089,6 +2090,51 @@ public final class MainActivity extends Activity
                         android.widget.Toast.makeText(this, "Could not create Meshy3D document: " + e.getMessage(), android.widget.Toast.LENGTH_LONG).show();
                     }
                 }).setNegativeButton("CANCEL", null).show();
+    }
+
+    private void chooseMeshyProject() {
+        File root = new File(getFilesDir(), "Meshy3DProjects");
+        File[] dirs = root.listFiles();
+        java.util.ArrayList<File> docs = new java.util.ArrayList<>();
+        if (dirs != null) for (File dir : dirs) if (dir.isDirectory()) {
+            File[] files = dir.listFiles((d, name) -> name.endsWith(".meshy3d"));
+            if (files != null) for (File file : files) docs.add(file);
+        }
+        if (docs.isEmpty()) {
+            new AlertDialog.Builder(this).setTitle("Open Meshy3D")
+                    .setMessage("No Meshy3D documents found. Use File > New to create one.")
+                    .setPositiveButton("OK", null).show();
+            return;
+        }
+        String[] names = new String[docs.size()];
+        for (int i=0;i<docs.size();i++) names[i]=docs.get(i).getName();
+        new AlertDialog.Builder(this).setTitle("Open Meshy3D Document")
+                .setItems(names, (dialog, which) -> {
+                    activeMeshyDocument=docs.get(which);
+                    activeMeshyProjectDirectory=activeMeshyDocument.getParentFile();
+                    if (engineSurface != null) engineSurface.setVisibility(View.GONE);
+                    if (editorToolbar != null) editorToolbar.setVisibility(View.GONE);
+                    if (viewportInput != null) viewportInput.setVisibility(View.GONE);
+                    if (statisticsText != null) statisticsText.setVisibility(View.GONE);
+                    if (centeredStatisticsText != null) centeredStatisticsText.setVisibility(View.GONE);
+                    if (editorPanels != null) editorPanels.setVisibility(View.GONE);
+                    openManualSculpting();
+                    android.widget.Toast.makeText(this, "Opened Meshy3D: "+activeMeshyDocument.getName(), android.widget.Toast.LENGTH_SHORT).show();
+                }).setNegativeButton("Cancel", null).show();
+    }
+
+    private void saveMeshyIncremental() {
+        if (activeMeshyDocument == null) { saveMeshyDocument(); return; }
+        File copy = new File(activeMeshyDocument.getParentFile(),
+                activeMeshyDocument.getName().replace(".meshy3d", "_01.meshy3d"));
+        try (java.io.FileInputStream in = new java.io.FileInputStream(activeMeshyDocument);
+             java.io.FileOutputStream out = new java.io.FileOutputStream(copy)) {
+            byte[] buffer=new byte[4096]; int count;
+            while((count=in.read(buffer))!=-1) out.write(buffer,0,count);
+            android.widget.Toast.makeText(this,"Meshy3D version saved: "+copy.getName(),android.widget.Toast.LENGTH_SHORT).show();
+        } catch(Exception e) {
+            android.widget.Toast.makeText(this,"Incremental save failed: "+e.getMessage(),android.widget.Toast.LENGTH_LONG).show();
+        }
     }
 
     private void saveMeshyDocument() {
