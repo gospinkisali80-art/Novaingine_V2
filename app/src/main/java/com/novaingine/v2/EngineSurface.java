@@ -464,6 +464,13 @@ public final class EngineSurface extends GLSurfaceView
         queueEvent(NativeBridge::nativeResetScene);
     }
 
+    public void modelSelectedMesh(int operation, int elementIndex, float amount, java.util.function.IntConsumer callback) {
+        queueEvent(() -> {
+            int result = NativeBridge.nativeModelSelectedMesh(operation, elementIndex, amount);
+            if (callback != null) post(() -> callback.accept(result));
+        });
+    }
+
     public void undoScene() {
         queueEvent(NativeBridge::nativeUndo);
     }
