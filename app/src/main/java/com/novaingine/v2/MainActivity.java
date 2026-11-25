@@ -1113,9 +1113,12 @@ public final class MainActivity extends Activity
             fields[i] = field;
         }
 
+        ScrollView landscapeScroll = new ScrollView(this);
+        landscapeScroll.addView(content);
+
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Landscape Tools")
-                .setView(content)
+                .setView(landscapeScroll)
                 .setNegativeButton("Close", null)
                 .create();
 
