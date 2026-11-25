@@ -104,7 +104,7 @@ public final class Meshy3DViewport extends View {
             float centerZ=(a[2]+b[2]+c[2]+cameraPoint(V[face[3]][0],V[face[3]][1],V[face[3]][2])[2])*0.25f;
             // Camera looks toward negative camera-Z; visible outward normals face camera.
             if(nx*0f+ny*0f+nz > 0.0001f) {
-                order[count]=f; depth[count]=centerZ; count++;
+                order[count]=f; depth[f]=centerZ; count++;
             }
         }
         for(int i=0;i<count;i++) for(int j=i+1;j<count;j++) if(depth[order[i]]>depth[order[j]]){
