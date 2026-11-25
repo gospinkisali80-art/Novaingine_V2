@@ -847,6 +847,9 @@ public final class MainActivity extends Activity
     private static final int REQUEST_IMPORT_HEIGHTMAP16 = 7415;
     private static final int REQUEST_IMPORT_HEIGHTMAP16_PNG = 7418;
     private static final int REQUEST_EXPORT_HEIGHTMAP16_PNG = 7419;
+    private static final int REQUEST_IMPORT_WORLD_TILE_RAW16 = 7420;
+    private int pendingWorldTileX = 1;
+    private int pendingWorldTileZ = 0;
     private static final int REQUEST_EXPORT_HEIGHTMAP16 = 7416;
     private static final int REQUEST_IMPORT_TERRAIN_TEXTURE = 7417;
     private int pendingTerrainTextureLayer = 0;
@@ -889,6 +892,16 @@ public final class MainActivity extends Activity
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("*/*");
         startActivityForResult(intent, REQUEST_IMPORT_HEIGHTMAP16);
+    }
+
+    private void openLandscapeWorldTilePicker(int tileX, int tileZ) {
+        pendingWorldTileX = Math.max(-10000, Math.min(10000, tileX));
+        pendingWorldTileZ = Math.max(-10000, Math.min(10000, tileZ));
+        closeToolsDrawer();
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        startActivityForResult(intent, REQUEST_IMPORT_WORLD_TILE_RAW16);
     }
 
     private void openTerrainHeightmap16PngExport() {
@@ -980,6 +993,52 @@ public final class MainActivity extends Activity
                             android.widget.Toast.LENGTH_LONG).show());
                 }
             }, "Nova-Terrain-Texture-Import").start();
+            return;
+        }
+
+        if (requestCode == REQUEST_IMPORT_WORLD_TILE_RAW16) {
+            final int tileX = pendingWorldTileX, tileZ = pendingWorldTileZ;
+            if (tileX == 0 && tileZ == 0) {
+                android.widget.Toast.makeText(this, "Tile 0, 0 is the main landscape. Choose another tile coordinate.",
+                        android.widget.Toast.LENGTH_LONG).show();
+                return;
+            }
+            new Thread(() -> {
+                try (InputStream input = getContentResolver().openInputStream(uri);
+                     java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream()) {
+                    if (input == null) throw new IllegalStateException("Could not open world tile heightmap.");
+                    byte[] buffer = new byte[8192]; int read;
+                    while ((read = input.read(buffer)) != -1) {
+                        if (bytes.size() + read > 100000)
+                            throw new IllegalArgumentException("World tile RAW16 file is too large.");
+                        bytes.write(buffer, 0, read);
+                    }
+                    byte[] raw = bytes.toByteArray();
+                    if (raw.length != 129 * 129 * 2)
+                        throw new IllegalArgumentException("Expected 33,282 bytes: 129 x 129 unsigned 16-bit little-endian samples.");
+                    float[] heights = new float[129 * 129];
+                    for (int i = 0; i < heights.length; i++) {
+                        int value = (raw[i * 2] & 0xFF) | ((raw[i * 2 + 1] & 0xFF) << 8);
+                        heights[i] = -12.0f + (value / 65535.0f) * 36.0f;
+                    }
+                    File asset = landscapeWorldTileAssetFile(tileX, tileZ);
+                    if (asset != null) {
+                        File parent = asset.getParentFile();
+                        if (parent != null && !parent.exists() && !parent.mkdirs())
+                            throw new IllegalStateException("Could not create landscape tile asset folder.");
+                        try (FileOutputStream output = new FileOutputStream(asset)) { output.write(raw); }
+                    }
+                    runOnUiThread(() -> engineSurface.createLandscapeWorldTile(tileX, tileZ, heights, ok ->
+                            android.widget.Toast.makeText(this, ok
+                                    ? "World tile " + tileX + ", " + tileZ + " imported and saved"
+                                    : "Tile import failed. Check for duplicate coordinates and create the main landscape first.",
+                                    android.widget.Toast.LENGTH_LONG).show()));
+                } catch (Exception error) {
+                    runOnUiThread(() -> android.widget.Toast.makeText(this,
+                            "World tile import failed: " + error.getMessage(),
+                            android.widget.Toast.LENGTH_LONG).show());
+                }
+            }, "Nova-World-Tile-Import").start();
             return;
         }
 
@@ -1797,6 +1856,41 @@ public final class MainActivity extends Activity
             android.widget.Toast.makeText(this, "Hole filling ON • tap a hole cell", android.widget.Toast.LENGTH_LONG).show();
         });
 
+        TextView worldTileHeading = new TextView(this);
+        worldTileHeading.setText("LARGE WORLD • LANDSCAPE TILE STREAMING");
+        worldTileHeading.setTextColor(0xFFB45F16);
+        worldTileHeading.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
+        worldTileHeading.setPadding(0, dp(16), 0, dp(4));
+        content.addView(worldTileHeading);
+        TextView worldTileInfo = new TextView(this);
+        worldTileInfo.setText("Each tile is 129 x 129 samples covering 64 x 64 world units. Adjacent tile borders are matched on import. Distant tiles stream out and return with distance-based LOD.");
+        worldTileInfo.setTextColor(Color.DKGRAY); worldTileInfo.setTextSize(11);
+        content.addView(worldTileInfo);
+        EditText worldTileX = new EditText(this); worldTileX.setSingleLine(true);
+        worldTileX.setHint("Tile X coordinate (0 is main tile)");
+        worldTileX.setInputType(android.text.InputType.TYPE_CLASS_NUMBER | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+        worldTileX.setText("1"); content.addView(worldTileX);
+        EditText worldTileZ = new EditText(this); worldTileZ.setSingleLine(true);
+        worldTileZ.setHint("Tile Z coordinate");
+        worldTileZ.setInputType(android.text.InputType.TYPE_CLASS_NUMBER | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+        worldTileZ.setText("0"); content.addView(worldTileZ);
+        TextView importWorldTile = new TextView(this);
+        importWorldTile.setText("IMPORT 16-BIT RAW WORLD TILE");
+        importWorldTile.setTextColor(Color.WHITE); importWorldTile.setGravity(Gravity.CENTER);
+        importWorldTile.setPadding(dp(8), dp(12), dp(8), dp(12));
+        importWorldTile.setBackgroundColor(0xFF35566B);
+        content.addView(importWorldTile, new LinearLayout.LayoutParams(-1, dp(44)));
+        importWorldTile.setOnClickListener(v -> openLandscapeWorldTilePicker(
+                Math.round(terrainValue(worldTileX, 1)), Math.round(terrainValue(worldTileZ, 0))));
+        TextView worldTileCount = new TextView(this);
+        worldTileCount.setText("REFRESH WORLD TILE COUNT");
+        worldTileCount.setTextColor(Color.WHITE); worldTileCount.setGravity(Gravity.CENTER);
+        worldTileCount.setPadding(dp(8), dp(10), dp(8), dp(10));
+        worldTileCount.setBackgroundColor(0xFF46566A);
+        content.addView(worldTileCount, new LinearLayout.LayoutParams(-1, dp(40)));
+        worldTileCount.setOnClickListener(v -> engineSurface.getLandscapeWorldTileCount(count ->
+                worldTileCount.setText("STREAMED WORLD TILES: " + count)));
+
         TextView componentHeading = new TextView(this);
         componentHeading.setText("LANDSCAPE COMPONENT MANAGEMENT");
         componentHeading.setTextColor(0xFFB45F16);
@@ -2099,6 +2193,51 @@ public final class MainActivity extends Activity
                 }), 700L);
     }
 
+    private File landscapeWorldTileAssetFile(int tileX, int tileZ) {
+        if (activeProjectDirectory == null) return null;
+        return new File(new File(activeProjectDirectory, "Assets/LandscapeTiles"),
+                "Tile_" + tileX + "_" + tileZ + ".r16");
+    }
+
+    private void loadLandscapeWorldTiles() {
+        if (activeProjectDirectory == null || engineSurface == null) return;
+        File directory = new File(activeProjectDirectory, "Assets/LandscapeTiles");
+        File[] files = directory.listFiles((dir, name) -> name.matches("Tile_-?\\d+_-?\\d+\\.r16"));
+        if (files == null || files.length == 0) return;
+        new Thread(() -> {
+            for (File file : files) {
+                try (InputStream input = new java.io.FileInputStream(file);
+                     java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream()) {
+                    byte[] buffer = new byte[8192]; int read;
+                    while ((read = input.read(buffer)) != -1) {
+                        if (bytes.size() + read > 100000) throw new IllegalArgumentException("Tile file too large.");
+                        bytes.write(buffer, 0, read);
+                    }
+                    byte[] raw = bytes.toByteArray();
+                    if (raw.length != 129 * 129 * 2) continue;
+                    java.util.regex.Matcher matcher = java.util.regex.Pattern
+                            .compile("Tile_(-?\\d+)_(-?\\d+)\\.r16").matcher(file.getName());
+                    if (!matcher.matches()) continue;
+                    int tileX = Integer.parseInt(matcher.group(1));
+                    int tileZ = Integer.parseInt(matcher.group(2));
+                    float[] heights = new float[129 * 129];
+                    for (int i = 0; i < heights.length; i++) {
+                        int value = (raw[i * 2] & 0xFF) | ((raw[i * 2 + 1] & 0xFF) << 8);
+                        heights[i] = -12.0f + (value / 65535.0f) * 36.0f;
+                    }
+                    engineSurface.createLandscapeWorldTile(tileX, tileZ, heights, ok -> {
+                        if (!ok) android.widget.Toast.makeText(this,
+                                "Could not restore world tile " + tileX + ", " + tileZ,
+                                android.widget.Toast.LENGTH_SHORT).show();
+                    });
+                } catch (Exception error) {
+                    android.widget.Toast.makeText(this, "Tile restore failed: " + file.getName(),
+                            android.widget.Toast.LENGTH_SHORT).show();
+                }
+            }
+        }, "Nova-World-Tile-Restore").start();
+    }
+
     private File terrainTextureAssetFile(int layer, int mapType) {
         if (activeProjectDirectory == null) return null;
         String[] layers = {"Grass", "Rock", "Sand", "Snow"};
@@ -2139,6 +2278,7 @@ public final class MainActivity extends Activity
 
     private void enterProject(String message) {
         loadTerrainTextureAssets();
+        loadLandscapeWorldTiles();
         if (projectStartPage != null) rootLayout.removeView(projectStartPage);
         projectStartPage = null;
         projectHandler.removeCallbacks(autoSaveTask);
