@@ -437,8 +437,13 @@ public final class Meshy3DViewport extends View {
                 if(distance<=radius*radius&&distance<bestMarkerDistance){best=object;bestMarkerDistance=distance;}
                 continue;
             }
-            float[][] meshVertices=object.mesh==document?vertices:object.mesh.copyVertices();
-            int[][] meshFaces=object.mesh==document?faces:object.mesh.copyFaces();
+            Meshy3DCore renderMesh=object.mesh;
+            if(!object.modifiers.isEmpty()){
+                try{renderMesh=Meshy3DModifierEvaluator.evaluate(object);}
+                catch(RuntimeException modifierError){renderMesh=object.mesh;}
+            }
+            float[][] meshVertices=renderMesh==document?vertices:renderMesh.copyVertices();
+            int[][] meshFaces=renderMesh==document?faces:renderMesh.copyFaces();
             float[][] screenVertices=new float[meshVertices.length][3];
             for(int i=0;i<meshVertices.length;i++){
                 float[] world=objectScene.transformPoint(object.id,meshVertices[i][0],meshVertices[i][1],meshVertices[i][2]);
@@ -691,6 +696,10 @@ public final class Meshy3DViewport extends View {
         for(Meshy3DObjectScene.Object3D object:objectScene.getObjects()) {
             Meshy3DCore mesh=object.mesh;
             if(mesh==null||!"MESH".equals(object.type)||!objectScene.isVisibleInRender(object))continue;
+            if(!object.modifiers.isEmpty()){
+                try{mesh=Meshy3DModifierEvaluator.evaluate(object);}
+                catch(RuntimeException modifierError){mesh=object.mesh;}
+            }
             Integer materialId=materialIds.get(mesh);
             if(materialId==null) {
                 materialId=materialColors.size();materialIds.put(mesh,materialId);
