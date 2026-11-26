@@ -336,6 +336,26 @@ public final class Meshy3DObjectScene {
         replaceSelection(targets);
     }
 
+    public int getMeshDataUserCount(String objectId) {
+        Object3D object=requireObject(objectId);if(object.mesh==null)return 0;
+        int count=0;for(Object3D candidate:objects.values())if(candidate.mesh==object.mesh)count++;
+        return count;
+    }
+
+    public void linkSelectedToActiveMeshData() {
+        Object3D active=getActiveObject();
+        if(active==null||active.mesh==null)throw new IllegalStateException("Select an active mesh object first");
+        ArrayList<Object3D> targets=new ArrayList<>(getSelectedObjects());
+        if(targets.size()<2)throw new IllegalStateException("Select the active mesh and at least one target object");
+        for(Object3D target:targets){
+            if(target==active)continue;
+            if(!"MESH".equals(target.type)||target.mesh==null)
+                throw new IllegalStateException("Only mesh objects can share mesh data");
+        }
+        for(Object3D target:targets)if(target!=active)target.mesh=active.mesh;
+        revision++;
+    }
+
     public void selectLinkedData(boolean extend) {
         Object3D active=getActiveObject();if(active==null||active.mesh==null)return;
         ArrayList<Object3D> targets=new ArrayList<>();if(extend)targets.addAll(getSelectedObjects());
