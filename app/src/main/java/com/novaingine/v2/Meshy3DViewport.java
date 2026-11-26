@@ -39,6 +39,7 @@ public final class Meshy3DViewport extends View {
 
 
     private String objectSceneActiveId;
+    private boolean objectSelectionEnabled;
 
     private static final class RenderData {
         float[][] vertices;
@@ -88,6 +89,22 @@ public final class Meshy3DViewport extends View {
     }
 
     public void selectSceneObject(String id) { activateSceneObject(id); }
+    public void setObjectSelectionEnabled(boolean enabled){objectSelectionEnabled=enabled;}
+    private void selectObjectAt(float x,float y) {
+        float cx=getWidth()*.5f,cy=getHeight()*.49f,unit=Math.min(getWidth(),getHeight())*.235f*zoom;
+        Meshy3DObjectScene.Object3D best=null;float bestDistance=Float.MAX_VALUE;
+        for(Meshy3DObjectScene.Object3D object:objectScene.getObjects()) {
+            if(!objectScene.isVisibleInViewport(object)||!object.renderVisible||!object.selectable)continue;
+            float[] center=objectScene.worldLocation(object.id);
+            float[] screen=project(center[0],center[1],center[2],cx,cy,unit);
+            float maxScale=Math.max(Math.abs(object.transform.scaleX),
+                    Math.max(Math.abs(object.transform.scaleY),Math.abs(object.transform.scaleZ)));
+            float radius=Math.max(16f,Math.min(getWidth(),getHeight())*.235f*zoom*maxScale*1.65f);
+            float distance=(screen[0]-x)*(screen[0]-x)+(screen[1]-y)*(screen[1]-y);
+            if(distance<=radius*radius&&distance<bestDistance){best=object;bestDistance=distance;}
+        }
+        if(best!=null)activateSceneObject(best.id);
+    }
 
     public void deleteActiveObject() {
         if(objectSceneActiveId==null)return;
@@ -449,9 +466,9 @@ public final class Meshy3DViewport extends View {
         int count=0;
         for(int f=0;f<drawFaces.length;f++){
             int[] face=drawFaces[f];
-            float[] a=cameraPoint(drawVertices[face[0]][0],vertices[face[0]][1],vertices[face[0]][2]);
-            float[] b=cameraPoint(drawVertices[face[1]][0],vertices[face[1]][1],vertices[face[1]][2]);
-            float[] c=cameraPoint(drawVertices[face[2]][0],vertices[face[2]][1],vertices[face[2]][2]);
+            float[] a=cameraPoint(drawVertices[face[0]][0],drawVertices[face[0]][1],drawVertices[face[0]][2]);
+            float[] b=cameraPoint(drawVertices[face[1]][0],drawVertices[face[1]][1],drawVertices[face[1]][2]);
+            float[] c=cameraPoint(drawVertices[face[2]][0],drawVertices[face[2]][1],drawVertices[face[2]][2]);
             float abx=b[0]-a[0], aby=b[1]-a[1], abz=b[2]-a[2];
             float acx=c[0]-a[0], acy=c[1]-a[1], acz=c[2]-a[2];
             float nx=aby*acz-abz*acy, ny=abz*acx-abx*acz, nz=abx*acy-aby*acx;
@@ -466,9 +483,9 @@ public final class Meshy3DViewport extends View {
         }
         for(int n=0;n<count;n++){
             int f=order[n]; int[] face=drawFaces[f];
-            float[] ca=cameraPoint(vertices[face[0]][0],vertices[face[0]][1],vertices[face[0]][2]);
-            float[] cb=cameraPoint(vertices[face[1]][0],vertices[face[1]][1],vertices[face[1]][2]);
-            float[] cc=cameraPoint(vertices[face[2]][0],vertices[face[2]][1],vertices[face[2]][2]);
+            float[] ca=cameraPoint(vertices[face[0]][0],drawVertices[face[0]][1],drawVertices[face[0]][2]);
+            float[] cb=cameraPoint(vertices[face[1]][0],drawVertices[face[1]][1],drawVertices[face[1]][2]);
+            float[] cc=cameraPoint(vertices[face[2]][0],drawVertices[face[2]][1],drawVertices[face[2]][2]);
             float abx=cb[0]-ca[0],aby=cb[1]-ca[1],abz=cb[2]-ca[2];
             float acx=cc[0]-ca[0],acy=cc[1]-ca[1],acz=cc[2]-ca[2];
             float nx=aby*acz-abz*acy,ny=abz*acx-abx*acz,nz=abx*acy-aby*acx;
@@ -485,7 +502,7 @@ public final class Meshy3DViewport extends View {
                 float faceMask=0;for(int id:face)faceMask+=vertexMask[id]/face.length;
                 if(faceMask>0.001f)shaded=blendColor(shaded,0xFF7B3446,Math.min(.72f,faceMask*.72f));
             }
-            if(!document.isFaceSelected(f))shaded=shadeViewportColor(shaded,nx,ny,nz,viewportLight);
+            if(!(meshEditMode&&document.isFaceSelected(f)))shaded=shadeViewportColor(shaded,nx,ny,nz,viewportLight);
             paint.setStyle(Paint.Style.FILL); paint.setColor(shaded); canvas.drawPath(path,paint);
             if (showTopology) {
                 paint.setStyle(Paint.Style.STROKE); paint.setColor(0xAA303840);
@@ -928,6 +945,7 @@ public final class Meshy3DViewport extends View {
                     if(dx*dx+dy*dy<=radius*radius){
                         snapToNearestAxis(dx,dy);
                     } else if(meshEditMode){selectAt(event.getX(),event.getY(),(event.getMetaState()&android.view.KeyEvent.META_SHIFT_ON)!=0);}
+                    else if(objectSelectionEnabled)selectObjectAt(event.getX(),event.getY());
                     else if(onViewportTap!=null) onViewportTap.run();
                 }
                 lastPinchDistance=0; performClick(); return true;
