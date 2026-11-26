@@ -592,7 +592,7 @@ public final class Meshy3DViewport extends View {
                     float dx=event.getX()-gx,dy=event.getY()-gy;
                     if(dx*dx+dy*dy<=radius*radius){
                         snapToNearestAxis(dx,dy);
-                    } else if(meshEditMode){selectAt(event.getX(),event.getY(),false);}
+                    } else if(meshEditMode){selectAt(event.getX(),event.getY(),(event.getMetaState()&android.view.KeyEvent.META_SHIFT_ON)!=0);}
                     else if(onViewportTap!=null) onViewportTap.run();
                 }
                 lastPinchDistance=0; performClick(); return true;
