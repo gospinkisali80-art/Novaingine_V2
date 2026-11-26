@@ -375,7 +375,7 @@ public final class Meshy3DCore {
     public void setGraphNodeValue(int graph,int index,float value){
         ArrayList<Node> nodes=nodesForGraph(graph);if(index<0||index>=nodes.size())return;
         Node node=nodes.get(index);node.value=value;
-        if(graph==0&&("Transform Geometry".equals(node.type)||"Instance on Points".equals(node.type)))node.x=value;
+        if(graph==0&&"Transform Geometry".equals(node.type))node.x=value;
         revision++;
     }
     public int[][] getGraphLinks(int graph){ArrayList<int[]> links=linksForGraph(graph);int[][] out=new int[links.size()][2];for(int i=0;i<out.length;i++)out[i]=links.get(i).clone();return out;}
@@ -417,7 +417,7 @@ public final class Meshy3DCore {
             else if("Set Material".equals(n.type))baseColor=(int)n.value;
             else if("Random Value".equals(n.type)){Random random=new Random(7);for(float[] p:vertices){p[0]+=(random.nextFloat()-.5f)*n.value;p[1]+=(random.nextFloat()-.5f)*n.value;p[2]+=(random.nextFloat()-.5f)*n.value;}}
             else if("Math".equals(n.type)){for(float[] p:vertices){p[0]*=n.value;p[1]*=n.value;p[2]*=n.value;}}
-            else if("Instance on Points".equals(n.type))duplicateMesh(n.x,n.y,n.z);
+            else if("Instance on Points".equals(n.type))instanceMesh(Math.max(1,Math.min(20,Math.round(n.value))),n.x,n.y,n.z);
         }revision++;
     }
     private void deleteSelectedFaces(){
@@ -425,11 +425,14 @@ public final class Meshy3DCore {
         ArrayList<Face> keep=new ArrayList<>();for(int i=0;i<faces.size();i++)if(!selectedFaces.get(i))keep.add(faces.get(i));
         faces.clear();faces.addAll(keep);clearSelection();rebuildEdges();
     }
-    private void duplicateMesh(float dx,float dy,float dz){
-        int base=vertices.size(),count=vertices.size();ArrayList<float[]> copy=new ArrayList<>();
-        for(float[] p:vertices)copy.add(new float[]{p[0]+dx,p[1]+dy,p[2]+dz});
-        ArrayList<Face> extra=new ArrayList<>();for(Face f:faces){int[] ids=f.vertices.clone();for(int i=0;i<ids.length;i++)ids[i]+=base;extra.add(new Face(ids));}
-        vertices.addAll(copy);faces.addAll(extra);rebuildEdges();
+    private void duplicateMesh(float dx,float dy,float dz){instanceMesh(1,dx,dy,dz);}
+    private void instanceMesh(int copies,float dx,float dy,float dz){
+        float[][] sourceVertices=copyVertices();int[][] sourceFaces=copyFaces();
+        for(int copy=1;copy<=copies;copy++){
+            int base=vertices.size();float ox=dx*copy,oy=dy*copy,oz=dz*copy;
+            for(float[] p:sourceVertices)vertices.add(new float[]{p[0]+ox,p[1]+oy,p[2]+oz});
+            for(int[] face:sourceFaces){int[] ids=face.clone();for(int i=0;i<ids.length;i++)ids[i]+=base;faces.add(new Face(ids));}
+        }rebuildEdges();
     }
     public void addCompositorNode(String type,float value){Node n=new Node(type);n.value=value;int index=compositorNodes.size();compositorNodes.add(n);if(index>0)compositorLinks.add(new int[]{index-1,index});revision++;}
     public int getCompositorNodeCount(){return compositorNodes.size();}
