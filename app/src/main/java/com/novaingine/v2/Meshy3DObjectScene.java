@@ -306,8 +306,11 @@ public final class Meshy3DObjectScene {
     public void setCollectionVisibility(String collectionId,boolean visible) {requireCollection(collectionId).visible=visible;revision++;}
     public void moveToCollection(String objectId,String collectionId) {
         Object3D o=requireObject(objectId);requireCollection(collectionId);
-        if(!o.collectionIds.contains(collectionId))o.collectionIds.add(collectionId);
-        revision++;
+        o.collectionIds.clear();o.collectionIds.add(collectionId);revision++;
+    }
+    public void linkToCollection(String objectId,String collectionId) {
+        Object3D o=requireObject(objectId);requireCollection(collectionId);
+        if(!o.collectionIds.contains(collectionId))o.collectionIds.add(collectionId);revision++;
     }
     public void removeFromCollection(String objectId,String collectionId) {
         Object3D o=requireObject(objectId);
@@ -320,6 +323,15 @@ public final class Meshy3DObjectScene {
         String parent=o.parentId;int guard=0;
         while(parent!=null&&guard++<objects.size()){
             Object3D p=objects.get(parent);if(p==null||!p.visible)return false;parent=p.parentId;
+        }
+        return true;
+    }
+    public boolean isVisibleInRender(Object3D o) {
+        if(!o.renderVisible)return false;
+        for(String id:o.collectionIds){Collection3D c=collections.get(id);if(c!=null&&!c.renderVisible)return false;}
+        String parent=o.parentId;int guard=0;
+        while(parent!=null&&guard++<objects.size()){
+            Object3D p=objects.get(parent);if(p==null||!p.renderVisible)return false;parent=p.parentId;
         }
         return true;
     }
@@ -394,9 +406,14 @@ public final class Meshy3DObjectScene {
         try{
             root.put("version",1);root.put("activeObjectId",activeObjectId);
             JSONArray objectArray=new JSONArray();
+            java.util.IdentityHashMap<Meshy3DCore,String> meshIds=new java.util.IdentityHashMap<>();
+            int meshSequence=0;
             for(Object3D o:objects.values()){
                 JSONObject item=new JSONObject();item.put("id",o.id);item.put("name",o.name);item.put("type",o.type);
-                item.put("transform",o.transform.toJson());item.put("mesh",o.mesh.exportState());
+                String meshId=meshIds.get(o.mesh);
+                if(meshId==null){meshId="mesh-data-"+(meshSequence++);meshIds.put(o.mesh,meshId);item.put("mesh",o.mesh.exportState());}
+                item.put("meshDataId",meshId);
+                item.put("transform",o.transform.toJson());
                 item.put("parentId",o.parentId==null?JSONObject.NULL:o.parentId);
                 item.put("visible",o.visible);item.put("selectable",o.selectable);item.put("renderVisible",o.renderVisible);
                 item.put("selected",o.selected);JSONArray members=new JSONArray();for(String id:o.collectionIds)members.put(id);item.put("collections",members);
@@ -424,10 +441,16 @@ public final class Meshy3DObjectScene {
             }
             if(newCollections.isEmpty()){Collection3D c=new Collection3D("collection-scene","Collection");newCollections.put(c.id,c);}
             LinkedHashMap<String,Object3D> newObjects=new LinkedHashMap<>();
+            java.util.HashMap<String,Meshy3DCore> meshDataMap=new java.util.HashMap<>();
             JSONArray objectArray=root.getJSONArray("objects");
             for(int i=0;i<objectArray.length();i++){
                 JSONObject item=objectArray.getJSONObject(i);String id=item.getString("id");
-                Meshy3DCore mesh=new Meshy3DCore();if(!mesh.importState(item.getJSONObject("mesh")))return false;
+                String meshId=item.optString("meshDataId",id);
+                Meshy3DCore mesh=meshDataMap.get(meshId);
+                if(mesh==null){
+                    JSONObject meshState=item.optJSONObject("mesh");if(meshState==null)return false;
+                    mesh=new Meshy3DCore();if(!mesh.importState(meshState))return false;meshDataMap.put(meshId,mesh);
+                }
                 Object3D o=new Object3D(id,item.optString("name","Object"),item.optString("type","MESH"),mesh);
                 Transform t=Transform.fromJson(item.optJSONObject("transform"));
                 o.transform.x=t.x;o.transform.y=t.y;o.transform.z=t.z;o.transform.rotationX=t.rotationX;o.transform.rotationY=t.rotationY;o.transform.rotationZ=t.rotationZ;o.transform.scaleX=t.scaleX;o.transform.scaleY=t.scaleY;o.transform.scaleZ=t.scaleZ;
