@@ -373,7 +373,7 @@ public final class Meshy3DCore {
     }
     public int getShaderNodeCount(){return shaderNodes.size();}
     public void addGeometryNode(String type,float x,float y,float z,float value){Node n=new Node(type);n.x=x;n.y=y;n.z=z;n.value=value;int index=geometryNodes.size();geometryNodes.add(n);if(index>0)geometryLinks.add(new int[]{index-1,index});revision++;}
-    public void clearGeometryNodes(){geometryNodes.clear();revision++;}
+    public void clearGeometryNodes(){geometryNodes.clear();geometryLinks.clear();revision++;}
     public void evaluateGeometryNodes(){
         int[] order=graphExecutionOrder(0);
         for(int index:order){Node n=geometryNodes.get(index);
@@ -592,6 +592,7 @@ public final class Meshy3DCore {
             o.put("baseColor",baseColor);o.put("metallic",metallic);o.put("roughness",roughness);
             if(faceUvs!=null){JSONArray uvFaces=new JSONArray();for(float[][] face:faceUvs){JSONArray corners=new JSONArray();for(float[] uv:face){JSONArray pair=new JSONArray();pair.put(uv[0]);pair.put(uv[1]);corners.put(pair);}uvFaces.put(corners);}o.put("faceUvs",uvFaces);}
             o.put("geometryNodes",writeNodes(geometryNodes));o.put("shaderNodes",writeNodes(shaderNodes));o.put("compositorNodes",writeNodes(compositorNodes));
+            o.put("geometryLinks",writeLinks(geometryLinks));o.put("shaderLinks",writeLinks(shaderLinks));o.put("compositorLinks",writeLinks(compositorLinks));
             JSONArray channels=new JSONArray();for(AnimationChannel channel:animation.values()){
                 JSONObject co=new JSONObject();co.put("property",channel.property);JSONArray keys=new JSONArray();
                 for(Key key:channel.keys){JSONObject ko=new JSONObject();ko.put("frame",key.frame);ko.put("value",key.value);keys.put(ko);}
@@ -601,6 +602,12 @@ public final class Meshy3DCore {
     }
     private JSONArray writeNodes(ArrayList<Node> list)throws JSONException{
         JSONArray array=new JSONArray();for(Node n:list){JSONObject o=new JSONObject();o.put("type",n.type);o.put("x",n.x);o.put("y",n.y);o.put("z",n.z);o.put("value",n.value);array.put(o);}return array;
+    }
+    private JSONArray writeLinks(ArrayList<int[]> links)throws JSONException{
+        JSONArray array=new JSONArray();for(int[] link:links){JSONArray pair=new JSONArray();pair.put(link[0]);pair.put(link[1]);array.put(pair);}return array;
+    }
+    private void readLinks(JSONArray array,ArrayList<int[]> target)throws JSONException{
+        target.clear();if(array==null)return;for(int i=0;i<array.length();i++){JSONArray pair=array.getJSONArray(i);if(pair.length()!=2)continue;target.add(new int[]{pair.getInt(0),pair.getInt(1)});}
     }
     private void readNodes(JSONArray array,ArrayList<Node> target)throws JSONException{
         target.clear();if(array==null)return;for(int i=0;i<array.length();i++){JSONObject o=array.getJSONObject(i);Node n=new Node(o.optString("type",""));n.x=(float)o.optDouble("x",0);n.y=(float)o.optDouble("y",0);n.z=(float)o.optDouble("z",0);n.value=(float)o.optDouble("value",0);target.add(n);}
@@ -625,6 +632,7 @@ public final class Meshy3DCore {
                 rebuildIslands();
             }else{faceUvs=null;islands.clear();}
             readNodes(o.optJSONArray("geometryNodes"),geometryNodes);readNodes(o.optJSONArray("shaderNodes"),shaderNodes);readNodes(o.optJSONArray("compositorNodes"),compositorNodes);
+            readLinks(o.optJSONArray("geometryLinks"),geometryLinks);readLinks(o.optJSONArray("shaderLinks"),shaderLinks);readLinks(o.optJSONArray("compositorLinks"),compositorLinks);
             animation.clear();JSONArray channels=o.optJSONArray("animation");if(channels!=null)for(int i=0;i<channels.length();i++){
                 JSONObject co=channels.getJSONObject(i);String property=co.optString("property","");AnimationChannel channel=new AnimationChannel(property);
                 JSONArray keys=co.optJSONArray("keys");if(keys!=null)for(int j=0;j<keys.length();j++){JSONObject ko=keys.getJSONObject(j);channel.put(ko.optInt("frame",0),(float)ko.optDouble("value",0));}
