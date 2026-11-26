@@ -1632,8 +1632,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                             scene.setConstraintTarget(active.id,existing.id,targets.get(targetIndex).id);
                             scene.setConstraintInfluence(active.id,existing.id,influence);
                             scene.setConstraintEnabled(active.id,existing.id,enabledCheck.isChecked());
-                            // Constraint order is preserved; changing type replaces its operation in place.
-                            existing.type=typeCodes[typeSpinner.getSelectedItemPosition()];
+                            scene.setConstraintType(active.id,existing.id,typeCodes[typeSpinner.getSelectedItemPosition()]);
                         }
                         meshyViewport.invalidate();
                         status.setText("Modeling | Constraint updated on "+active.name);
