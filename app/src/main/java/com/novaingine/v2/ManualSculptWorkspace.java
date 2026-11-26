@@ -456,6 +456,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 } else if ("Frame All".equals(item)) {
                     meshyViewport.frameAllObjects();status.setText("Modeling | View framed on all visible objects");
                 } else if ("Object Properties".equals(item)) showObjectPropertiesDialog();
+                else if ("Constraints".equals(item)) showObjectConstraintsDialog();
                 else if ("Object Transform".equals(item) || "Numeric Transform".equals(item)) showObjectTransformTypeDialog();
                 else if ("Dimensions".equals(item)) {
                     Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
@@ -1509,6 +1510,141 @@ public final class ManualSculptWorkspace extends FrameLayout {
         dialog.show();
     }
 
+    private void showObjectConstraintsDialog() {
+        Meshy3DObjectScene scene=meshyViewport.getObjectScene();
+        Meshy3DObjectScene.Object3D active=scene.getActiveObject();
+        if(active==null){
+            Toast.makeText(activity,"Select an object first.",Toast.LENGTH_SHORT).show();
+            return;
+        }
+        ArrayList<Meshy3DObjectScene.Constraint3D> constraints=
+                new ArrayList<>(scene.getConstraints(active.id));
+        String[] options=new String[constraints.size()+1];
+        options[0]="+ Add Constraint";
+        for(int i=0;i<constraints.size();i++){
+            Meshy3DObjectScene.Constraint3D constraint=constraints.get(i);
+            Meshy3DObjectScene.Object3D target=scene.getObject(constraint.targetId);
+            String targetName=target==null?"Missing target":target.name;
+            options[i+1]=(constraint.enabled?"✓ ":"○ ")+constraint.type.replace('_',' ')
+                    +" → "+targetName+" ("+fmt(constraint.influence*100f)+"%)";
+        }
+        new android.app.AlertDialog.Builder(activity).setTitle(active.name+" | Constraints")
+                .setItems(options,(dialog,which)->{
+                    if(which==0)showObjectConstraintEditor(null);
+                    else if(which-1<constraints.size())showObjectConstraintEditor(constraints.get(which-1));
+                }).setNegativeButton("Close",null).show();
+    }
+
+    private void showObjectConstraintEditor(Meshy3DObjectScene.Constraint3D existing) {
+        Meshy3DObjectScene scene=meshyViewport.getObjectScene();
+        Meshy3DObjectScene.Object3D active=scene.getActiveObject();
+        if(active==null)return;
+        ArrayList<Meshy3DObjectScene.Object3D> targets=new ArrayList<>();
+        ArrayList<String> targetNames=new ArrayList<>();
+        int selectedTarget=0;
+        for(Meshy3DObjectScene.Object3D candidate:scene.getObjects()){
+            if(candidate.id.equals(active.id))continue;
+            targets.add(candidate);
+            targetNames.add(candidate.name+"  ·  "+candidate.type);
+            if(existing!=null&&candidate.id.equals(existing.targetId))selectedTarget=targets.size()-1;
+        }
+        if(targets.isEmpty()){
+            Toast.makeText(activity,"Add another scene object before creating a constraint.",Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        String[] typeLabels={"Copy Location","Copy Rotation","Copy Scale","Copy Transforms"};
+        String[] typeCodes={"COPY_LOCATION","COPY_ROTATION","COPY_SCALE","COPY_TRANSFORMS"};
+        LinearLayout panel=new LinearLayout(activity);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(16),dp(8),dp(16),dp(8));
+
+        TextView typeLabel=new TextView(activity);
+        typeLabel.setText("Constraint Type");
+        panel.addView(typeLabel);
+        android.widget.Spinner typeSpinner=new android.widget.Spinner(activity);
+        android.widget.ArrayAdapter<String> typeAdapter=new android.widget.ArrayAdapter<>(activity,
+                android.R.layout.simple_spinner_item,typeLabels);
+        typeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        typeSpinner.setAdapter(typeAdapter);
+        if(existing!=null){
+            for(int i=0;i<typeCodes.length;i++)if(typeCodes[i].equals(existing.type))typeSpinner.setSelection(i);
+        }
+        panel.addView(typeSpinner);
+
+        TextView targetLabel=new TextView(activity);
+        targetLabel.setText("Target Object");
+        panel.addView(targetLabel);
+        android.widget.Spinner targetSpinner=new android.widget.Spinner(activity);
+        android.widget.ArrayAdapter<String> targetAdapter=new android.widget.ArrayAdapter<>(activity,
+                android.R.layout.simple_spinner_item,targetNames);
+        targetAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        targetSpinner.setAdapter(targetAdapter);
+        targetSpinner.setSelection(Math.max(0,selectedTarget));
+        panel.addView(targetSpinner);
+
+        TextView influenceLabel=new TextView(activity);
+        influenceLabel.setText("Influence (0.0 – 1.0)");
+        panel.addView(influenceLabel);
+        EditText influenceField=new EditText(activity);
+        influenceField.setSingleLine(true);
+        influenceField.setInputType(android.text.InputType.TYPE_CLASS_NUMBER
+                |android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+                |android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+        influenceField.setText(fmt(existing==null?1f:existing.influence));
+        panel.addView(influenceField);
+
+        android.widget.CheckBox enabledCheck=new android.widget.CheckBox(activity);
+        enabledCheck.setText("Enabled");
+        enabledCheck.setChecked(existing==null||existing.enabled);
+        panel.addView(enabledCheck);
+
+        android.app.AlertDialog.Builder builder=new android.app.AlertDialog.Builder(activity)
+                .setTitle(existing==null?"Add Object Constraint":"Edit Object Constraint")
+                .setView(panel).setPositiveButton(existing==null?"Add":"Apply",null)
+                .setNegativeButton("Cancel",null);
+        if(existing!=null)builder.setNeutralButton("Remove",(dialog,which)->{
+            try{
+                checkpointMeshEdit();
+                scene.removeConstraint(active.id,existing.id);
+                meshyViewport.invalidate();
+                status.setText("Modeling | Constraint removed from "+active.name);
+                showObjectConstraintsDialog();
+            }catch(Exception error){showObjectOperationError(error);}
+        });
+        android.app.AlertDialog dialog=builder.create();
+        dialog.setOnShowListener(ignored->dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener(view->{
+                    try{
+                        int targetIndex=targetSpinner.getSelectedItemPosition();
+                        if(targetIndex<0||targetIndex>=targets.size())
+                            throw new IllegalArgumentException("Choose a valid target object.");
+                        float influence=Float.parseFloat(influenceField.getText().toString().trim());
+                        if(!Float.isFinite(influence)||influence<0f||influence>1f)
+                            throw new IllegalArgumentException("Influence must be between 0.0 and 1.0.");
+                        checkpointMeshEdit();
+                        if(existing==null){
+                            Meshy3DObjectScene.Constraint3D created=scene.addConstraint(active.id,
+                                    typeCodes[typeSpinner.getSelectedItemPosition()],targets.get(targetIndex).id);
+                            scene.setConstraintInfluence(active.id,created.id,influence);
+                            scene.setConstraintEnabled(active.id,created.id,enabledCheck.isChecked());
+                        }else{
+                            scene.setConstraintTarget(active.id,existing.id,targets.get(targetIndex).id);
+                            scene.setConstraintInfluence(active.id,existing.id,influence);
+                            scene.setConstraintEnabled(active.id,existing.id,enabledCheck.isChecked());
+                            // Constraint order is preserved; changing type replaces its operation in place.
+                            existing.type=typeCodes[typeSpinner.getSelectedItemPosition()];
+                        }
+                        meshyViewport.invalidate();
+                        status.setText("Modeling | Constraint updated on "+active.name);
+                        dialog.dismiss();
+                    }catch(Exception error){
+                        showObjectOperationError(error);
+                    }
+                }));
+        dialog.show();
+    }
+
     private void showObjectOperationError(Exception error) {
         String message=error.getMessage()==null?"The operation could not be completed.":error.getMessage();
         new android.app.AlertDialog.Builder(activity).setTitle("Object Mode Operation")
@@ -1888,7 +2024,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 rightTitle = "Tool Properties";
                 rightItems = new String[]{"Object Properties", "Object Transform", "Numeric Transform", "Dimensions",
                         "Set 3D Cursor", "Snap to Grid", "Snap to 3D Cursor", "Frame Selected", "Frame All",
-                        "Parent", "Collections", "Manage Collections",
+                        "Parent", "Constraints", "Collections", "Manage Collections",
                         "Visibility", "Selectable", "Render Visibility", "Active Camera", "Camera Settings", "Light Settings",
                         "Active Tool", "Selection Mode", "Operation Amount", "Offset", "Segments", "Profile",
                         "Loop Cut Count", "Merge Threshold", "Mesh Statistics", "Vertices", "Edges", "Faces",
