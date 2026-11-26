@@ -224,6 +224,10 @@ public final class Meshy3DViewport extends View {
         for(Meshy3DObjectScene.Object3D o:objectScene.getSelectedObjects())objectScene.linkToCollection(o.id,collectionId);
         invalidate();
     }
+    public void linkSelectedObjectsToActiveMeshData(){
+        syncCoreFromViewport();objectScene.linkSelectedToActiveMeshData();
+        invalidate();
+    }
     public void selectCollectionObjects(String collectionId,boolean extend){
         objectScene.selectCollection(collectionId,extend);activateCurrentObjectWithoutClearing();
     }
