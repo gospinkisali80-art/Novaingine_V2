@@ -618,7 +618,11 @@ public final class Meshy3DObjectScene {
                         finite((float)(toActive[4]*point[0]+toActive[5]*point[1]+toActive[6]*point[2]+toActive[7])),
                         finite((float)(toActive[8]*point[0]+toActive[9]*point[1]+toActive[10]*point[2]+toActive[11]))});
             }
-            float[][] generatedUvs=sourceUvs==null&&anyUv&&!referenceHasTexture
+            boolean needsGeneratedUvs=anyUv&&(sourceUvs==null);
+            if(anyUv&&sourceUvs!=null)for(int fi=0;fi<sourceFaces.length;fi++)
+                if(fi>=sourceUvs.length||sourceUvs[fi]==null
+                        ||sourceUvs[fi].length!=sourceFaces[fi].length){needsGeneratedUvs=true;break;}
+            float[][] generatedUvs=needsGeneratedUvs&&!referenceHasTexture
                     ?generatePlanarFaceUvs(sourceVertices,sourceFaces):null;
             boolean mirrored=linearDeterminant(toActive)<0;
             for(int fi=0;fi<sourceFaces.length;fi++){
