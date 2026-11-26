@@ -10,12 +10,20 @@ public final class Meshy3DSoftwareRenderer {
     public static Bitmap render(float[][] vertices,int[][] faces,int width,int height,
                                 float yaw,float pitch,int color,float metallic,float roughness,
                                 int[] texture,int textureWidth,int textureHeight,float[][][] faceUvs){
+        return render(vertices,faces,width,height,yaw,pitch,1f,color,metallic,roughness,
+                texture,textureWidth,textureHeight,faceUvs);
+    }
+
+    public static Bitmap render(float[][] vertices,int[][] faces,int width,int height,
+                                float yaw,float pitch,float zoom,int color,float metallic,float roughness,
+                                int[] texture,int textureWidth,int textureHeight,float[][][] faceUvs){
         width=Math.max(64,Math.min(2048,width));height=Math.max(64,Math.min(2048,height));
+        zoom=Math.max(.2f,Math.min(4f,zoom));
         int[] pixels=new int[width*height];float[] depth=new float[width*height];
         Arrays.fill(depth,Float.POSITIVE_INFINITY);
         for(int y=0;y<height;y++){float t=y/(float)Math.max(1,height-1);int r=(int)(39+22*t),g=(int)(49+29*t),b=(int)(63+36*t);
             int c=0xFF000000|r<<16|g<<8|b;Arrays.fill(pixels,y*width,(y+1)*width,c);}
-        V[] projected=new V[vertices.length];float unit=Math.min(width,height)*.31f;
+        V[] projected=new V[vertices.length];float unit=Math.min(width,height)*.31f*zoom;
         double cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pitch),sp=Math.sin(pitch);
         for(int i=0;i<vertices.length;i++){
             float x=vertices[i][0],y=vertices[i][1],z=vertices[i][2];
