@@ -463,18 +463,15 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         status.setText("Modeling | World dimensions X "+fmt(size[0])+"  Y "+fmt(size[1])+"  Z "+fmt(size[2]));}
                 } else if ("Camera Settings".equals(item)) showCameraSettingsDialog();
                 else if ("Light Settings".equals(item)) showLightSettingsDialog();
-                else if ("Visibility".equals(item)) {
+                else if ("Visibility".equals(item)) showObjectVisibilitySettingsDialog();
+                else if ("Selectable".equals(item)) {
                     Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
-                    if(active!=null)status.setText("Modeling | Viewport "+(active.visible?"Visible":"Hidden")+
-                            " | Render "+(active.renderVisible?"Enabled":"Disabled"));
-                } else if ("Selectable".equals(item)) {
-                    Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
-                    if(active!=null){active.selectable=!active.selectable;refreshModelingOutliner();
-                        status.setText("Modeling | "+active.name+" selectable: "+active.selectable);}
+                    if(active!=null){meshyViewport.setActiveObjectSelectable(!active.selectable);refreshModelingOutliner();
+                        status.setText("Modeling | "+active.name+" selectable: "+!active.selectable);}
                 } else if ("Render Visibility".equals(item)) {
                     Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
-                    if(active!=null){active.renderVisible=!active.renderVisible;meshyViewport.invalidate();
-                        status.setText("Modeling | "+active.name+" render visibility: "+active.renderVisible);}
+                    if(active!=null){meshyViewport.setActiveObjectRenderVisible(!active.renderVisible);
+                        status.setText("Modeling | "+active.name+" render visibility: "+!active.renderVisible);}
                 } else if ("Active Camera".equals(item)) {
                     Meshy3DObjectScene.Object3D camera=meshyViewport.getObjectScene().getActiveCamera();
                     status.setText("Modeling | Active camera: "+(camera==null?"None":camera.name));
@@ -1239,6 +1236,30 @@ public final class ManualSculptWorkspace extends FrameLayout {
     }
 
     private void refreshModelingOutliner(){if(activeWorkspaceIndex==1)renderWorkspaceLayout(1);}
+
+    private void showObjectVisibilitySettingsDialog() {
+        Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
+        if(active==null)return;
+        LinearLayout panel=new LinearLayout(activity);panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(16),dp(8),dp(16),dp(8));
+        android.widget.CheckBox viewport=new android.widget.CheckBox(activity);
+        viewport.setText("Visible in Viewport");viewport.setChecked(active.visible);
+        android.widget.CheckBox selectable=new android.widget.CheckBox(activity);
+        selectable.setText("Selectable");selectable.setChecked(active.selectable);
+        android.widget.CheckBox render=new android.widget.CheckBox(activity);
+        render.setText("Visible in Render");render.setChecked(active.renderVisible);
+        panel.addView(viewport);panel.addView(selectable);panel.addView(render);
+        new android.app.AlertDialog.Builder(activity).setTitle("Object Visibility")
+                .setView(panel).setPositiveButton("Apply",(d,w)->{
+                    try{
+                        checkpointMeshEdit();
+                        meshyViewport.setActiveObjectVisible(viewport.isChecked());
+                        meshyViewport.setActiveObjectSelectable(selectable.isChecked());
+                        meshyViewport.setActiveObjectRenderVisible(render.isChecked());
+                        refreshModelingOutliner();status.setText("Modeling | Object visibility settings updated");
+                    }catch(Exception error){showObjectOperationError(error);}
+                }).setNegativeButton("Cancel",null).show();
+    }
 
     private void showObjectPropertiesDialog() {
         Meshy3DObjectScene.Object3D o=meshyViewport.getObjectScene().getActiveObject();if(o==null)return;
