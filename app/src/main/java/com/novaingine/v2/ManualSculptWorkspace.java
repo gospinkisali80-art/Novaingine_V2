@@ -293,6 +293,37 @@ public final class ManualSculptWorkspace extends FrameLayout {
         layerParams.topMargin = dp(86);
         addView(workspaceLayoutLayer, layerParams);
         renderWorkspaceLayout(0);
+
+        // Built-in phone controls float above the editor and remain available in every workspace.
+        Meshy3DPhoneControls phoneControls = new Meshy3DPhoneControls(activity, meshyViewport,
+                new Meshy3DPhoneControls.Actions() {
+                    @Override public void undo() {
+                        if (!undoMeshEdit()) Toast.makeText(activity, "Nothing to undo", Toast.LENGTH_SHORT).show();
+                    }
+                    @Override public void redo() {
+                        if (!redoMeshEdit()) Toast.makeText(activity, "Nothing to redo", Toast.LENGTH_SHORT).show();
+                    }
+                    @Override public void toggleMode() { toggleMeshyModeFromPhone(); }
+                });
+        FrameLayout.LayoutParams phoneControlsParams = new FrameLayout.LayoutParams(
+                LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.END);
+        phoneControlsParams.setMargins(0, 0, dp(8), dp(8));
+        phoneControls.setElevation(dp(12));
+        addView(phoneControls, phoneControlsParams);
+    }
+
+    private void toggleMeshyModeFromPhone() {
+        if (activeWorkspaceIndex == 2) {
+            Toast.makeText(activity, "Sculpt Mode uses its dedicated sculpt tools.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        checkpointMeshEdit();
+        boolean edit = !meshyViewport.isMeshEditMode();
+        meshyViewport.setMeshEditMode(edit);
+        meshyViewport.setObjectSelectionEnabled(!edit);
+        activeEditorMode = edit ? "Edit Mode" : "Object Mode";
+        if (modeButton != null) modeButton.setText(activeEditorMode);
+        if (status != null) status.setText("Meshy3D | " + activeEditorMode + " (phone controls)");
     }
 
     public void setActiveWorkspaceIndex(int index) {
