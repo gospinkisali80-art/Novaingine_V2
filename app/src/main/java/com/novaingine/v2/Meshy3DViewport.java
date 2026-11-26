@@ -176,6 +176,9 @@ public final class Meshy3DViewport extends View {
     public void selectObjectsByType(String type,boolean extend){
         objectScene.selectByType(type,extend);activateCurrentObjectWithoutClearing();
     }
+    public void selectActiveCameraObject(boolean extend){
+        objectScene.selectActiveCamera(extend);activateCurrentObjectWithoutClearing();
+    }
     public void selectLinkedDataObjects(boolean extend){
         objectScene.selectLinkedData(extend);activateCurrentObjectWithoutClearing();
     }
