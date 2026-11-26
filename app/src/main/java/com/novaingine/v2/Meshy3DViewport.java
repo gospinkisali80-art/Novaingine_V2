@@ -238,12 +238,18 @@ public final class Meshy3DViewport extends View {
 
     public String addCameraObject() {
         Meshy3DObjectScene.Object3D camera=objectScene.createTypedObject("Camera","CAMERA",null);
-        camera.displaySize=.9f;objectScene.setActiveCamera(camera.id);activateSceneObject(camera.id);return camera.id;
+        camera.displaySize=.9f;
+        camera.transform.x=7f;camera.transform.y=5f;camera.transform.z=7f;
+        camera.transform.rotationX=(float)Math.toRadians(22.0);
+        camera.transform.rotationY=(float)Math.toRadians(45.0);
+        objectScene.setActiveCamera(camera.id);activateSceneObject(camera.id);return camera.id;
     }
 
     public String addLightObject() {
         Meshy3DObjectScene.Object3D light=objectScene.createTypedObject("Point Light","LIGHT",null);
-        light.displaySize=.7f;activateSceneObject(light.id);return light.id;
+        light.displaySize=.7f;light.transform.x=-3.5f;light.transform.y=5f;light.transform.z=3f;
+        light.lightType="POINT";light.lightPower=1000f;light.lightColor=0xFFFFFFFF;
+        activateSceneObject(light.id);return light.id;
     }
 
     public String addEmptyObject() {
@@ -1054,7 +1060,7 @@ public final class Meshy3DViewport extends View {
         light.transform.y = 5.0f;
         light.transform.z = 3.0f;
         light.lightType = "SUN";
-        light.lightPower = 2.0f;
+        light.lightPower = 1000.0f;
         objectScene.selectOnly(starter.id);
         objectSceneActiveId = starter.id;
         objectSelectionEnabled = true;
