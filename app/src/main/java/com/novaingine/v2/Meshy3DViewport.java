@@ -209,6 +209,9 @@ public final class Meshy3DViewport extends View {
     public void parentSelectedToActive(){
         objectScene.parentSelectedToActive();invalidate();
     }
+    public void alignSelectedObjectsToActive(int axis){
+        objectScene.alignSelectedLocationsToActive(axis);invalidate();
+    }
     public void clearSelectedParents(){
         objectScene.clearSelectedParents();invalidate();
     }
