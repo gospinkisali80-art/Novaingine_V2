@@ -2663,6 +2663,17 @@ public final class ManualSculptWorkspace extends FrameLayout {
 
     public int getMeshUndoCount() { return meshUndoStack.size(); }
 
+    public int importGlbIntoMeshy3D(byte[] glbBytes) throws Exception {
+        if (meshyViewport == null) throw new IllegalStateException("The Meshy3D viewport is not open.");
+        java.util.List<Meshy3DGlbImporter.ImportedMesh> imported = Meshy3DGlbImporter.parse(glbBytes);
+        checkpointMeshEdit();
+        int count = meshyViewport.importMeshyMeshes(imported);
+        if (count <= 0) throw new IllegalArgumentException("The GLB did not contain importable triangle meshes.");
+        refreshModelingOutliner();
+        if (status != null) status.setText("File | Imported " + count + " editable GLB mesh object(s)");
+        return count;
+    }
+
     public String getDocumentDataPreview() {
         if (meshyViewport == null) return "Meshy3D viewport is not open.";
         Meshy3DObjectScene scene = meshyViewport.getObjectScene();
