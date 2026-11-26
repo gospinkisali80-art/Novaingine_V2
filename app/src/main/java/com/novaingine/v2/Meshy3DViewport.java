@@ -1344,29 +1344,79 @@ public final class Meshy3DViewport extends View {
         for(Meshy3DObjectScene.Object3D object:objectScene.getObjects()) {
             if(object.mesh!=null||!objectScene.isVisibleInViewport(object)
                     ||(localViewActive&&!localViewObjectIds.contains(object.id)))continue;
-            float[] world=objectScene.transformPoint(object.id,0,0,0);
-            float[] screen=project(world[0],world[1],world[2],cx,cy,unit);
-            float radius=Math.max(5f,object.displaySize*9f*density);
-            int color=object.selected?0xFFFFC04A:object.viewportDisplayColor;
-            paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(2f*density);paint.setColor(color);
+            int color=object.selected?0xFFFFA23A:0xFFBFC7D0;
+            paint.setColor(color);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth((object.selected?2.0f:1.45f)*density);
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setStrokeJoin(Paint.Join.ROUND);
+
             if("CAMERA".equals(object.type)) {
-                canvas.drawRect(screen[0]-radius,screen[1]-radius*.65f,screen[0]+radius,screen[1]+radius*.65f,paint);
-                canvas.drawLine(screen[0]-radius*.55f,screen[1]-radius*.65f,screen[0]-radius*.9f,screen[1]-radius*1.25f,paint);
-                canvas.drawLine(screen[0]+radius*.55f,screen[1]-radius*.65f,screen[0]+radius*.9f,screen[1]-radius*1.25f,paint);
-                canvas.drawLine(screen[0]-radius*.9f,screen[1]-radius*1.25f,screen[0]+radius*.9f,screen[1]-radius*1.25f,paint);
-                canvas.drawLine(screen[0],screen[1]+radius*.65f,screen[0],screen[1]+radius*1.35f,paint);
+                // Blender-like camera object: small camera housing plus a
+                // rectangular perspective frustum oriented by the object's transform.
+                float[][] local={
+                    {-0.34f,-0.23f,0.12f},{0.34f,-0.23f,0.12f},
+                    {0.34f,0.23f,0.12f},{-0.34f,0.23f,0.12f},
+                    {-0.24f,-0.17f,-0.22f},{0.24f,-0.17f,-0.22f},
+                    {0.24f,0.17f,-0.22f},{-0.24f,0.17f,-0.22f},
+                    {-0.82f,-0.58f,-1.65f},{0.82f,-0.58f,-1.65f},
+                    {0.82f,0.58f,-1.65f},{-0.82f,0.58f,-1.65f}
+                };
+                float[][] screen=new float[local.length][];
+                for(int i=0;i<local.length;i++){
+                    float[] w=objectScene.transformPoint(object.id,local[i][0],local[i][1],local[i][2]);
+                    screen[i]=project(w[0],w[1],w[2],cx,cy,unit);
+                }
+                // Rear camera housing.
+                Path housing=new Path();
+                housing.moveTo(screen[0][0],screen[0][1]);
+                for(int i=1;i<4;i++)housing.lineTo(screen[i][0],screen[i][1]);
+                housing.close();canvas.drawPath(housing,paint);
+                // Lens barrel.
+                for(int i=0;i<4;i++)canvas.drawLine(screen[i][0],screen[i][1],
+                        screen[4+i][0],screen[4+i][1],paint);
+                Path lens=new Path();
+                lens.moveTo(screen[4][0],screen[4][1]);
+                for(int i=5;i<8;i++)lens.lineTo(screen[i][0],screen[i][1]);
+                lens.close();canvas.drawPath(lens,paint);
+                // Camera view frustum.
+                Path frame=new Path();
+                frame.moveTo(screen[8][0],screen[8][1]);
+                for(int i=9;i<12;i++)frame.lineTo(screen[i][0],screen[i][1]);
+                frame.close();canvas.drawPath(frame,paint);
+                for(int i=0;i<4;i++)canvas.drawLine(screen[4+i][0],screen[4+i][1],
+                        screen[8+i][0],screen[8+i][1],paint);
+                // Small top housing detail.
+                canvas.drawLine(screen[0][0],screen[0][1],screen[1][0],screen[1][1],paint);
             } else if("LIGHT".equals(object.type)) {
-                canvas.drawCircle(screen[0],screen[1],radius,paint);
-                for(int i=0;i<8;i++){double a=Math.PI*i/4d;
-                    canvas.drawLine(screen[0]+(float)Math.cos(a)*radius*1.2f,screen[1]+(float)Math.sin(a)*radius*1.2f,
-                            screen[0]+(float)Math.cos(a)*radius*1.65f,screen[1]+(float)Math.sin(a)*radius*1.65f,paint);}
+                // Blender-style point-light marker: luminous centre and radial rays.
+                float[] world=objectScene.transformPoint(object.id,0,0,0);
+                float[] center=project(world[0],world[1],world[2],cx,cy,unit);
+                float radius=7.0f*density;
+                paint.setStrokeWidth((object.selected?2.0f:1.4f)*density);
+                canvas.drawCircle(center[0],center[1],radius,paint);
+                canvas.drawCircle(center[0],center[1],2.0f*density,paint);
+                for(int i=0;i<8;i++){
+                    double a=Math.PI*i/4.0;
+                    float inner=radius+3.0f*density,outer=radius+8.0f*density;
+                    canvas.drawLine(center[0]+(float)Math.cos(a)*inner,
+                            center[1]+(float)Math.sin(a)*inner,
+                            center[0]+(float)Math.cos(a)*outer,
+                            center[1]+(float)Math.sin(a)*outer,paint);
+                }
             } else {
+                float[] world=objectScene.transformPoint(object.id,0,0,0);
+                float[] screen=project(world[0],world[1],world[2],cx,cy,unit);
+                float radius=Math.max(5f,object.displaySize*9f*density);
                 canvas.drawLine(screen[0]-radius,screen[1],screen[0]+radius,screen[1],paint);
                 canvas.drawLine(screen[0],screen[1]-radius,screen[0],screen[1]+radius,paint);
                 canvas.drawCircle(screen[0],screen[1],radius*.3f,paint);
+                paint.setStyle(Paint.Style.FILL);
+                paint.setTextSize(10f*density);
+                paint.setColor(color);
+                canvas.drawText(object.name,screen[0]+radius+3f*density,screen[1]-radius-2f*density,paint);
             }
-            paint.setStyle(Paint.Style.FILL);paint.setTextSize(10f*density);paint.setColor(color);
-            canvas.drawText(object.name,screen[0]+radius+3f*density,screen[1]-radius-2f*density,paint);
+            paint.setStyle(Paint.Style.FILL);
         }
     }
 
