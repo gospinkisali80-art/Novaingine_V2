@@ -683,12 +683,38 @@ public final class MainActivity extends Activity
     private String pendingMeshySystemInfo;
     private boolean meshyStatusBarVisible = true;
 
+    public void showMeshyApplicationMenu(View anchor) {
+        android.widget.PopupMenu popup = new android.widget.PopupMenu(this, anchor);
+        String[] entries = {"About Meshy3D", "Meshy3D Manual", "Release Notes",
+                "Source Repository", "Creator Credits"};
+        for (String entry : entries) popup.getMenu().add(entry);
+        popup.setOnMenuItemClickListener(item -> {
+            switch (item.getTitle().toString()) {
+                case "About Meshy3D":
+                case "Creator Credits":
+                    showMeshyDocumentation("About Meshy3D");
+                    break;
+                case "Meshy3D Manual":
+                    openMeshyHelpUrl("https://github.com/gospinkisali80-art/Novaingine_V2/blob/main/README.md");
+                    break;
+                case "Release Notes":
+                    openMeshyHelpUrl("https://github.com/gospinkisali80-art/Novaingine_V2/releases");
+                    break;
+                case "Source Repository":
+                    openMeshyHelpUrl("https://github.com/gospinkisali80-art/Novaingine_V2");
+                    break;
+            }
+            return true;
+        });
+        popup.show();
+    }
+
     public void showMeshyFileMenu(View anchor) {
         android.widget.PopupMenu popup = new android.widget.PopupMenu(this, anchor);
         String[] entries = {
-                "New", "Open", "Open Recent", "Revert", "Recover",
+                "New", "Open", "Open Recent", "Clear Recent Files List", "Revert", "Recover",
                 "Save", "Save As", "Save Copy", "Save Incremental",
-                "Link", "Append", "Data Previews", "Import", "Export",
+                "Link", "Append", "Data Previews", "Import", "Export", "Export All Collections",
                 "External Data", "Clean Up", "Defaults", "Quit"
         };
         for (int i = 0; i < entries.length; i++) {
@@ -741,6 +767,9 @@ public final class MainActivity extends Activity
             case "Open Recent":
                 chooseRecentMeshyProject();
                 break;
+            case "Clear Recent Files List":
+                clearRecentMeshyDocuments();
+                break;
             case "Revert":
                 new AlertDialog.Builder(this).setTitle("Revert Meshy3D document?")
                         .setMessage("Reload the saved Meshy3D document. The Novaingine scene is not affected.")
@@ -779,6 +808,7 @@ public final class MainActivity extends Activity
                 showSceneDataPreview();
                 break;
             case "Export":
+            case "Export All Collections":
                 exportMeshyDocumentToPicker();
                 break;
             case "External Data":
@@ -790,7 +820,7 @@ public final class MainActivity extends Activity
                 cleanMeshyTemporaryFiles();
                 break;
             case "Defaults":
-                restoreMeshyDefaults();
+                showMeshyDefaultsMenu();
                 break;
             case "Quit":
                 if (manualSculptWorkspace != null) {
@@ -2375,7 +2405,9 @@ public final class MainActivity extends Activity
                         if (centeredStatisticsText != null) centeredStatisticsText.setVisibility(View.GONE);
                         if (editorPanels != null) editorPanels.setVisibility(View.GONE);
                         openManualSculpting();
-                        saveMeshyDocument();
+                         File startupTemplate = new File(getFilesDir(), "meshy3d_startup_template.json");
+                         if (startupTemplate.isFile()) loadMeshyDocumentIntoWorkspace(startupTemplate);
+                         saveMeshyDocument();
                         android.widget.Toast.makeText(this, "Created independent Meshy3D project: " + name, android.widget.Toast.LENGTH_SHORT).show();
                     } catch (Exception e) {
                         android.widget.Toast.makeText(this, "Could not create Meshy3D document: " + e.getMessage(), android.widget.Toast.LENGTH_LONG).show();
@@ -2581,6 +2613,44 @@ public final class MainActivity extends Activity
                 }).show();
     }
 
+    private void clearRecentMeshyDocuments() {
+        getSharedPreferences("meshy3d_editor", MODE_PRIVATE)
+                .edit().remove("recent_meshy_documents").apply();
+        android.widget.Toast.makeText(this, "Recent Meshy3D file list cleared.",
+                android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+    private void showMeshyDefaultsMenu() {
+        new AlertDialog.Builder(this).setTitle("Meshy3D Defaults")
+                .setItems(new String[]{"Save Startup File", "Load Factory Settings"}, (dialog, which) -> {
+                    if (which == 0) saveMeshyStartupTemplate();
+                    else restoreMeshyDefaults();
+                }).setNegativeButton("Cancel", null).show();
+    }
+
+    private void saveMeshyStartupTemplate() {
+        if (manualSculptWorkspace == null) {
+            android.widget.Toast.makeText(this, "Open Meshy3D and configure the startup scene first.",
+                    android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        File template = new File(getFilesDir(), "meshy3d_startup_template.json");
+        try {
+            org.json.JSONObject document = buildMeshyDocumentSnapshot();
+            try (FileOutputStream output = new FileOutputStream(template)) {
+                output.write((document.toString(2) + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                output.flush();
+                output.getFD().sync();
+            }
+            android.widget.Toast.makeText(this,
+                    "Current Meshy3D scene and workspace saved as the New-project startup template.",
+                    android.widget.Toast.LENGTH_LONG).show();
+        } catch (Exception error) {
+            android.widget.Toast.makeText(this, "Startup template save failed: " + error.getMessage(),
+                    android.widget.Toast.LENGTH_LONG).show();
+        }
+    }
+
     private void restoreMeshyDefaults() {
         new AlertDialog.Builder(this).setTitle("Restore Meshy3D Defaults?")
                 .setMessage("Reset editor preferences, workspace selection, fullscreen and mode locking. Project objects and mesh data will be preserved.")
@@ -2594,8 +2664,10 @@ public final class MainActivity extends Activity
                         manualSculptWorkspace.setActiveWorkspaceIndex(0);
                         manualSculptWorkspace.setStatusBarVisible(true);
                     }
+                    File startupTemplate = new File(getFilesDir(), "meshy3d_startup_template.json");
+                    if (startupTemplate.isFile()) startupTemplate.delete();
                     meshyWindowFullscreen=true;applyMeshyWindowFullscreen();
-                    android.widget.Toast.makeText(this,"Editor defaults restored; project data was preserved.",android.widget.Toast.LENGTH_LONG).show();
+                    android.widget.Toast.makeText(this,"Factory editor defaults restored; project data was preserved.",android.widget.Toast.LENGTH_LONG).show();
                 }).show();
     }
 
