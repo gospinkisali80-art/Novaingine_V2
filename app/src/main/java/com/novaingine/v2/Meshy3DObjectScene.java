@@ -24,7 +24,7 @@ public final class Meshy3DObjectScene {
         public float rotationX, rotationY, rotationZ;
         public float scaleX = 1f, scaleY = 1f, scaleZ = 1f;
 
-        Transform copy() {
+        public Transform copy() {
             Transform t = new Transform();
             t.x=x; t.y=y; t.z=z;
             t.rotationX=rotationX; t.rotationY=rotationY; t.rotationZ=rotationZ;
