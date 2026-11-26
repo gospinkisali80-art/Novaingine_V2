@@ -188,7 +188,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
         menus.setGravity(Gravity.CENTER_VERTICAL);
         menuWorkspaceRow.addView(menus, new LinearLayout.LayoutParams(
                 LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
-        String[] menuNames = {"File", "Edit", "Window", "Help"};
+        String[] menuNames = {"File", "Edit", "Render", "Window", "Help"};
         for (String menuName : menuNames) {
             TextView menu = new TextView(activity);
             menu.setText(menuName);
@@ -201,6 +201,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     MainActivity host = (MainActivity) activity;
                     if ("File".equals(menuName)) host.showMeshyFileMenu(view);
                     else if ("Edit".equals(menuName)) host.showMeshyEditMenu(view);
+                    else if ("Render".equals(menuName)) host.showMeshyRenderMenu(view);
                     else if ("Window".equals(menuName)) host.showMeshyWindowMenu(view);
                     else if ("Help".equals(menuName)) host.showMeshyHelpMenu(view);
                 }
@@ -2684,6 +2685,15 @@ public final class ManualSculptWorkspace extends FrameLayout {
     }
 
     public int getActiveWorkspaceIndex() { return activeWorkspaceIndex; }
+
+    public android.graphics.Bitmap renderFinalImage(int width, int height) {
+        if (meshyViewport == null) return null;
+        return meshyViewport.renderFinalImage(Math.max(1, width), Math.max(1, height));
+    }
+
+    public void setStatusBarVisible(boolean visible) {
+        if (status != null) status.setVisibility(visible ? View.VISIBLE : View.GONE);
+    }
 
     public void showWorkspaceChooser() {
         new android.app.AlertDialog.Builder(activity)
