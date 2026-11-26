@@ -441,10 +441,22 @@ int flags=caseSensitive?0:java.util.regex.Pattern.CASE_INSENSITIVE;
         revision++;
     }
 
+    private boolean belongsToCollectionTree(Object3D object,String collectionId) {
+        for(String memberId:object.collectionIds){
+            Collection3D member=collections.get(memberId);int guard=0;
+            while(member!=null&&guard++<=collections.size()){
+                if(collectionId.equals(member.id))return true;
+                member=member.parentId==null?null:collections.get(member.parentId);
+            }
+        }
+        return false;
+    }
+
     public void selectCollection(String collectionId,boolean extend) {
         requireCollection(collectionId);
         ArrayList<Object3D> targets=new ArrayList<>();if(extend)targets.addAll(getSelectedObjects());
-        for(Object3D o:objects.values())if(o.selectable&&o.collectionIds.contains(collectionId)&&!targets.contains(o))targets.add(o);
+        for(Object3D o:objects.values())
+            if(o.selectable&&belongsToCollectionTree(o,collectionId)&&!targets.contains(o))targets.add(o);
         replaceSelection(targets);
     }
 
