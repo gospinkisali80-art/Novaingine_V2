@@ -437,10 +437,10 @@ public final class Meshy3DCore {
     }
     private void compactUnusedVertices(){
         boolean[] used=new boolean[vertices.size()];for(Face face:faces)for(int id:face.vertices)used[id]=true;
-        int[] remap=new int[vertices.size()];Arrays.fill(remap,-1);ArrayList<float[]> kept=new ArrayList<>();
-        for(int i=0;i<vertices.size();i++)if(used[i]){remap[i]=kept.size();kept.add(vertices.get(i));}
+        int[] remap=new int[vertices.size()];Arrays.fill(remap,-1);ArrayList<float[]> kept=new ArrayList<>();ArrayList<Float> keptMask=new ArrayList<>();
+        for(int i=0;i<vertices.size();i++)if(used[i]){remap[i]=kept.size();kept.add(vertices.get(i));keptMask.add(i<sculptMask.length?sculptMask[i]:0f);}
         for(Face face:faces)for(int i=0;i<face.vertices.length;i++)face.vertices[i]=remap[face.vertices[i]];
-        vertices.clear();vertices.addAll(kept);
+        vertices.clear();vertices.addAll(kept);sculptMask=new float[keptMask.size()];for(int i=0;i<sculptMask.length;i++)sculptMask[i]=keptMask.get(i);
     }
     private void duplicateMesh(float dx,float dy,float dz){instanceMesh(1,dx,dy,dz);}
     private void instanceMesh(int copies,float dx,float dy,float dz){
@@ -640,10 +640,10 @@ public final class Meshy3DCore {
         }
         faces.removeIf(face->face.vertices.length<3);
         boolean[] used=new boolean[vertices.size()];for(Face face:faces)for(int id:face.vertices)used[id]=true;
-        int[] compact=new int[vertices.size()];Arrays.fill(compact,-1);ArrayList<float[]> kept=new ArrayList<>();
-        for(int i=0;i<vertices.size();i++)if(used[i]){compact[i]=kept.size();kept.add(vertices.get(i));}
+        int[] compact=new int[vertices.size()];Arrays.fill(compact,-1);ArrayList<float[]> kept=new ArrayList<>();ArrayList<Float> keptMask=new ArrayList<>();
+        for(int i=0;i<vertices.size();i++)if(used[i]){compact[i]=kept.size();kept.add(vertices.get(i));keptMask.add(i<sculptMask.length?sculptMask[i]:0f);}
         for(Face face:faces)for(int i=0;i<face.vertices.length;i++)face.vertices[i]=compact[face.vertices[i]];
-        vertices.clear();vertices.addAll(kept);faceUvs=null;islands.clear();clearSelection();rebuildEdges();revision++;
+        vertices.clear();vertices.addAll(kept);sculptMask=new float[keptMask.size()];for(int i=0;i<sculptMask.length;i++)sculptMask[i]=keptMask.get(i);faceUvs=null;islands.clear();clearSelection();rebuildEdges();revision++;
     }
     public float[][] copyVertices(){float[][] out=new float[vertices.size()][3];for(int i=0;i<out.length;i++)System.arraycopy(vertices.get(i),0,out[i],0,3);return out;}
     public int[][] copyFaces(){int[][] out=new int[faces.size()][];for(int i=0;i<out.length;i++)out[i]=faces.get(i).vertices.clone();return out;}
