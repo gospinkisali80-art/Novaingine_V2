@@ -173,7 +173,14 @@ public final class Meshy3DCore {
         }
         revision++;
     }
-    public void selectLinkedFromCurrent(){int seed=selectedFaces.nextSetBit(0);if(seed>=0)selectLinked(seed);}
+    public void selectLinkedFromCurrent(){
+        int seed=selectedFaces.nextSetBit(0);
+        if(seed<0&&selectedEdges.nextSetBit(0)>=0){Edge e=edges.get(selectedEdges.nextSetBit(0));if(!e.faces.isEmpty())seed=e.faces.get(0);}
+        if(seed<0&&selectedVertices.nextSetBit(0)>=0){int vertex=selectedVertices.nextSetBit(0);
+            for(int i=0;i<faces.size()&&seed<0;i++)for(int id:faces.get(i).vertices)if(id==vertex){seed=i;break;}
+        }
+        if(seed>=0)selectLinked(seed);
+    }
     public void selectLinked(int seedFace){
         if(seedFace<0||seedFace>=faces.size())return;
         clearSelection();ArrayDeque<Integer> q=new ArrayDeque<>();q.add(seedFace);selectedFaces.set(seedFace);
