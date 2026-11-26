@@ -111,6 +111,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private int activeWorkspaceIndex;
     private int workspaceTransitionToken;
     private boolean viewportFocusMode;
+    private boolean workspacePanelsOpen;
+    private Meshy3DViewportChrome viewportChrome;
+    private Meshy3DPhoneControls phoneControls;
     private FrameLayout workspaceLayoutLayer;
     private LinearLayout workspaceToolbar;
     private LinearLayout workspaceLeftDock;
@@ -188,6 +191,33 @@ public final class ManualSculptWorkspace extends FrameLayout {
         windowVersion.setTextSize(10);
         windowVersion.setGravity(Gravity.CENTER_VERTICAL);
         titleRow.addView(windowVersion);
+        TextView undoHeader = new TextView(activity);
+        undoHeader.setText("↶");
+        undoHeader.setTextColor(0xFFE5EAF0);
+        undoHeader.setTextSize(18);
+        undoHeader.setGravity(Gravity.CENTER);
+        undoHeader.setContentDescription("Undo Meshy3D edit");
+        undoHeader.setOnClickListener(v -> {
+            if (!undoMeshEdit()) Toast.makeText(activity, "Nothing to undo", Toast.LENGTH_SHORT).show();
+        });
+        titleRow.addView(undoHeader, new LinearLayout.LayoutParams(dp(30), LayoutParams.MATCH_PARENT));
+        TextView redoHeader = new TextView(activity);
+        redoHeader.setText("↷");
+        redoHeader.setTextColor(0xFFE5EAF0);
+        redoHeader.setTextSize(18);
+        redoHeader.setGravity(Gravity.CENTER);
+        redoHeader.setContentDescription("Redo Meshy3D edit");
+        redoHeader.setOnClickListener(v -> {
+            if (!redoMeshEdit()) Toast.makeText(activity, "Nothing to redo", Toast.LENGTH_SHORT).show();
+        });
+        titleRow.addView(redoHeader, new LinearLayout.LayoutParams(dp(30), LayoutParams.MATCH_PARENT));
+        TextView topMore = new TextView(activity);
+        topMore.setText("⋮");
+        topMore.setTextColor(0xFFE5EAF0);
+        topMore.setTextSize(18);
+        topMore.setGravity(Gravity.CENTER);
+        topMore.setOnClickListener(v -> showWorkspaceChooser());
+        titleRow.addView(topMore, new LinearLayout.LayoutParams(dp(24), LayoutParams.MATCH_PARENT));
 
         // Blender-style application menus and workspace tabs.
         LinearLayout menuWorkspaceRow = new LinearLayout(activity);
@@ -270,6 +300,14 @@ public final class ManualSculptWorkspace extends FrameLayout {
             if (i == 1) {
                 modeButton = item;
                 item.setOnClickListener(v -> showEditorModeMenu());
+            } else if (i == 2) {
+                item.setOnClickListener(v -> showViewportViewMenu());
+            } else if (i == 3) {
+                item.setOnClickListener(v -> showViewportSelectMenu());
+            } else if (i == 4) {
+                item.setOnClickListener(v -> showPrimitiveDialog());
+            } else if (i == 5) {
+                item.setOnClickListener(v -> showViewportObjectMenu());
             }
             viewportHeader.addView(item, new LinearLayout.LayoutParams(
                     LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
@@ -277,13 +315,27 @@ public final class ManualSculptWorkspace extends FrameLayout {
         View headerSpacer = new View(activity);
         viewportHeader.addView(headerSpacer, new LinearLayout.LayoutParams(0, 1, 1f));
         String[] rightHeaderItems = {"↔  Global", "◇", "⌖", "▦", "◉", "⌄"};
-        for (String value : rightHeaderItems) {
+        for (int ri=0;ri<rightHeaderItems.length;ri++) {
+            final int headerAction=ri;
             TextView item = new TextView(activity);
-            item.setText(value);
+            item.setText(rightHeaderItems[ri]);
             item.setTextColor(0xFFD0D0D0);
             item.setTextSize(10);
             item.setGravity(Gravity.CENTER);
             item.setPadding(dp(7), 0, dp(7), 0);
+            item.setOnClickListener(v -> {
+                switch(headerAction) {
+                    case 0: showTransformOrientationDialog(); break;
+                    case 1: showPivotPointDialog(); break;
+                    case 2: showSceneCursorDialog(); break;
+                    case 3: showGridSnapDialog(); break;
+                    case 4:
+                        meshyViewport.toggleFloorGrid();
+                        status.setText("Meshy3D | Floor grid "+(meshyViewport.isFloorGridVisible()?"shown":"hidden"));
+                        break;
+                    default: toggleWorkspacePanels();
+                }
+            });
             viewportHeader.addView(item, new LinearLayout.LayoutParams(
                     LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
         }
@@ -300,8 +352,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
         addView(workspaceLayoutLayer, layerParams);
         renderWorkspaceLayout(0);
 
-        // Built-in phone controls float above the editor and remain available in every workspace.
-        Meshy3DPhoneControls phoneControls = new Meshy3DPhoneControls(activity, meshyViewport,
+        // Shared phone-first viewport chrome. The virtual keyboard/mouse is opened from its keyboard key.
+        phoneControls = new Meshy3DPhoneControls(activity, meshyViewport,
                 new Meshy3DPhoneControls.Actions() {
                     @Override public void undo() {
                         if (!undoMeshEdit()) Toast.makeText(activity, "Nothing to undo", Toast.LENGTH_SHORT).show();
@@ -311,16 +363,69 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     }
                     @Override public void toggleMode() { toggleMeshyModeFromPhone(); }
                 });
+        phoneControls.setVisibility(View.GONE);
+        viewportChrome = new Meshy3DViewportChrome(activity, meshyViewport,
+                new Meshy3DViewportChrome.Actions() {
+                    @Override public void select() {
+                        meshyViewport.setMeasureMode(false);
+                        if (activeWorkspaceIndex == 2) setActiveWorkspaceIndex(0);
+                        meshyViewport.setObjectSelectionEnabled(true);
+                        meshyViewport.setObjectBoxSelectEnabled(false);
+                        meshyViewport.setObjectTransformTool(-1);
+                        status.setText(WORKSPACE_NAMES[activeWorkspaceIndex]+" | Select tool active");
+                    }
+                    @Override public void cursor() { showSceneCursorDialog(); }
+                    @Override public void sculpt() { setActiveWorkspaceIndex(2); }
+                    @Override public void measure() {
+                        meshyViewport.setMeasureMode(true);
+                        meshyViewport.setObjectTransformTool(-1);
+                        status.setText("Meshy3D | Measure tool: tap two points on the viewport");
+                    }
+                    @Override public void add() { showPrimitiveDialog(); }
+                    @Override public void undo() { if(!undoMeshEdit())Toast.makeText(activity,"Nothing to undo",Toast.LENGTH_SHORT).show(); }
+                    @Override public void redo() { if(!redoMeshEdit())Toast.makeText(activity,"Nothing to redo",Toast.LENGTH_SHORT).show(); }
+                    @Override public void toggleMode() { toggleMeshyModeFromPhone(); }
+                    @Override public void keyboard() {
+                        if(phoneControls.getVisibility()!=View.VISIBLE) {
+                            phoneControls.setVisibility(View.VISIBLE);
+                            phoneControls.setExpanded(true);
+                        } else if(phoneControls.isExpanded()) {
+                            phoneControls.setExpanded(false);
+                            phoneControls.setVisibility(View.GONE);
+                        } else {
+                            phoneControls.setExpanded(true);
+                        }
+                    }
+                    @Override public void more() { toggleWorkspacePanels(); }
+                    @Override public void settings() { showWorkspaceChooser(); }
+                    @Override public void snap() { showGridSnapDialog(); }
+                    @Override public void escape() {
+                        meshyViewport.setObjectTransformTool(-1);
+                        meshyViewport.setMeasureMode(false);
+                        if(phoneControls.isExpanded())phoneControls.setExpanded(false);
+                        phoneControls.setVisibility(View.GONE);
+                        status.setText("Meshy3D | Tool cancelled");
+                    }
+                }, uiScale);
+        FrameLayout.LayoutParams chromeParams = new FrameLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT);
+        chromeParams.topMargin = dp(86);
+        addView(viewportChrome, chromeParams);
         FrameLayout.LayoutParams phoneControlsParams = new FrameLayout.LayoutParams(
                 LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.END);
-        phoneControlsParams.setMargins(0, 0, dp(8), dp(8));
-        phoneControls.setElevation(dp(12));
+        phoneControlsParams.setMargins(0, 0, dp(8), dp(42));
+        phoneControls.setElevation(dp(16));
         addView(phoneControls, phoneControlsParams);
     }
 
     private void toggleMeshyModeFromPhone() {
         if (activeWorkspaceIndex == 2) {
-            Toast.makeText(activity, "Sculpt Mode uses its dedicated sculpt tools.", Toast.LENGTH_SHORT).show();
+            setActiveWorkspaceIndex(0);
+            activeEditorMode = "Object Mode";
+            sculptEnabled = false;
+            if (modeButton != null) modeButton.setText(activeEditorMode);
+            updateSculptViewport();
+            status.setText("Meshy3D | Object Mode");
             return;
         }
         checkpointMeshEdit();
@@ -2504,6 +2609,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
         workspaceToolbar.setGravity(Gravity.CENTER_VERTICAL);
         workspaceToolbar.setBackgroundColor(0xE02B333D);
         workspaceToolbar.setPadding(dp(6), 0, dp(6), 0);
+        workspaceToolbar.setVisibility(View.GONE); // Shared viewport rail and bottom bar replace the extra tool row.
         HorizontalScrollView toolbarScroll = new HorizontalScrollView(activity);
         toolbarScroll.setHorizontalScrollBarEnabled(false);
         toolbarScroll.addView(workspaceToolbar, new HorizontalScrollView.LayoutParams(
@@ -2666,6 +2772,11 @@ public final class ManualSculptWorkspace extends FrameLayout {
         addDockItems(workspaceLeftDock, leftTitle, leftItems);
         workspaceRightDock = createDock(rightTitle, index == 2 ? 142 : 156, Gravity.RIGHT);
         addDockItems(workspaceRightDock, rightTitle, rightItems);
+        workspacePanelsOpen = index != 0;
+        int dockVisibility = workspacePanelsOpen ? View.VISIBLE : View.GONE;
+        workspaceLeftDock.setVisibility(dockVisibility);
+        workspaceRightDock.setVisibility(dockVisibility);
+        if (viewportChrome != null) viewportChrome.setNavigationVisible(!workspacePanelsOpen);
         if (bottomTitle != null) {
             workspaceBottomDock = new LinearLayout(activity);
             workspaceBottomDock.setOrientation(LinearLayout.VERTICAL);
@@ -2682,7 +2793,10 @@ public final class ManualSculptWorkspace extends FrameLayout {
         if (index == 2) {
             workspaceLeftDock.setVisibility(sculptEnabled ? View.VISIBLE : View.GONE);
             workspaceRightDock.setVisibility(sculptEnabled ? View.VISIBLE : View.GONE);
+            workspacePanelsOpen = sculptEnabled;
+            if (viewportChrome != null) viewportChrome.setNavigationVisible(false);
         }
+        if (index == 0 && workspaceBottomDock != null) workspaceBottomDock.setVisibility(View.GONE);
         status.setText("Meshy3D  |  " + WORKSPACE_NAMES[index] + " Workspace");
     }
 
@@ -2692,6 +2806,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
         if (workspaceLeftDock != null) workspaceLeftDock.setVisibility(visibility);
         if (workspaceRightDock != null) workspaceRightDock.setVisibility(visibility);
         if (workspaceBottomDock != null) workspaceBottomDock.setVisibility(visibility);
+        if (viewportChrome != null) viewportChrome.setVisibility(viewportFocusMode ? View.GONE : View.VISIBLE);
+        if (phoneControls != null) phoneControls.setVisibility(View.GONE);
         if (status != null) status.setText(viewportFocusMode
                 ? "Meshy3D  |  Viewport Focus  •  Tap viewport to restore panels"
                 : "Meshy3D  |  " + WORKSPACE_NAMES[activeWorkspaceIndex] + " Workspace");
