@@ -705,8 +705,14 @@ public final class ManualSculptWorkspace extends FrameLayout {
             graphView.setNodes(core.getGraphNodeLabels(graph));graphView.setLinks(core.getGraphLinks(graph));
         });
         root.addView(actions,new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT,dp(44)));
-        root.addView(graphView,new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT,dp(390)));
-        new android.app.AlertDialog.Builder(activity).setTitle(title+" • Executable Node Chain")
+        int graphHeight=Math.max(390,55+((core.getGraphNodeLabels(graph).length+2)/3)*125);
+        android.widget.HorizontalScrollView graphHorizontal=new android.widget.HorizontalScrollView(activity);
+        graphHorizontal.setHorizontalScrollBarEnabled(true);
+        graphHorizontal.addView(graphView,new android.widget.HorizontalScrollView.LayoutParams(dp(620),dp(graphHeight)));
+        android.widget.ScrollView graphVertical=new android.widget.ScrollView(activity);
+        graphVertical.addView(graphHorizontal,new android.widget.ScrollView.LayoutParams(LayoutParams.WRAP_CONTENT,LayoutParams.WRAP_CONTENT));
+        root.addView(graphVertical,new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT,dp(390)));
+        new android.app.AlertDialog.Builder(activity).setTitle(title+" • Executable Node Graph")
                 .setView(root).setPositiveButton("Done",null).setNegativeButton("Close",null).show();
     }
 
