@@ -1327,23 +1327,172 @@ public final class ManualSculptWorkspace extends FrameLayout {
     }
 
     private void showObjectPropertiesDialog() {
-        Meshy3DObjectScene.Object3D o=meshyViewport.getObjectScene().getActiveObject();if(o==null)return;
-        Meshy3DObjectScene scene=meshyViewport.getObjectScene();
+        final Meshy3DObjectScene scene=meshyViewport.getObjectScene();
+        final Meshy3DObjectScene.Object3D object=scene.getActiveObject();
+        if(object==null){
+            Toast.makeText(activity,"Select an object first.",Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        ScrollView scroll=new ScrollView(activity);
+        LinearLayout panel=new LinearLayout(activity);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(16),dp(8),dp(16),dp(12));
+        scroll.addView(panel);
+
+        TextView identityHeading=new TextView(activity);
+        identityHeading.setText("IDENTITY");
+        identityHeading.setTextColor(ACCENT);
+        identityHeading.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
+        panel.addView(identityHeading);
+
+        EditText nameField=new EditText(activity);
+        nameField.setSingleLine(true);
+        nameField.setHint("Object name");
+        nameField.setText(object.name);
+        panel.addView(nameField);
+
+        String[] components={"Location X","Location Y","Location Z",
+                "Rotation X (°)","Rotation Y (°)","Rotation Z (°)",
+                "Scale X","Scale Y","Scale Z"};
+        float[] initial={object.transform.x,object.transform.y,object.transform.z,
+                object.transform.rotationX,object.transform.rotationY,object.transform.rotationZ,
+                object.transform.scaleX,object.transform.scaleY,object.transform.scaleZ};
+        EditText[] fields=new EditText[components.length];
+
+        TextView transformHeading=new TextView(activity);
+        transformHeading.setText("TRANSFORM");
+        transformHeading.setTextColor(ACCENT);
+        transformHeading.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
+        transformHeading.setPadding(0,dp(12),0,dp(4));
+        panel.addView(transformHeading);
+
+        int numericType=android.text.InputType.TYPE_CLASS_NUMBER
+                |android.text.InputType.TYPE_NUMBER_FLAG_SIGNED
+                |android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL;
+        for(int i=0;i<components.length;i++){
+            LinearLayout row=new LinearLayout(activity);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            TextView label=new TextView(activity);
+            label.setText(components[i]);
+            label.setTextColor(Color.WHITE);
+            row.addView(label,new LinearLayout.LayoutParams(dp(112),LayoutParams.WRAP_CONTENT));
+            fields[i]=new EditText(activity);
+            fields[i].setSingleLine(true);
+            fields[i].setInputType(numericType);
+            fields[i].setSelectAllOnFocus(true);
+            fields[i].setText(fmt(initial[i]));
+            row.addView(fields[i],new LinearLayout.LayoutParams(0,LayoutParams.WRAP_CONTENT,1f));
+            LinearLayout.LayoutParams rowParams=new LinearLayout.LayoutParams(
+                    LayoutParams.MATCH_PARENT,LayoutParams.WRAP_CONTENT);
+            rowParams.bottomMargin=dp(2);
+            panel.addView(row,rowParams);
+        }
+
+        TextView stateHeading=new TextView(activity);
+        stateHeading.setText("OBJECT STATE");
+        stateHeading.setTextColor(ACCENT);
+        stateHeading.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
+        stateHeading.setPadding(0,dp(12),0,dp(4));
+        panel.addView(stateHeading);
+
+        android.widget.CheckBox viewportVisible=new android.widget.CheckBox(activity);
+        viewportVisible.setText("Visible in viewport");
+        viewportVisible.setTextColor(Color.WHITE);
+        viewportVisible.setChecked(object.visible);
+        panel.addView(viewportVisible);
+
+        android.widget.CheckBox selectable=new android.widget.CheckBox(activity);
+        selectable.setText("Selectable");
+        selectable.setTextColor(Color.WHITE);
+        selectable.setChecked(object.selectable);
+        panel.addView(selectable);
+
+        android.widget.CheckBox renderVisible=new android.widget.CheckBox(activity);
+        renderVisible.setText("Visible in render");
+        renderVisible.setTextColor(Color.WHITE);
+        renderVisible.setChecked(object.renderVisible);
+        panel.addView(renderVisible);
+
         String parentName="None";
-        if(o.parentId!=null){Meshy3DObjectScene.Object3D parent=scene.getObject(o.parentId);if(parent!=null)parentName=parent.name;}
-        float[] size=scene.dimensions(o.id);
-        String message="Name: "+o.name+"\nType: "+o.type+"\nParent: "+parentName
-                +"\nLocation: "+fmt(o.transform.x)+", "+fmt(o.transform.y)+", "+fmt(o.transform.z)
-                +"\nRotation: "+fmt(o.transform.rotationX)+", "+fmt(o.transform.rotationY)+", "+fmt(o.transform.rotationZ)
-                +"\nScale: "+fmt(o.transform.scaleX)+", "+fmt(o.transform.scaleY)+", "+fmt(o.transform.scaleZ)
-                +"\nWorld Dimensions: "+fmt(size[0])+", "+fmt(size[1])+", "+fmt(size[2])
-                +"\nViewport Visible: "+o.visible+"\nSelectable: "+o.selectable+"\nRender Visible: "+o.renderVisible;
-        if(o.mesh!=null)message+="\nMesh Data Users: "+scene.getMeshDataUserCount(o.id)
-                +"\nVertices: "+o.mesh.getVertexCount()+"\nEdges: "+o.mesh.getEdgeCount()+"\nFaces: "+o.mesh.getFaceCount();
-        if("CAMERA".equals(o.type))message+="\nLens: "+fmt(o.cameraLens)+" mm\nClip: "+fmt(o.cameraClipStart)+" - "+fmt(o.cameraClipEnd);
-        if("LIGHT".equals(o.type))message+="\nLight: "+o.lightType+"\nPower: "+fmt(o.lightPower)+"\nAngle: "+fmt(o.lightAngle);
-        new android.app.AlertDialog.Builder(activity).setTitle("Object Properties").setMessage(message)
-                .setPositiveButton("Close",null).show();
+        if(object.parentId!=null){
+            Meshy3DObjectScene.Object3D parent=scene.getObject(object.parentId);
+            if(parent!=null)parentName=parent.name;
+        }
+        float[] dimensions=scene.dimensions(object.id);
+        StringBuilder details=new StringBuilder();
+        details.append("Type: ").append(object.type)
+                .append("\nParent: ").append(parentName)
+                .append("\nWorld dimensions: ").append(fmt(dimensions[0])).append(" × ")
+                .append(fmt(dimensions[1])).append(" × ").append(fmt(dimensions[2]));
+        if(object.mesh!=null){
+            details.append("\nMesh data users: ").append(scene.getMeshDataUserCount(object.id))
+                    .append("\nVertices: ").append(object.mesh.getVertexCount())
+                    .append("   Edges: ").append(object.mesh.getEdgeCount())
+                    .append("   Faces: ").append(object.mesh.getFaceCount());
+        }
+        if("CAMERA".equals(object.type)){
+            details.append("\nLens: ").append(fmt(object.cameraLens)).append(" mm")
+                    .append("\nClip range: ").append(fmt(object.cameraClipStart))
+                    .append(" – ").append(fmt(object.cameraClipEnd));
+        }else if("LIGHT".equals(object.type)){
+            details.append("\nLight: ").append(object.lightType)
+                    .append("\nPower: ").append(fmt(object.lightPower))
+                    .append("\nAngle: ").append(fmt(object.lightAngle))
+                    .append("\nColor: #").append(String.format(java.util.Locale.US,"%08X",object.lightColor));
+        }
+        TextView dataInfo=new TextView(activity);
+        dataInfo.setText(details.toString());
+        dataInfo.setTextColor(0xFFCBD2DC);
+        dataInfo.setPadding(0,dp(12),0,dp(4));
+        panel.addView(dataInfo);
+
+        android.app.AlertDialog.Builder builder=new android.app.AlertDialog.Builder(activity)
+                .setTitle("Object Properties")
+                .setView(scroll)
+                .setPositiveButton("Apply",null)
+                .setNegativeButton("Cancel",null);
+        if("CAMERA".equals(object.type)){
+            builder.setNeutralButton("Camera Data",(dialog,which)->showCameraSettingsDialog());
+        }else if("LIGHT".equals(object.type)){
+            builder.setNeutralButton("Light Data",(dialog,which)->showLightSettingsDialog());
+        }
+
+        android.app.AlertDialog dialog=builder.create();
+        dialog.setOnShowListener(ignored->dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener(view->{
+                    try{
+                        String newName=nameField.getText().toString().trim();
+                        if(newName.isEmpty())throw new IllegalArgumentException("Object name cannot be empty.");
+                        float[] values=new float[fields.length];
+                        for(int i=0;i<fields.length;i++){
+                            values[i]=Float.parseFloat(fields[i].getText().toString().trim());
+                            if(!Float.isFinite(values[i])||Math.abs(values[i])>100000f)
+                                throw new IllegalArgumentException("Transform values must be finite and within ±100000.");
+                        }
+                        for(int i=6;i<9;i++){
+                            if(Math.abs(values[i])<0.0001f||Math.abs(values[i])>10000f)
+                                throw new IllegalArgumentException("Scale values must be between 0.0001 and 10000 in magnitude.");
+                        }
+                        checkpointMeshEdit();
+                        scene.rename(object.id,newName);
+                        Meshy3DObjectScene.Transform transform=object.transform.copy();
+                        transform.x=values[0];transform.y=values[1];transform.z=values[2];
+                        transform.rotationX=values[3];transform.rotationY=values[4];transform.rotationZ=values[5];
+                        transform.scaleX=values[6];transform.scaleY=values[7];transform.scaleZ=values[8];
+                        scene.setTransform(object.id,transform);
+                        scene.setVisibility(object.id,viewportVisible.isChecked());
+                        scene.setSelectable(object.id,selectable.isChecked());
+                        scene.setRenderVisibility(object.id,renderVisible.isChecked());
+                        meshyViewport.invalidate();
+                        refreshModelingOutliner();
+                        status.setText("Modeling | Object properties applied to "+newName);
+                        dialog.dismiss();
+                    }catch(Exception error){
+                        showObjectOperationError(error);
+                    }
+                }));
+        dialog.show();
     }
 
     private void showObjectOperationError(Exception error) {
