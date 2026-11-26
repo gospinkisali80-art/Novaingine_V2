@@ -375,6 +375,18 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         status.setText(WORKSPACE_NAMES[activeWorkspaceIndex]+" | Select tool active");
                     }
                     @Override public void cursor() { showSceneCursorDialog(); }
+                    @Override public void transform(int mode) {
+                        if(activeWorkspaceIndex==2)setActiveWorkspaceIndex(0);
+                        if(meshyViewport.isMeshEditMode()) {
+                            activeEditorMode="Object Mode";
+                            meshyViewport.setMeshEditMode(false);
+                            if(modeButton!=null)modeButton.setText(activeEditorMode);
+                        }
+                        meshyViewport.setObjectSelectionEnabled(true);
+                        meshyViewport.setObjectBoxSelectEnabled(false);
+                        meshyViewport.setObjectTransformTool(mode);
+                        status.setText("Meshy3D | "+(mode==0?"Move":mode==1?"Rotate":"Scale")+" gizmo active");
+                    }
                     @Override public void sculpt() { setActiveWorkspaceIndex(2); }
                     @Override public void measure() {
                         meshyViewport.setMeasureMode(true);
