@@ -508,8 +508,13 @@ public final class ManualSculptWorkspace extends FrameLayout {
                                 checkpointMeshEdit();meshyViewport.bisectMesh(w==0?1:0,w==1?1:0,w==2?1:0,value);
                                 status.setText("Modeling | Mesh bisected by "+axes[w]);
                             })).show();
-                } else if ("Knife".equals(item)) {
-                    meshyViewport.startKnifeCut();status.setText("Modeling | Knife: drag a straight cut across the mesh");
+                } else if ("Plane Cut".equals(item)) {
+                    String[] axes={"X plane","Y plane","Z plane"};
+                    new android.app.AlertDialog.Builder(activity).setTitle("Plane Cut")
+                            .setItems(axes,(d,w)->showAmountDialog("Cut plane offset",-1f,1f,value->{
+                                checkpointMeshEdit();meshyViewport.bisectMesh(w==0?1:0,w==1?1:0,w==2?1:0,value);
+                                status.setText("Modeling | Mesh cut along "+axes[w]);
+                            })).show();
                 } else if ("Poly Build".equals(item)) {
                     meshyViewport.startPolyBuild();status.setText("Modeling | Poly Build: tap points, then tap the first point to close the face");
                 } else if ("Un-Subdivide".equals(item)) {
@@ -1009,7 +1014,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 break;
             case 1:
                 tools = new String[]{"Vertex", "Edge", "Face", "Move", "Rotate", "Scale", "Extrude", "Inset",
-                        "Bevel", "Loop Cut", "Knife", "Bisect", "Bridge", "Fill", "Subdivide",
+                        "Bevel", "Loop Cut", "Plane Cut", "Bisect", "Bridge", "Fill", "Subdivide",
                         "Merge", "Dissolve", "Separate", "Spin", "Screw", "Shear", "Bend"};
                 leftTitle = "Modeling Tools";
                 leftItems = new String[]{
@@ -1017,7 +1022,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         "Select Loops", "Select Similar", "TRANSFORM", "Move", "Rotate", "Scale", "Mirror",
                         "Shrink / Fatten", "Shear", "Bend", "To Sphere", "Edge Slide", "Vertex Slide",
                         "MESH EDIT", "Extrude Region", "Extrude Along Normals", "Extrude Individual Faces",
-                        "Inset Faces", "Bevel Edges", "Loop Cut", "Knife", "Bisect", "Poly Build",
+                        "Inset Faces", "Bevel Edges", "Loop Cut", "Plane Cut", "Bisect", "Poly Build",
                         "Bridge Edge Loops", "Spin", "Screw", "Fill", "Grid Fill", "Bridge",
                         "TOPOLOGY", "Subdivide", "Un-Subdivide", "Merge by Distance", "Dissolve Edges",
                         "Dissolve Faces", "Limited Dissolve", "Delete Vertices", "Delete Edges",
