@@ -332,6 +332,7 @@ public final class Meshy3DCore {
         return ((int)(aa+(ba-aa)*t)<<24)|((int)(ar+(br-ar)*t)<<16)|((int)(ag+(bg-ag)*t)<<8)|(int)(ab+(bb-ab)*t);
     }
     public int[] getTexturePixels(){return texturePixels==null?null:texturePixels.clone();}
+    int[] getTexturePixelsUnsafe(){return texturePixels;}
     public boolean hasTexture(){return texturePixels!=null;}
     public int sampleTextureColor(float u,float v){if(texturePixels==null)return 0;int x=Math.max(0,Math.min(textureWidth-1,(int)(u*(textureWidth-1))));int y=Math.max(0,Math.min(textureHeight-1,(int)((1-v)*(textureHeight-1))));return texturePixels[y*textureWidth+x];}
     public boolean hasFaceUvs(){return faceUvs!=null;}
