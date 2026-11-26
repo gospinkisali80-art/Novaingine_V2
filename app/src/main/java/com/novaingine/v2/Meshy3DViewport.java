@@ -228,8 +228,7 @@ public final class Meshy3DViewport extends View {
         for(int i=0;i<vertices.length;i++) p[i]=project(vertices[i][0],vertices[i][1],vertices[i][2],cx,cy,unit);
 
         float[] viewportLight=cameraPoint(-.45f,.82f,.65f);
-        boolean hasActiveTexture=document.hasTexture();
-        float[][][] activeUvs=document.copyFaceUvs();
+        boolean hasActiveTexture=document.hasTexture()&&document.hasFaceUvs();
         // Draw only outward-facing faces, sorted far-to-near. This prevents the
         // previous see-through/inverted-looking cube caused by drawing all six sides.
         int[] order=new int[faces.length];
@@ -261,11 +260,7 @@ public final class Meshy3DViewport extends View {
             int side = Math.min(FACE_COLORS.length-1,f / (MESH_SUBDIVISIONS * MESH_SUBDIVISIONS));
             int base = FACE_COLORS[side];
             int shaded = document.isFaceSelected(f) ? 0xFFFFA52B : blendColor(base, meshTint, 0.48f);
-            if(hasActiveTexture&&activeUvs!=null&&f<activeUvs.length&&activeUvs[f].length>0){
-                float u=0,v=0;for(float[] uv:activeUvs[f]){u+=uv[0];v+=uv[1];}
-                u/=activeUvs[f].length;v/=activeUvs[f].length;
-                shaded=blendColor(shaded,document.sampleTextureColor(u,v),0.72f);
-            }
+            if(hasActiveTexture)shaded=blendColor(shaded,document.sampleFaceTextureColor(f),0.72f);
             if(!document.isFaceSelected(f))shaded=shadeViewportColor(shaded,nx,ny,nz,viewportLight);
             paint.setStyle(Paint.Style.FILL); paint.setColor(shaded); canvas.drawPath(path,paint);
             if (showTopology) {
