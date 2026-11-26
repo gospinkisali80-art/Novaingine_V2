@@ -270,8 +270,18 @@ public final class Meshy3DObjectScene {
         Object3D o=requireObject(objectId);
         if(!o.selectable&&selected)return;
         o.selected=selected;
-        if(selected){activeObjectId=objectId;for(Object3D other:objects.values())other.active=false;o.active=true;}
-        else if(o.active){o.active=false;activeObjectId=null;}
+        if(selected){
+            activeObjectId=objectId;
+            for(Object3D other:objects.values())other.active=false;
+            o.active=true;
+        }else{
+            o.active=false;
+            if(objectId.equals(activeObjectId)){
+                activeObjectId=null;
+                for(Object3D candidate:objects.values())if(candidate.selected&&candidate.selectable)activeObjectId=candidate.id;
+                for(Object3D candidate:objects.values())candidate.active=candidate.id.equals(activeObjectId);
+            }
+        }
         revision++;
     }
 
