@@ -1124,6 +1124,18 @@ public final class ManualSculptWorkspace extends FrameLayout {
         content.setOrientation(LinearLayout.VERTICAL);
         scroll.addView(content, new ScrollView.LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        if ("Modeling Tools".equals(heading) && meshyViewport != null) {
+            content.addView(dockHeading("SCENE OUTLINER"));
+            for(Meshy3DObjectScene.Object3D object:meshyViewport.getObjectScene().getObjects()) {
+                TextView objectRow=dockItem(object.name,object.active);
+                objectRow.setOnClickListener(v->{
+                    meshyViewport.selectSceneObject(object.id);
+                    status.setText("Modeling | Active object: "+object.name);
+                });
+                content.addView(objectRow);
+            }
+            content.addView(dockHeading("OBJECT OPERATIONS"));
+        }
         for (String item : items) content.addView(dockItem(item, false));
         dock.addView(scroll, new LinearLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT, 0, 1f));
