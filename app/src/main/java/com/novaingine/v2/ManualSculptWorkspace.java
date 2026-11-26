@@ -601,17 +601,19 @@ public final class ManualSculptWorkspace extends FrameLayout {
         LinearLayout root=new LinearLayout(activity);root.setOrientation(LinearLayout.VERTICAL);
         HorizontalScrollView tools=new HorizontalScrollView(activity);tools.setHorizontalScrollBarEnabled(false);
         LinearLayout buttons=new LinearLayout(activity);buttons.setOrientation(LinearLayout.HORIZONTAL);
-        String[] actions=paintMode?new String[]{"Orange","Blue","White","Smaller Brush","Larger Brush"}
+        String[] actions=paintMode?new String[]{"Orange","Blue","White","Smaller Brush","Larger Brush","Opacity +","Opacity -"}
                 :new String[]{"Move +","Move -","Rotate 15°","Rotate -15°","Scale Up","Scale Down"};
         for(String action:actions){TextView b=dockItem(action,false);buttons.addView(b);
             b.setOnClickListener(v->{
                 Meshy3DCore core=meshyViewport.getDocumentCore();
                 if(paintMode){
-                    if(action.equals("Orange"))editor.setBrush(0xFFFF6B35,18f,.9f);
-                    else if(action.equals("Blue"))editor.setBrush(0xFF368BFF,18f,.9f);
-                    else if(action.equals("White"))editor.setBrush(0xFFFFFFFF,18f,.9f);
-                    else if(action.equals("Smaller Brush"))editor.setBrush(0xFFFFFFFF,8f,.9f);
-                    else editor.setBrush(0xFFFFFFFF,36f,.9f);
+                    if(action.equals("Orange"))editor.setBrush(0xFFFF6B35,core.getBrushRadius(),core.getBrushOpacity());
+                    else if(action.equals("Blue"))editor.setBrush(0xFF368BFF,core.getBrushRadius(),core.getBrushOpacity());
+                    else if(action.equals("White"))editor.setBrush(0xFFFFFFFF,core.getBrushRadius(),core.getBrushOpacity());
+                    else if(action.equals("Smaller Brush"))editor.setBrush(core.getBrushColor(),Math.max(1,core.getBrushRadius()-4),core.getBrushOpacity());
+                    else if(action.equals("Larger Brush"))editor.setBrush(core.getBrushColor(),Math.min(128,core.getBrushRadius()+4),core.getBrushOpacity());
+                    else if(action.equals("Opacity +"))editor.setBrush(core.getBrushColor(),core.getBrushRadius(),Math.min(1,core.getBrushOpacity()+.1f));
+                    else editor.setBrush(core.getBrushColor(),core.getBrushRadius(),Math.max(.05f,core.getBrushOpacity()-.1f));
                 }else{
                     if(action.equals("Move +"))core.transformSelectedUv(.05f,0,1,0);
                     else if(action.equals("Move -"))core.transformSelectedUv(-.05f,0,1,0);
