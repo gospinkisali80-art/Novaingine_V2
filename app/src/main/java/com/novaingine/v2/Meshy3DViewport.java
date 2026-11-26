@@ -205,6 +205,26 @@ public final class Meshy3DViewport extends View {
         return created.id;
     }
 
+    public int importMeshyMeshes(java.util.List<Meshy3DGlbImporter.ImportedMesh> imported) {
+        if (imported == null || imported.isEmpty()) return 0;
+        syncCoreFromViewport();
+        String lastId = null;
+        int count = 0;
+        for (Meshy3DGlbImporter.ImportedMesh item : imported) {
+            if (item == null || item.mesh == null) continue;
+            Meshy3DObjectScene.Object3D created = objectScene.createMeshObject(item.name, item.mesh);
+            lastId = created.id;
+            count++;
+        }
+        if (lastId != null) {
+            activateSceneObject(lastId);
+            meshEditMode = false;
+            objectSelectionEnabled = true;
+            invalidate();
+        }
+        return count;
+    }
+
     public String duplicateActiveObject(boolean linked) {
         Meshy3DObjectScene.Object3D active=objectScene.getObject(objectSceneActiveId);
         if(active==null)return null;
