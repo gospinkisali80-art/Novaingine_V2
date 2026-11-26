@@ -1536,7 +1536,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     if(parent==null)break;depth++;parentId=parent.parentId;
                 }
                 String typeIcon="MESH".equals(object.type)?"◈ ":"CAMERA".equals(object.type)?"▣ ":"LIGHT".equals(object.type)?"☼ ":"◇ ";
-                String prefix=new String(new char[Math.min(8,depth)]).replace("\\0","  ");
+                StringBuilder indentation=new StringBuilder();
+                for(int level=0;level<Math.min(8,depth);level++)indentation.append("  ");
+                String prefix=indentation.toString();
                 String flags=(object.visible?"":"◌ ")+(object.selectable?"":"🔒 ")+(object.renderVisible?"":"R ");
                 TextView objectRow=dockItem(prefix+typeIcon+object.name+"  "+flags,object.active);
                 objectRow.setOnClickListener(v->{
