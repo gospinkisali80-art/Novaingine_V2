@@ -611,12 +611,13 @@ public final class Meshy3DCore {
         textureWidth=width;textureHeight=height;texturePixels=pixels.clone();revision++;
     }
     public JSONObject exportState(){
-        JSONObject o=new JSONObject();JSONArray vs=new JSONArray(),fs=new JSONArray(),ss=new JSONArray();
+        JSONObject o=new JSONObject();JSONArray vs=new JSONArray(),fs=new JSONArray(),ss=new JSONArray(),ps=new JSONArray();
         try{
             for(float[] p:vertices){JSONArray a=new JSONArray();for(float v:p)a.put(v);vs.put(a);}
             for(Face f:faces){JSONArray a=new JSONArray();for(int v:f.vertices)a.put(v);fs.put(a);}
-            for(long s:seams)ss.put(Long.toString(s));
-            o.put("vertices",vs);o.put("faces",fs);o.put("seams",ss);o.put("selectMode",selectMode.name());
+            for(long s:seams)ss.put(Long.toString(s));for(long pin:pins)ps.put(Long.toString(pin));
+            o.put("vertices",vs);o.put("faces",fs);o.put("seams",ss);o.put("pins",ps);o.put("selectMode",selectMode.name());
+            o.put("textureColor",textureColor);o.put("brushRadius",brushRadius);o.put("brushOpacity",brushOpacity);
             o.put("baseColor",baseColor);o.put("metallic",metallic);o.put("roughness",roughness);
             if(faceUvs!=null){JSONArray uvFaces=new JSONArray();for(float[][] face:faceUvs){JSONArray corners=new JSONArray();for(float[] uv:face){JSONArray pair=new JSONArray();pair.put(uv[0]);pair.put(uv[1]);corners.put(pair);}uvFaces.put(corners);}o.put("faceUvs",uvFaces);}
             o.put("geometryNodes",writeNodes(geometryNodes));o.put("shaderNodes",writeNodes(shaderNodes));o.put("compositorNodes",writeNodes(compositorNodes));
@@ -649,6 +650,8 @@ public final class Meshy3DCore {
             for(int i=0;i<fs.length();i++){JSONArray f=fs.getJSONArray(i);if(f.length()<3)return false;int[] ids=new int[f.length()];for(int j=0;j<ids.length;j++){ids[j]=f.getInt(j);if(ids[j]<0||ids[j]>=nv.size())return false;}nf.add(new Face(ids));}
             vertices.clear();vertices.addAll(nv);faces.clear();faces.addAll(nf);seams.clear();
             JSONArray sm=o.optJSONArray("seams");if(sm!=null)for(int i=0;i<sm.length();i++)seams.add(Long.parseLong(sm.getString(i)));
+            pins.clear();JSONArray pn=o.optJSONArray("pins");if(pn!=null)for(int i=0;i<pn.length();i++)pins.add(Long.parseLong(pn.getString(i)));
+            textureColor=o.optInt("textureColor",textureColor);brushRadius=(float)o.optDouble("brushRadius",brushRadius);brushOpacity=(float)o.optDouble("brushOpacity",brushOpacity);
             selectMode=SelectMode.valueOf(o.optString("selectMode","FACE"));
             baseColor=o.optInt("baseColor",baseColor);metallic=(float)o.optDouble("metallic",metallic);roughness=(float)o.optDouble("roughness",roughness);
             clearSelection();rebuildEdges();
