@@ -66,6 +66,7 @@ public final class Meshy3DViewport extends View {
     private boolean objectTransformLocalOrientation;
     private boolean objectGizmoDragging;
     private boolean objectGizmoRotationRing;
+    private boolean objectGizmoUniformScale;
     private boolean objectBoxSelectEnabled;
     private boolean objectBoxSelecting;
     private float objectBoxEndX,objectBoxEndY;
@@ -158,6 +159,11 @@ public final class Meshy3DViewport extends View {
         m[4]=t*x*y+s*z;m[5]=t*y*y+c;m[6]=t*y*z-s*x;
         m[8]=t*x*z-s*y;m[9]=t*y*z+s*x;m[10]=t*z*z+c;
         return m;
+    }
+    private static double[] uniformScaleMatrix(double factor) {
+        double[] matrix=identityMatrix4();
+        matrix[0]=factor;matrix[5]=factor;matrix[10]=factor;
+        return matrix;
     }
     private static double[] scaleAlongAxisMatrix(float[] axis,double factor) {
         double[] m=identityMatrix4();double f=factor-1.0;
@@ -1526,6 +1532,11 @@ public final class Meshy3DViewport extends View {
         if(objectTransformTool==1){
             paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(2f*density);paint.setColor(0xFFE2E5E9);
             canvas.drawCircle(center[0],center[1],handleLength*.72f,paint);
+        } else if(objectTransformTool==2) {
+            paint.setStyle(Paint.Style.FILL);paint.setColor(0xFFF1F3F5);
+            canvas.drawCircle(center[0],center[1],7f*density,paint);
+            paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(2f*density);
+            canvas.drawCircle(center[0],center[1],11f*density,paint);
         }
         paint.setStyle(Paint.Style.FILL);
     }
@@ -1540,7 +1551,12 @@ public final class Meshy3DViewport extends View {
         float handleLength=76f*density,hitWidth=18f*density;
         float[][] axes={{1,0,0},{0,1,0},{0,0,1}};
         float nearest=Float.MAX_VALUE;int selectedAxis=-1;float selectedX=0,selectedY=0;
-        for(int axis=0;axis<3;axis++){
+        objectGizmoUniformScale=false;
+        if(objectTransformTool==2
+                &&Math.hypot(x-center[0],y-center[1])<=16f*density) {
+            selectedAxis=3;selectedX=1f;selectedY=0f;objectGizmoUniformScale=true;
+        }
+        for(int axis=0;axis<3&&selectedAxis<0;axis++){
             float[] direction=gizmoAxisDirection(active,axis);
             float[] end=project(world[0]+direction[0],world[1]+direction[1],world[2]+direction[2],cx,cy,unit);
             float vx=end[0]-center[0],vy=end[1]-center[1],len=(float)Math.sqrt(vx*vx+vy*vy);
@@ -1604,9 +1620,12 @@ public final class Meshy3DViewport extends View {
                         initial[1]+axis[1]*amount,initial[2]+axis[2]*amount);
             }
         }else{
+            double factor=Math.max(.001f,1f+amount);
             double[] localDelta=objectTransformTool==1
                     ?rotationAroundAxisMatrix(axis,Math.toRadians(rotation))
-                    :scaleAlongAxisMatrix(axis,Math.max(.001f,1f+amount));
+                    :objectGizmoUniformScale
+                    ?uniformScaleMatrix(factor)
+                    :scaleAlongAxisMatrix(axis,factor);
             double[] delta=pivotedWorldDelta(localDelta);
             for(int i=0;i<gizmoObjectIds.size();i++){
                 String id=gizmoObjectIds.get(i);
