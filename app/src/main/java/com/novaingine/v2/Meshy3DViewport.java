@@ -1143,6 +1143,17 @@ public final class Meshy3DViewport extends View {
                 }
                 syncCoreFromViewport();
             }
+            // Importing the scene reactivates its active mesh datablock. Restore the
+            // active object's PNG texture after that datablock has been loaded.
+            String restoredTexture=state.optString("texturePng","");
+            if(!restoredTexture.isEmpty()){
+                byte[] data=android.util.Base64.decode(restoredTexture,android.util.Base64.DEFAULT);
+                android.graphics.Bitmap image=android.graphics.BitmapFactory.decodeByteArray(data,0,data.length);
+                if(image!=null){
+                    int w=image.getWidth(),h=image.getHeight();int[] pixels=new int[w*h];
+                    image.getPixels(pixels,0,w,0,0,w,h);image.recycle();document.setTexturePixels(pixels,w,h);
+                }
+            }
             invalidate();
             return true;
         } catch (Exception error) {
