@@ -118,6 +118,14 @@ public final class Meshy3DViewport extends View {
         if(active==null)throw new IllegalStateException("Select a Camera object first");
         objectScene.setActiveCamera(active.id);invalidate();
     }
+    public void setActiveCameraSettings(float lens,float clipStart,float clipEnd){
+        if(objectSceneActiveId==null)throw new IllegalStateException("Select a Camera object first");
+        objectScene.setCameraSettings(objectSceneActiveId,lens,clipStart,clipEnd);invalidate();
+    }
+    public void setActiveLightSettings(String type,float power,float angle,int color){
+        if(objectSceneActiveId==null)throw new IllegalStateException("Select a Light object first");
+        objectScene.setLightSettings(objectSceneActiveId,type,power,angle,color);invalidate();
+    }
 
     public void toggleLocalView() {
         if(localViewActive){localViewActive=false;localViewObjectIds.clear();invalidate();return;}
@@ -316,7 +324,10 @@ public final class Meshy3DViewport extends View {
 
     public void setActiveObjectParent(String parentId) {
         if(objectSceneActiveId==null)return;
-        objectScene.setParent(objectSceneActiveId,parentId);
+        java.util.ArrayList<Meshy3DObjectScene.Object3D> targets=new java.util.ArrayList<>(objectScene.getSelectedObjects());
+        if(targets.isEmpty())targets.add(objectScene.getObject(objectSceneActiveId));
+        for(Meshy3DObjectScene.Object3D target:targets)
+            if(target!=null&&!target.id.equals(parentId))objectScene.setParent(target.id,parentId);
         invalidate();
     }
 
