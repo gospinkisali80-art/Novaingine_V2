@@ -195,7 +195,7 @@ public final class Meshy3DObjectScene {
                 java.util.HashSet<Long> checkedEdges=new java.util.HashSet<>();
                 for(int[] face:faces)for(int corner=0;corner<face.length;corner++){
                     int a=face[corner],b=face[(corner+1)%face.length];
-                    long key=edgeKey(a,b);if(!checkedEdges.add(key))continue;
+                    long key=(((long)Math.min(a,b))<<32)|(Math.max(a,b)&0xffffffffL);if(!checkedEdges.add(key))continue;
                     float[] start=transformPoint(target.id,vertices[a][0],vertices[a][1],vertices[a][2]);
                     float[] end=transformPoint(target.id,vertices[b][0],vertices[b][1],vertices[b][2]);
                     float[] closest=closestPointOnSegment(origin,start,end);
