@@ -654,6 +654,11 @@ public final class ManualSculptWorkspace extends FrameLayout {
         String title=graph==0?"Geometry Nodes":graph==1?"Shader Editor":"Compositor";
         Meshy3DNodeGraphView graphView=new Meshy3DNodeGraphView(activity);
         graphView.setNodes(core.getGraphNodeLabels(graph));
+        graphView.setLinks(core.getGraphLinks(graph));
+        graphView.setOnLinkListener((from,to)->{
+            core.connectGraphNodes(graph,from,to);graphView.setLinks(core.getGraphLinks(graph));
+            status.setText(title+" | Connected "+from+" → "+to);
+        });
         LinearLayout root=new LinearLayout(activity);root.setOrientation(LinearLayout.VERTICAL);
         HorizontalScrollView actions=new HorizontalScrollView(activity);actions.setHorizontalScrollBarEnabled(false);
         LinearLayout row=new LinearLayout(activity);row.setOrientation(LinearLayout.HORIZONTAL);
@@ -670,7 +675,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         :type.equals("Blur")?2f:20f;
                 if(graph==0)core.addGeometryNode(type,type.equals("Instance on Points")?2f:0f,0f,0f,value);
                 else core.addNodeToGraph(graph,type,value);
-                graphView.setNodes(core.getGraphNodeLabels(graph));
+                graphView.setNodes(core.getGraphNodeLabels(graph));graphView.setLinks(core.getGraphLinks(graph));
                 status.setText(title+" | Added "+type+" node");
             }).setNegativeButton("Cancel",null).show();
         });
@@ -679,7 +684,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
             if(graph==0){meshyViewport.refreshFromDocument();status.setText("Geometry Nodes | "+core.getVertexCount()+" vertices, "+core.getFaceCount()+" faces evaluated");}
             else if(graph==1){meshyViewport.setMeshTint(core.getBaseColor());meshyViewport.setMaterialParameters(core.getMetallic(),core.getRoughness());status.setText("Shading | Shader graph evaluated");}
             else {status.setText("Compositor | "+core.getCompositorNodeCount()+" image operations ready; they run on the next final render");}
-            graphView.setNodes(core.getGraphNodeLabels(graph));
+            graphView.setNodes(core.getGraphNodeLabels(graph));graphView.setLinks(core.getGraphLinks(graph));
         });
         root.addView(actions,new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT,dp(44)));
         root.addView(graphView,new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT,dp(390)));
