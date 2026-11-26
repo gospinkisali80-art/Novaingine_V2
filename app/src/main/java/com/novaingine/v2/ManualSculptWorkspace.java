@@ -443,7 +443,17 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 break;
             case 1:
                 if ("Add Primitive".equals(item)) showPrimitiveDialog();
-                else if ("Add Cube".equals(item)) {
+                else if ("Add Camera".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.addCameraObject();meshyViewport.setMeshEditMode(false);
+                    refreshModelingOutliner();status.setText("Modeling | Camera object added");
+                } else if ("Add Light".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.addLightObject();meshyViewport.setMeshEditMode(false);
+                    meshyViewport.setActiveLightSettings("POINT",1000f,45f,0xFFFFFFFF);
+                    refreshModelingOutliner();showLightSettingsDialog();
+                } else if ("Add Empty".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.addEmptyObject();meshyViewport.setMeshEditMode(false);
+                    refreshModelingOutliner();status.setText("Modeling | Empty object added");
+                } else if ("Add Cube".equals(item)) {
                     checkpointMeshEdit();meshyViewport.addCubeObject();
                     activeEditorMode="Object Mode";if(modeButton!=null)modeButton.setText(activeEditorMode);
                     meshyViewport.setMeshEditMode(false);meshyViewport.setObjectSelectionEnabled(true);
@@ -468,6 +478,42 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     meshyViewport.invertSceneSelection();refreshModelingOutliner();status.setText("Modeling | Object selection inverted");
                 } else if ("Rename Object".equals(item)) showObjectRenameDialog();
                 else if ("Select Object".equals(item)) showObjectPickerDialog(false);
+                else if ("Select By Type".equals(item)) showObjectTypeDialog();
+                else if ("Select Hierarchy".equals(item)) showHierarchySelectionDialog();
+                else if ("Select by Name".equals(item)) showObjectPatternDialog();
+                else if ("Select Linked Data".equals(item)) {
+                    meshyViewport.selectLinkedDataObjects(false);refreshModelingOutliner();
+                    status.setText("Modeling | Objects sharing the active mesh datablock selected");
+                } else if ("Hide Selected".equals(item)) {
+                    meshyViewport.hideSelectedObjects();refreshModelingOutliner();status.setText("Modeling | Selected objects hidden");
+                } else if ("Hide Unselected".equals(item)) {
+                    meshyViewport.hideUnselectedObjects();refreshModelingOutliner();status.setText("Modeling | Unselected objects hidden");
+                } else if ("Show All Objects".equals(item)) {
+                    meshyViewport.showAllObjects();refreshModelingOutliner();status.setText("Modeling | All objects visible");
+                } else if ("Invert Hidden".equals(item)) {
+                    meshyViewport.invertHiddenObjects();refreshModelingOutliner();status.setText("Modeling | Object visibility inverted");
+                } else if ("Toggle Local View".equals(item)) {
+                    meshyViewport.toggleLocalView();status.setText("Modeling | Local View "+(meshyViewport.isLocalViewActive()?"enabled":"disabled"));
+                } else if ("Lock Selection".equals(item)) {
+                    meshyViewport.setSelectedObjectsSelectable(false);refreshModelingOutliner();status.setText("Modeling | Selected objects locked from selection");
+                } else if ("Unlock Selection".equals(item)) {
+                    meshyViewport.setSelectedObjectsSelectable(true);refreshModelingOutliner();status.setText("Modeling | Selected objects selectable");
+                } else if ("Disable in Render".equals(item)) {
+                    meshyViewport.setSelectedObjectsRenderVisible(false);refreshModelingOutliner();status.setText("Modeling | Selected objects disabled for render");
+                } else if ("Enable in Render".equals(item)) {
+                    meshyViewport.setSelectedObjectsRenderVisible(true);refreshModelingOutliner();status.setText("Modeling | Selected objects enabled for render");
+                } else if ("Join Selected Meshes".equals(item)) {
+                    try{checkpointMeshEdit();meshyViewport.joinSelectedObjects();refreshModelingOutliner();
+                        status.setText("Modeling | Selected mesh objects joined into active object");}
+                    catch(Exception error){showObjectOperationError(error);}
+                } else if ("Make Single User".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.makeActiveObjectSingleUser();refreshModelingOutliner();
+                    status.setText("Modeling | Active object mesh data made single-user");
+                } else if ("Set Active Camera".equals(item)) {
+                    try{meshyViewport.makeActiveCamera();status.setText("Modeling | Active camera updated");}
+                    catch(Exception error){showObjectOperationError(error);}
+                } else if ("Camera Settings".equals(item)) showCameraSettingsDialog();
+                else if ("Light Settings".equals(item)) showLightSettingsDialog();
                 else if ("Hide / Show Object".equals(item)) {
                     Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
                     if(active!=null){meshyViewport.setActiveObjectVisible(!active.visible);status.setText("Modeling | "+active.name+(active.visible?" hidden":" visible"));}
@@ -489,10 +535,14 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     else meshyViewport.setActiveObjectOriginToCursor();
                     status.setText("Modeling | "+item+" completed");
                 } else if ("Parent To".equals(item)) showObjectPickerDialog(true);
-                else if ("Clear Parent".equals(item)) {
-                    meshyViewport.setActiveObjectParent(null);status.setText("Modeling | Parent relationship cleared");
+                else if ("Parent Selected to Active".equals(item)) {
+                    try{meshyViewport.parentSelectedToActive();refreshModelingOutliner();status.setText("Modeling | Selected objects parented to active object");}
+                    catch(Exception error){showObjectOperationError(error);}
+                } else if ("Clear Parent".equals(item)) {
+                    meshyViewport.clearSelectedParents();refreshModelingOutliner();status.setText("Modeling | Selected parent relationships cleared");
                 } else if ("Add Collection".equals(item)) showCreateCollectionDialog();
-                else if ("Move To Collection".equals(item)) showCollectionPickerDialog();
+                else if ("Move To Collection".equals(item)) showCollectionPickerDialog(false);
+                else if ("Link To Collection".equals(item)) showCollectionPickerDialog(true);
                 else if ("Object Statistics".equals(item)) {
                     Meshy3DObjectScene scene=meshyViewport.getObjectScene();
                     status.setText("Scene | "+scene.getObjectCount()+" objects | "+scene.getCollectionCount()+" collections");
@@ -941,15 +991,21 @@ public final class ManualSculptWorkspace extends FrameLayout {
     }
 
     private void showPrimitiveDialog() {
-        String[] primitives={"Cube","Plane","UV Sphere","Icosphere","Cylinder","Cone","Torus"};
-        new android.app.AlertDialog.Builder(activity).setTitle("Add Mesh Primitive")
+        String[] primitives={"Cube","Plane","UV Sphere","Icosphere","Cylinder","Cone","Torus",
+                "Camera","Point Light","Sun Light","Spot Light","Area Light","Empty"};
+        new android.app.AlertDialog.Builder(activity).setTitle("Add Object")
                 .setItems(primitives,(dialog,which)->{
-                    checkpointMeshEdit();
-                    String primitive=primitives[which];
-                    meshyViewport.addPrimitiveObject(primitive);
+                    checkpointMeshEdit();String type=primitives[which];
+                    if("Camera".equals(type))meshyViewport.addCameraObject();
+                    else if(type.endsWith("Light")){
+                        meshyViewport.addLightObject();
+                        String lightType=type.substring(0,type.indexOf(" Light")).toUpperCase(java.util.Locale.ROOT);
+                        meshyViewport.setActiveLightSettings(lightType,1000f,45f,0xFFFFFFFF);
+                    } else if("Empty".equals(type))meshyViewport.addEmptyObject();
+                    else meshyViewport.addPrimitiveObject(type);
                     activeEditorMode="Object Mode";if(modeButton!=null)modeButton.setText(activeEditorMode);
                     meshyViewport.setMeshEditMode(false);meshyViewport.setObjectSelectionEnabled(true);
-                    status.setText("Modeling | "+primitive+" object added");
+                    refreshModelingOutliner();status.setText("Modeling | "+type+" object added");
                 }).setNegativeButton("Cancel",null).show();
     }
 
@@ -991,16 +1047,27 @@ public final class ManualSculptWorkspace extends FrameLayout {
 
     private void showObjectPropertiesDialog() {
         Meshy3DObjectScene.Object3D o=meshyViewport.getObjectScene().getActiveObject();if(o==null)return;
+        Meshy3DObjectScene scene=meshyViewport.getObjectScene();
         String parentName="None";
-        if(o.parentId!=null){Meshy3DObjectScene.Object3D parent=meshyViewport.getObjectScene().getObject(o.parentId);if(parent!=null)parentName=parent.name;}
+        if(o.parentId!=null){Meshy3DObjectScene.Object3D parent=scene.getObject(o.parentId);if(parent!=null)parentName=parent.name;}
+        float[] size=scene.dimensions(o.id);
         String message="Name: "+o.name+"\nType: "+o.type+"\nParent: "+parentName
                 +"\nLocation: "+fmt(o.transform.x)+", "+fmt(o.transform.y)+", "+fmt(o.transform.z)
                 +"\nRotation: "+fmt(o.transform.rotationX)+", "+fmt(o.transform.rotationY)+", "+fmt(o.transform.rotationZ)
                 +"\nScale: "+fmt(o.transform.scaleX)+", "+fmt(o.transform.scaleY)+", "+fmt(o.transform.scaleZ)
-                +"\nVisible: "+o.visible+"\nSelectable: "+o.selectable
-                +"\nVertices: "+o.mesh.getVertexCount()+"\nEdges: "+o.mesh.getEdgeCount()+"\nFaces: "+o.mesh.getFaceCount();
+                +"\nWorld Dimensions: "+fmt(size[0])+", "+fmt(size[1])+", "+fmt(size[2])
+                +"\nViewport Visible: "+o.visible+"\nSelectable: "+o.selectable+"\nRender Visible: "+o.renderVisible;
+        if(o.mesh!=null)message+="\nVertices: "+o.mesh.getVertexCount()+"\nEdges: "+o.mesh.getEdgeCount()+"\nFaces: "+o.mesh.getFaceCount();
+        if("CAMERA".equals(o.type))message+="\nLens: "+fmt(o.cameraLens)+" mm\nClip: "+fmt(o.cameraClipStart)+" - "+fmt(o.cameraClipEnd);
+        if("LIGHT".equals(o.type))message+="\nLight: "+o.lightType+"\nPower: "+fmt(o.lightPower)+"\nAngle: "+fmt(o.lightAngle);
         new android.app.AlertDialog.Builder(activity).setTitle("Object Properties").setMessage(message)
                 .setPositiveButton("Close",null).show();
+    }
+
+    private void showObjectOperationError(Exception error) {
+        String message=error.getMessage()==null?"The operation could not be completed.":error.getMessage();
+        new android.app.AlertDialog.Builder(activity).setTitle("Object Mode Operation")
+                .setMessage(message).setPositiveButton("OK",null).show();
     }
     private String fmt(float value){return String.format(java.util.Locale.US,"%.3f",value);}
 
@@ -1044,16 +1111,16 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 }).setNegativeButton("Cancel",null).show();
     }
 
-    private void showCollectionPickerDialog() {
+    private void showCollectionPickerDialog(boolean link) {
         Meshy3DObjectScene scene=meshyViewport.getObjectScene();
         java.util.ArrayList<Meshy3DObjectScene.Collection3D> collections=new java.util.ArrayList<>(scene.getCollections());
         String[] names=new String[collections.size()];for(int i=0;i<names.length;i++)names[i]=collections.get(i).name;
         if(names.length==0)return;
-        new android.app.AlertDialog.Builder(activity).setTitle("Move Object To Collection")
+        new android.app.AlertDialog.Builder(activity).setTitle((link?"Link":"Move")+" Selected Objects To Collection")
                 .setItems(names,(d,w)->{
-                    Meshy3DObjectScene.Object3D active=scene.getActiveObject();
-                    if(active!=null){scene.moveToCollection(active.id,collections.get(w).id);
-                        status.setText("Modeling | "+active.name+" added to "+collections.get(w).name);}
+                    checkpointMeshEdit();Meshy3DObjectScene.Collection3D target=collections.get(w);
+                    if(link)meshyViewport.linkSelectedToCollection(target.id);else meshyViewport.moveSelectedToCollection(target.id);
+                    refreshModelingOutliner();status.setText("Modeling | Selected objects "+(link?"linked to ":"moved to ")+target.name);
                 }).setNegativeButton("Cancel",null).show();
     }
 
