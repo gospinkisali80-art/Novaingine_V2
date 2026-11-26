@@ -1253,15 +1253,15 @@ public final class Meshy3DViewport extends View {
         }
         if(selectedAxis<0)return false;
         gizmoObjectIds.clear();gizmoInitialTransforms.clear();gizmoInitialWorldLocations.clear();gizmoInitialWorldMatrices.clear();
-        for(Meshy3DObjectScene.Object3D object:objectScene.getSelectedObjects()){
+        java.util.ArrayList<Meshy3DObjectScene.Object3D> transformTargets=
+                new java.util.ArrayList<>(objectScene.getSelectedObjects());
+        if(transformTargets.isEmpty())transformTargets.add(active);
+        transformTargets.sort((a,b)->Integer.compare(
+                objectScene.getObjectHierarchyDepth(a.id),objectScene.getObjectHierarchyDepth(b.id)));
+        for(Meshy3DObjectScene.Object3D object:transformTargets){
             gizmoObjectIds.add(object.id);gizmoInitialTransforms.add(object.transform.copy());
             gizmoInitialWorldLocations.add(objectScene.worldLocation(object.id));
             gizmoInitialWorldMatrices.add(objectScene.getWorldMatrixCopy(object.id));
-        }
-        if(gizmoObjectIds.isEmpty()){
-            gizmoObjectIds.add(active.id);gizmoInitialTransforms.add(active.transform.copy());
-            gizmoInitialWorldLocations.add(objectScene.worldLocation(active.id));
-            gizmoInitialWorldMatrices.add(objectScene.getWorldMatrixCopy(active.id));
         }
         objectGizmoAxis=selectedAxis;gizmoStartX=x;gizmoStartY=y;
         gizmoAxisScreenX=selectedX;gizmoAxisScreenY=selectedY;
