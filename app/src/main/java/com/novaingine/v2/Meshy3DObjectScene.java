@@ -408,14 +408,30 @@ public final class Meshy3DObjectScene {
         StringBuilder regex=new StringBuilder("^");
         for(int i=0;i<pattern.length();i++){
             char ch=pattern.charAt(i);
-            if(ch=='*')regex.append(".*");else if(ch=='?')regex.append('.');
-            else regex.append(java.util.regex.Pattern.quote(String.valueOf(ch)));
+            if(ch=='*')regex.append(".*");
+            else if(ch=='?')regex.append('.');
+            else if(ch=='['){
+                int close=pattern.indexOf(']',i+1);
+                if(close>i+1){
+                    String group=pattern.substring(i+1,close);
+                    boolean exclude=group.charAt(0)=='!'||group.charAt(0)=='^';
+                    if(exclude)group=group.substring(1);
+                    regex.append('[');if(exclude)regex.append('^');
+                    for(int j=0;j<group.length();j++){
+                        char item=group.charAt(j);
+                        if(item=='\\'||item==']'||item=='^')regex.append('\\');
+                        regex.append(item);
+                    }
+                    regex.append(']');i=close;
+                }else regex.append("\\\\[");
+            }else regex.append(java.util.regex.Pattern.quote(String.valueOf(ch)));
         }
         regex.append('$');
-int flags=caseSensitive?0:java.util.regex.Pattern.CASE_INSENSITIVE;
+        int flags=caseSensitive?0:java.util.regex.Pattern.CASE_INSENSITIVE;
         java.util.regex.Pattern compiled=java.util.regex.Pattern.compile(regex.toString(),flags);
         ArrayList<Object3D> targets=new ArrayList<>();if(extend)targets.addAll(getSelectedObjects());
-        for(Object3D o:objects.values())if(o.selectable&&compiled.matcher(o.name).matches()&&!targets.contains(o))targets.add(o);
+        for(Object3D o:objects.values())
+            if(o.selectable&&compiled.matcher(o.name).matches()&&!targets.contains(o))targets.add(o);
         replaceSelection(targets);
     }
 
