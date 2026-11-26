@@ -955,6 +955,13 @@ public final class Meshy3DViewport extends View {
     public void markSeams(boolean clear){document.markSelectedSeams(clear);invalidate();}
     public void pinSelectedUvs(boolean pin){document.pinSelectedUvs(pin);invalidate();}
     public void packUvIslands(){document.packUvIslands();invalidate();}
+    public boolean selectPinnedUvIsland(){boolean found=document.selectPinnedUvIsland();invalidate();return found;}
+    public boolean selectOverlappingUvIsland(){boolean found=document.selectOverlappingUvIsland();invalidate();return found;}
+    public boolean selectBoundaryUvIsland(){boolean found=document.selectBoundaryUvIsland();invalidate();return found;}
+    public void mirrorSelectedUv(int axis){document.mirrorSelectedUv(axis);invalidate();}
+    public void alignSelectedUv(int axis){document.alignSelectedUv(axis);invalidate();}
+    public void weldSelectedUv(float tolerance){document.weldSelectedUv(tolerance);invalidate();}
+    public boolean splitSelectedUvIsland(){boolean split=document.splitSelectedUvIsland();invalidate();return split;}
     public void selectLinkedUvIsland(){document.selectLinkedFromCurrent();invalidate();}
     public void unwrapMesh(){syncCoreFromViewport();document.unwrapPlanar();generatePlanarUv();invalidate();}
     public void createPaintTexture(int width,int height,int color){document.createTexture(width,height,color);}
