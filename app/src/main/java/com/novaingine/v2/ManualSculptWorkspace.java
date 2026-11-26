@@ -61,6 +61,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private int selectedSculptBrush;
     private float sculptRadiusUi=0.18f, sculptStrengthUi=0.40f, sculptFalloffUi=0.5f, sculptPressureUi=1.0f;
     private int sculptSymmetryUi;
+    private int sculptStrokeMethodUi;
     private boolean sculptSubtractUi;
     private final Runnable onExit;
     private final TextView status;
@@ -367,6 +368,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
         if (meshyViewport != null) meshyViewport.setSculptSettings(
                 sculptEnabled, selectedSculptBrush, sculptRadiusUi, sculptStrengthUi,
                 sculptFalloffUi, sculptSymmetryUi, sculptSubtractUi, sculptPressureUi);
+        if(meshyViewport!=null)meshyViewport.setSculptStrokeMethod(sculptStrokeMethodUi);
     }
 
     private void handleSculptPanelItem(String item) {
