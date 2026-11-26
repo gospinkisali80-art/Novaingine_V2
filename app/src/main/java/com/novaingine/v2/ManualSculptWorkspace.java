@@ -459,9 +459,23 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 else if ("Hide / Show Object".equals(item)) {
                     Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
                     if(active!=null){meshyViewport.setActiveObjectVisible(!active.visible);status.setText("Modeling | "+active.name+(active.visible?" hidden":" visible"));}
+                } else if ("Apply Location".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.applyActiveObjectLocation();
+                    status.setText("Modeling | Active object location applied");
                 } else if ("Apply Rotation & Scale".equals(item)) {
                     checkpointMeshEdit();meshyViewport.applyActiveObjectRotationAndScale();
                     status.setText("Modeling | Active object rotation and scale applied");
+                } else if ("Apply All Transforms".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.applyActiveObjectRotationAndScale();meshyViewport.applyActiveObjectLocation();
+                    status.setText("Modeling | All active object transforms applied");
+                } else if ("Clear Location".equals(item) || "Clear Rotation".equals(item) || "Clear Scale".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.clearActiveObjectTransform("Clear Location".equals(item)?0:"Clear Rotation".equals(item)?1:2);
+                    status.setText("Modeling | "+item+" completed");
+                } else if ("Set Origin to Geometry".equals(item) || "Set Origin to 3D Cursor".equals(item)) {
+                    checkpointMeshEdit();
+                    if("Set Origin to Geometry".equals(item))meshyViewport.setActiveObjectOriginToGeometry();
+                    else meshyViewport.setActiveObjectOriginToCursor();
+                    status.setText("Modeling | "+item+" completed");
                 } else if ("Parent To".equals(item)) showObjectPickerDialog(true);
                 else if ("Clear Parent".equals(item)) {
                     meshyViewport.setActiveObjectParent(null);status.setText("Modeling | Parent relationship cleared");
@@ -1165,7 +1179,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 leftTitle = "Modeling Tools";
                 leftItems = new String[]{
                         "OBJECT MODE", "Add Primitive", "Add Cube", "Duplicate", "Duplicate Linked", "Delete Object",
-                        "Rename Object", "Select Object", "Hide / Show Object", "Apply Rotation & Scale",
+                        "Rename Object", "Select Object", "Hide / Show Object", "Apply Location", "Apply Rotation & Scale",
+                        "Apply All Transforms", "Clear Location", "Clear Rotation", "Clear Scale",
+                        "Set Origin to Geometry", "Set Origin to 3D Cursor",
                         "Parent To", "Clear Parent", "Add Collection", "Move To Collection",
                         "Object Statistics", "EDIT MODE", "Vertex Select", "Edge Select", "Face Select",
                         "Select All", "Select Linked", "Select Loops", "Select Similar", "TRANSFORM",
