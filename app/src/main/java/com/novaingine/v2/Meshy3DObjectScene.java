@@ -419,6 +419,23 @@ int flags=caseSensitive?0:java.util.regex.Pattern.CASE_INSENSITIVE;
         replaceSelection(targets);
     }
 
+    public void alignSelectedLocationsToActive(int axis) {
+        if(axis<0||axis>3)throw new IllegalArgumentException("Axis must be X, Y, Z or ALL");
+        Object3D active=getActiveObject();if(active==null)throw new IllegalStateException("There is no active object");
+        ArrayList<Object3D> targets=new ArrayList<>(getSelectedObjects());
+        if(targets.size()<2)throw new IllegalStateException("Select at least two objects");
+        float[] anchor=worldLocation(active.id);
+        for(Object3D target:targets){
+            if(target==active)continue;
+            float[] location=worldLocation(target.id);
+            if(axis==0||axis==3)location[0]=anchor[0];
+            if(axis==1||axis==3)location[1]=anchor[1];
+            if(axis==2||axis==3)location[2]=anchor[2];
+            setWorldLocation(target.id,location[0],location[1],location[2]);
+        }
+        revision++;
+    }
+
     public void parentSelectedToActive() {
         Object3D parent=getActiveObject();if(parent==null)throw new IllegalStateException("Choose an active parent object first");
         ArrayList<Object3D> children=new ArrayList<>(getSelectedObjects());
