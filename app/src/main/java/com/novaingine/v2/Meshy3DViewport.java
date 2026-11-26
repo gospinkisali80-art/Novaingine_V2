@@ -1302,8 +1302,7 @@ public final class Meshy3DViewport extends View {
             float[] world=objectScene.transformPoint(object.id,0,0,0);
             float[] screen=project(world[0],world[1],world[2],cx,cy,unit);
             float radius=Math.max(5f,object.displaySize*9f*density);
-            int color=object.selected?0xFFFFC04A:("CAMERA".equals(object.type)?0xFF69A9F5:
-                    "LIGHT".equals(object.type)?0xFFFFD36A:0xFFB8C5D2);
+            int color=object.selected?0xFFFFC04A:object.viewportDisplayColor;
             paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(2f*density);paint.setColor(color);
             if("CAMERA".equals(object.type)) {
                 canvas.drawRect(screen[0]-radius,screen[1]-radius*.65f,screen[0]+radius,screen[1]+radius*.65f,paint);
