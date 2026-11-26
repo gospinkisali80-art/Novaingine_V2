@@ -198,38 +198,85 @@ public final class Meshy3DObjectScene {
         Object3D o=requireObject(objectId);o.transform.scaleX=safeScale(o.transform.scaleX*x);o.transform.scaleY=safeScale(o.transform.scaleY*y);o.transform.scaleZ=safeScale(o.transform.scaleZ*z);revision++;
     }
 
-    /** Set parent while preserving the child's current world transform for translation-only hierarchies. */
+    /** Set or clear a parent while preserving the complete world-space TRS transform. */
     public void setParent(String childId,String parentId) {
         Object3D child=requireObject(childId);
         if(parentId!=null){
-            Object3D parent=requireObject(parentId);
+            requireObject(parentId);
             if(childId.equals(parentId)||isDescendant(parentId,childId))
                 throw new IllegalArgumentException("Parenting would create a hierarchy cycle");
-            float[] childWorld=worldLocation(childId);
-            float[] parentWorld=worldLocation(parentId);
-            child.parentId=parentId;
-            child.transform.x=childWorld[0]-parentWorld[0];
-            child.transform.y=childWorld[1]-parentWorld[1];
-            child.transform.z=childWorld[2]-parentWorld[2];
-        }else{
-            float[] world=worldLocation(childId);
-            child.parentId=null;
-            child.transform.x=world[0];child.transform.y=world[1];child.transform.z=world[2];
         }
+        double[] world=worldMatrix(childId);
+        child.parentId=parentId;
+        double[] local=parentId==null?world:multiply(invertAffine(worldMatrix(parentId)),world);
+        decompose(local,child.transform);
         revision++;
     }
 
     public float[] worldLocation(String objectId) {
+        double[] m=worldMatrix(objectId);
+        return new float[]{(float)m[3],(float)m[7],(float)m[11]};
+    }
+
+    /** Transform a mesh-local point through its object and every parent transform. */
+    public float[] transformPoint(String objectId,float x,float y,float z) {
+        double[] m=worldMatrix(objectId);
+        return new float[]{(float)(m[0]*x+m[1]*y+m[2]*z+m[3]),
+                (float)(m[4]*x+m[5]*y+m[6]*z+m[7]),
+                (float)(m[8]*x+m[9]*y+m[10]*z+m[11])};
+    }
+
+    private double[] worldMatrix(String objectId) {
         Object3D o=requireObject(objectId);
-        float x=o.transform.x,y=o.transform.y,z=o.transform.z;
-        String parent=o.parentId;
-        int guard=0;
-        while(parent!=null&&guard++<objects.size()){
-            Object3D p=requireObject(parent);
-            x+=p.transform.x;y+=p.transform.y;z+=p.transform.z;
-            parent=p.parentId;
-        }
-        return new float[]{x,y,z};
+        double[] local=localMatrix(o.transform);
+        if(o.parentId==null)return local;
+        return multiply(worldMatrix(o.parentId),local);
+    }
+
+    private static double[] localMatrix(Transform t) {
+        double rx=Math.toRadians(t.rotationX),ry=Math.toRadians(t.rotationY),rz=Math.toRadians(t.rotationZ);
+        double sx=Math.sin(rx),cx=Math.cos(rx),sy=Math.sin(ry),cy=Math.cos(ry),sz=Math.sin(rz),cz=Math.cos(rz);
+        double[] m=new double[16];
+        m[0]=cz*cy*t.scaleX;m[1]=(cz*sy*sx-sz*cx)*t.scaleY;m[2]=(cz*sy*cx+sz*sx)*t.scaleZ;m[3]=t.x;
+        m[4]=sz*cy*t.scaleX;m[5]=(sz*sy*sx+cz*cx)*t.scaleY;m[6]=(sz*sy*cx-cz*sx)*t.scaleZ;m[7]=t.y;
+        m[8]=-sy*t.scaleX;m[9]=cy*sx*t.scaleY;m[10]=cy*cx*t.scaleZ;m[11]=t.z;
+        m[12]=0;m[13]=0;m[14]=0;m[15]=1;return m;
+    }
+
+    private static double[] multiply(double[] a,double[] b) {
+        double[] out=new double[16];
+        for(int r=0;r<4;r++)for(int c=0;c<4;c++)
+            for(int k=0;k<4;k++)out[r*4+c]+=a[r*4+k]*b[k*4+c];
+        return out;
+    }
+
+    private static double[] invertAffine(double[] m) {
+        double a=m[0],b=m[1],c=m[2],d=m[4],e=m[5],f=m[6],g=m[8],h=m[9],i=m[10];
+        double det=a*(e*i-f*h)-b*(d*i-f*g)+c*(d*h-e*g);
+        if(Math.abs(det)<1e-12)throw new IllegalArgumentException("Parent transform is not invertible");
+        double inv=1.0/det;double[] out=new double[16];
+        out[0]=(e*i-f*h)*inv;out[1]=(c*h-b*i)*inv;out[2]=(b*f-c*e)*inv;
+        out[4]=(f*g-d*i)*inv;out[5]=(a*i-c*g)*inv;out[6]=(c*d-a*f)*inv;
+        out[8]=(d*h-e*g)*inv;out[9]=(b*g-a*h)*inv;out[10]=(a*e-b*d)*inv;
+        out[3]=-(out[0]*m[3]+out[1]*m[7]+out[2]*m[11]);
+        out[7]=-(out[4]*m[3]+out[5]*m[7]+out[6]*m[11]);
+        out[11]=-(out[8]*m[3]+out[9]*m[7]+out[10]*m[11]);out[15]=1;return out;
+    }
+
+    private static void decompose(double[] m,Transform t) {
+        double sx=Math.sqrt(m[0]*m[0]+m[4]*m[4]+m[8]*m[8]);
+        double sy=Math.sqrt(m[1]*m[1]+m[5]*m[5]+m[9]*m[9]);
+        double sz=Math.sqrt(m[2]*m[2]+m[6]*m[6]+m[10]*m[10]);
+        if(sx<1e-8||sy<1e-8||sz<1e-8)throw new IllegalArgumentException("Transform cannot be decomposed");
+        double r00=m[0]/sx,r10=m[4]/sx,r20=m[8]/sx;
+        double r21=m[9]/sy,r22=m[10]/sz,r01=m[1]/sy,r11=m[5]/sy;
+        double ry=Math.asin(Math.max(-1,Math.min(1,-r20)));
+        double cy=Math.cos(ry),rx,rz;
+        if(Math.abs(cy)>1e-7){rx=Math.atan2(r21,r22);rz=Math.atan2(r10,r00);}
+        else {rx=Math.atan2(-m[6]/sz,r11);rz=0;}
+        t.x=(float)m[3];t.y=(float)m[7];t.z=(float)m[11];
+        t.rotationX=(float)Math.toDegrees(rx);t.rotationY=(float)Math.toDegrees(ry);t.rotationZ=(float)Math.toDegrees(rz);
+        t.scaleX=(float)sx;t.scaleY=(float)sy;t.scaleZ=(float)sz;
     }
 
     private boolean isDescendant(String candidate,String ancestor) {
