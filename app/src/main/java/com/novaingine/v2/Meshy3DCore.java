@@ -856,16 +856,26 @@ public final class Meshy3DCore {
     }
     public void spinSelectedFaces(float angle,int steps,float screwDistance){
         if(selectedFaces.isEmpty())return;steps=Math.max(1,Math.min(64,steps));
-        ArrayList<int[]> source=new ArrayList<>();for(int fi=selectedFaces.nextSetBit(0);fi>=0;fi=selectedFaces.nextSetBit(fi+1))source.add(faces.get(fi).vertices.clone());
+        ArrayList<int[]> source=new ArrayList<>();HashMap<Long,Integer> edgeUse=new HashMap<>();
+        for(int fi=selectedFaces.nextSetBit(0);fi>=0;fi=selectedFaces.nextSetBit(fi+1)){
+            int[] f=faces.get(fi).vertices.clone();source.add(f);
+            for(int j=0;j<f.length;j++){long key=edgeKey(f[j],f[(j+1)%f.length]);edgeUse.put(key,edgeUse.getOrDefault(key,0)+1);}
+        }
         float[] center=new float[3];HashSet<Integer> ids=new HashSet<>();for(int[] f:source)for(int id:f)ids.add(id);
         for(int id:ids)for(int k=0;k<3;k++)center[k]+=vertices.get(id)[k]/ids.size();
         HashMap<Integer,Integer> previous=new HashMap<>();for(int id:ids)previous.put(id,id);
-        for(int step=1;step<=steps;step++){float theta=angle*step/steps,co=(float)Math.cos(theta),si=(float)Math.sin(theta);HashMap<Integer,Integer> current=new HashMap<>();
-            for(int id:ids){float[] p=vertices.get(id);float x=p[0]-center[0],z=p[2]-center[2];int next=vertices.size();vertices.add(new float[]{center[0]+x*co-z*si,p[1]+screwDistance*step/steps,center[2]+x*si+z*co});current.put(id,next);}
-            for(int[] f:source){int[] top=new int[f.length];for(int j=0;j<f.length;j++)top[j]=current.get(f[j]);faces.add(new Face(top));
-                for(int j=0;j<f.length;j++){int a=f[j],b=f[(j+1)%f.length];faces.add(new Face(previous.get(a),previous.get(b),current.get(b),current.get(a)));}}
+        for(int step=1;step<=steps;step++){
+            float theta=angle*step/steps,co=(float)Math.cos(theta),si=(float)Math.sin(theta);HashMap<Integer,Integer> current=new HashMap<>();
+            for(int id:ids){float[] p=vertices.get(id);float x=p[0]-center[0],z=p[2]-center[2];int next=vertices.size();
+                vertices.add(new float[]{center[0]+x*co-z*si,p[1]+screwDistance*step/steps,center[2]+x*si+z*co});current.put(id,next);}
+            for(int[] f:source){
+                int[] top=new int[f.length];for(int j=0;j<f.length;j++)top[j]=current.get(f[j]);faces.add(new Face(top));
+                for(int j=0;j<f.length;j++){int a=f[j],b=f[(j+1)%f.length];if(edgeUse.getOrDefault(edgeKey(a,b),0)==1)
+                    faces.add(new Face(previous.get(a),previous.get(b),current.get(b),current.get(a)));}
+            }
             previous=current;
-        }clearSelection();rebuildEdges();revision++;
+        }
+        clearSelection();rebuildEdges();revision++;
     }
     public void fillSelectedBoundary(){
         ArrayList<Integer> loop=new ArrayList<>();HashMap<Integer,ArrayList<Integer>> adjacency=new HashMap<>();
