@@ -332,6 +332,8 @@ public final class Meshy3DCore {
         return ((int)(aa+(ba-aa)*t)<<24)|((int)(ar+(br-ar)*t)<<16)|((int)(ag+(bg-ag)*t)<<8)|(int)(ab+(bb-ab)*t);
     }
     public int[] getTexturePixels(){return texturePixels==null?null:texturePixels.clone();}
+    public boolean hasTexture(){return texturePixels!=null;}
+    public int sampleTextureColor(float u,float v){if(texturePixels==null)return 0;int x=Math.max(0,Math.min(textureWidth-1,(int)(u*(textureWidth-1))));int y=Math.max(0,Math.min(textureHeight-1,(int)((1-v)*(textureHeight-1))));return texturePixels[y*textureWidth+x];}
     public int getTextureWidth(){return textureWidth;} public int getTextureHeight(){return textureHeight;}
     public void setMaterial(int color,float metal,float rough){baseColor=color;metallic=Math.max(0,Math.min(1,metal));roughness=Math.max(.02f,Math.min(1,rough));revision++;}
     public int getBaseColor(){return baseColor;}public float getMetallic(){return metallic;}public float getRoughness(){return roughness;}
