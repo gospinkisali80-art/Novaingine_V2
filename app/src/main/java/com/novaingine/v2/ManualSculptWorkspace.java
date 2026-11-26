@@ -1251,7 +1251,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
     }
 
     private void showPivotPointDialog() {
-        String[] choices={"Median Point","Active Object","3D Cursor"};
+        String[] choices={"Median Point","Active Object","3D Cursor","Individual Origins"};
         new android.app.AlertDialog.Builder(activity).setTitle("Pivot Point")
                 .setItems(choices,(d,w)->{
                     meshyViewport.setObjectPivotMode(w);
