@@ -72,6 +72,7 @@ public final class Meshy3DViewport extends View {
     public void loopCutSelected(float factor){document.loopCutSelected(factor);syncViewportFromCore();}
     public void subdivideSelected(){document.subdivide();syncViewportFromCore();}
     public void extrudeSelected(float amount){document.extrudeSelected(amount);syncViewportFromCore();}
+    public void extrudeSelectedAlongNormals(float amount,boolean individual){document.extrudeSelectedAlongNormals(amount,individual);syncViewportFromCore();}
     public void mergeSelected(float distance){document.mergeSelectedByDistance(distance);syncViewportFromCore();}
     public void dissolveSelectedEdges(){document.dissolveSelectedEdges();syncViewportFromCore();}
     public void triangulateSelectedFaces(){document.triangulateSelectedFaces();syncViewportFromCore();}
