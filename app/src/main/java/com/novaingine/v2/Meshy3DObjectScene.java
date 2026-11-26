@@ -130,22 +130,44 @@ public final class Meshy3DObjectScene {
         if(!"MESH".equals(cleanType)&&!"CAMERA".equals(cleanType)&&!"LIGHT".equals(cleanType)
                 &&!"EMPTY".equals(cleanType))
             throw new IllegalArgumentException("Unsupported object type: "+cleanType);
-        Object3D object=createMeshObject(name,viewportProxy==null?new Meshy3DCore():viewportProxy);
+        Object3D object;
+        if(viewportProxy!=null)object=createMeshObject(name,viewportProxy);
+        else if("MESH".equals(cleanType))throw new IllegalArgumentException("Mesh objects require mesh data");
+        else {
+            String id=UUID.randomUUID().toString();
+            object=new Object3D(id,uniqueObjectName(name),cleanType,null);
+            object.collectionIds.add(collections.keySet().iterator().next());
+            objects.put(id,object);
+            selectOnly(id);
+        }
         object.type=cleanType;
         revision++;
         return object;
     }
 
+    public List<Object3D> duplicateSelected(boolean linked) {
+        ArrayList<Object3D> sources=new ArrayList<>(getSelectedObjects());
+        if(sources.isEmpty()&&activeObjectId!=null)sources.add(requireObject(activeObjectId));
+        if(sources.isEmpty())return Collections.emptyList();
+        ArrayList<Object3D> copies=new ArrayList<>();
+        for(Object3D source:sources)copies.add(duplicate(source.id,linked));
+        replaceSelection(copies);
+        return Collections.unmodifiableList(copies);
+    }
+
     public Object3D duplicate(String objectId,boolean linked) {
         Object3D source=requireObject(objectId);
-        Meshy3DCore data;
-        if(linked)data=source.mesh;
-        else {
-            data=new Meshy3DCore();
-            if(!data.importState(source.mesh.exportState()))
-                throw new IllegalStateException("Could not copy mesh data");
+        Meshy3DCore data=null;
+        if(source.mesh!=null){
+            if(linked)data=source.mesh;
+            else {
+                data=new Meshy3DCore();
+                if(!data.importState(source.mesh.exportState()))
+                    throw new IllegalStateException("Could not copy mesh data");
+            }
         }
-        Object3D copy=createMeshObject(source.name+".copy",data);
+        Object3D copy=data==null?createTypedObject(source.name+".copy",source.type,null)
+                :createMeshObject(source.name+".copy",data);
         copy.type=source.type;
         copy.transform.x=source.transform.x;
         copy.transform.y=source.transform.y;
@@ -171,6 +193,7 @@ public final class Meshy3DObjectScene {
 
     public void delete(String objectId) {
         Object3D deleting=requireObject(objectId);
+        if(objectId.equals(activeCameraId))activeCameraId=null;
         ArrayList<String> children=new ArrayList<>();
         for(Object3D o:objects.values())if(objectId.equals(o.parentId))children.add(o.id);
         // Blender-style delete must not make children jump when their parent disappears.
@@ -271,11 +294,11 @@ public final class Meshy3DObjectScene {
         ArrayList<Object3D> targets=new ArrayList<>();if(extend)targets.addAll(getSelectedObjects());
         for(Object3D o:objects.values())if(o.selectable&&active.id.equals(o.parentId))targets.add(o);
         if(recursive){
-            boolean changed=true;
-            while(changed){changed=false;for(Object3D o:objects.values()){
-                if(!o.selectable||targets.contains(o))continue;
-                for(Object3D parent:targets)if(parent.id.equals(o.parentId)){targets.add(o);changed=true;break;}
-            }}
+            for(int index=0;index<targets.size();index++){
+                Object3D parent=targets.get(index);
+                for(Object3D o:objects.values())
+                    if(o.selectable&&parent.id.equals(o.parentId)&&!targets.contains(o))targets.add(o);
+            }
         }
         replaceSelection(targets);
     }
@@ -477,7 +500,8 @@ public final class Meshy3DObjectScene {
 
     /** Bake local translation into mesh coordinates without changing the visible object. */
     public void applyLocation(String objectId) {
-        Object3D o=requireObject(objectId);float x=o.transform.x,y=o.transform.y,z=o.transform.z;
+        Object3D o=requireObject(objectId);if(o.mesh==null)throw new IllegalStateException("This object type has no editable mesh data");
+        float x=o.transform.x,y=o.transform.y,z=o.transform.z;
         float[][] vertices=o.mesh.copyVertices();
         for(float[] p:vertices){p[0]+=x;p[1]+=y;p[2]+=z;}
         o.mesh.replaceGeometry(vertices,o.mesh.copyFaces());
@@ -486,7 +510,8 @@ public final class Meshy3DObjectScene {
 
     /** Move the origin to the local mesh bounds center while preserving world geometry. */
     public void setOriginToGeometry(String objectId) {
-        Object3D o=requireObject(objectId);float[][] vertices=o.mesh.copyVertices();
+        Object3D o=requireObject(objectId);if(o.mesh==null)throw new IllegalStateException("This object type has no editable mesh origin");
+        float[][] vertices=o.mesh.copyVertices();
         if(vertices.length==0)return;
         float minX=Float.MAX_VALUE,minY=Float.MAX_VALUE,minZ=Float.MAX_VALUE;
         float maxX=-Float.MAX_VALUE,maxY=-Float.MAX_VALUE,maxZ=-Float.MAX_VALUE;
@@ -501,7 +526,8 @@ public final class Meshy3DObjectScene {
 
     /** Place the origin at the world-space 3D cursor (the world origin in this editor). */
     public void setOriginToCursor(String objectId) {
-        Object3D o=requireObject(objectId);double[] inverse=invertAffine(worldMatrix(objectId));
+        Object3D o=requireObject(objectId);if(o.mesh==null)throw new IllegalStateException("This object type has no editable mesh origin");
+        double[] inverse=invertAffine(worldMatrix(objectId));
         float cx=(float)inverse[3],cy=(float)inverse[7],cz=(float)inverse[11];
         float[][] vertices=o.mesh.copyVertices();
         float[] offset=transformVector(o.transform,cx,cy,cz);
@@ -525,7 +551,7 @@ public final class Meshy3DObjectScene {
 
     /** Applies local scale and Euler rotation to mesh vertices, then resets those channels. */
     public void applyRotationAndScale(String objectId) {
-        Object3D o=requireObject(objectId);
+        Object3D o=requireObject(objectId);if(o.mesh==null)throw new IllegalStateException("This object type has no editable mesh data");
         float rx=(float)Math.toRadians(o.transform.rotationX),ry=(float)Math.toRadians(o.transform.rotationY),rz=(float)Math.toRadians(o.transform.rotationZ);
         float[][] vertices=o.mesh.copyVertices();
         for(float[] p:vertices){
@@ -549,9 +575,11 @@ public final class Meshy3DObjectScene {
             int meshSequence=0;
             for(Object3D o:objects.values()){
                 JSONObject item=new JSONObject();item.put("id",o.id);item.put("name",o.name);item.put("type",o.type);
-                String meshId=meshIds.get(o.mesh);
-                if(meshId==null){meshId="mesh-data-"+(meshSequence++);meshIds.put(o.mesh,meshId);item.put("mesh",o.mesh.exportState());}
-                item.put("meshDataId",meshId);
+                if(o.mesh!=null){
+                    String meshId=meshIds.get(o.mesh);
+                    if(meshId==null){meshId="mesh-data-"+(meshSequence++);meshIds.put(o.mesh,meshId);item.put("mesh",o.mesh.exportState());}
+                    item.put("meshDataId",meshId);
+                }
                 item.put("transform",o.transform.toJson());
                 item.put("parentId",o.parentId==null?JSONObject.NULL:o.parentId);
                 item.put("visible",o.visible);item.put("selectable",o.selectable);item.put("renderVisible",o.renderVisible);
@@ -588,13 +616,16 @@ public final class Meshy3DObjectScene {
             JSONArray objectArray=root.getJSONArray("objects");
             for(int i=0;i<objectArray.length();i++){
                 JSONObject item=objectArray.getJSONObject(i);String id=item.getString("id");
+                String objectType=item.optString("type","MESH");
                 String meshId=item.optString("meshDataId",id);
                 Meshy3DCore mesh=meshDataMap.get(meshId);
                 if(mesh==null){
-                    JSONObject meshState=item.optJSONObject("mesh");if(meshState==null)return false;
-                    mesh=new Meshy3DCore();if(!mesh.importState(meshState))return false;meshDataMap.put(meshId,mesh);
+                    JSONObject meshState=item.optJSONObject("mesh");
+                    if(meshState!=null){
+                        mesh=new Meshy3DCore();if(!mesh.importState(meshState))return false;meshDataMap.put(meshId,mesh);
+                    }else if("MESH".equals(objectType))return false;
                 }
-                Object3D o=new Object3D(id,item.optString("name","Object"),item.optString("type","MESH"),mesh);
+                Object3D o=new Object3D(id,item.optString("name","Object"),objectType,mesh);
                 Transform t=Transform.fromJson(item.optJSONObject("transform"));
                 o.transform.x=t.x;o.transform.y=t.y;o.transform.z=t.z;o.transform.rotationX=t.rotationX;o.transform.rotationY=t.rotationY;o.transform.rotationZ=t.rotationZ;o.transform.scaleX=t.scaleX;o.transform.scaleY=t.scaleY;o.transform.scaleZ=t.scaleZ;
                 Object parent=item.opt("parentId");o.parentId=parent==null||parent==JSONObject.NULL?null:String.valueOf(parent);
@@ -747,6 +778,7 @@ public final class Meshy3DObjectScene {
 
     public float[] dimensions(String objectId) {
         Object3D object=requireObject(objectId);
+        if(object.mesh==null)return new float[]{object.displaySize,object.displaySize,object.displaySize};
         float[][] vertices=object.mesh.copyVertices();
         if(vertices.length==0)return new float[]{0f,0f,0f};
         float[] min={Float.MAX_VALUE,Float.MAX_VALUE,Float.MAX_VALUE},max={-Float.MAX_VALUE,-Float.MAX_VALUE,-Float.MAX_VALUE};
