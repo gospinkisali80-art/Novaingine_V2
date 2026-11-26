@@ -420,10 +420,10 @@ public final class Meshy3DCore {
             else if("Instance on Points".equals(n.type))instanceMesh(Math.max(1,Math.min(20,Math.round(n.value))),n.x,n.y,n.z);
         }revision++;
     }
-    private void deleteSelectedFaces(){
+    public void deleteSelectedFaces(){
         if(selectedFaces.isEmpty())return;
         ArrayList<Face> keep=new ArrayList<>();for(int i=0;i<faces.size();i++)if(!selectedFaces.get(i))keep.add(faces.get(i));
-        faces.clear();faces.addAll(keep);clearSelection();rebuildEdges();
+        faces.clear();faces.addAll(keep);clearSelection();rebuildEdges();revision++;
     }
     private void duplicateMesh(float dx,float dy,float dz){instanceMesh(1,dx,dy,dz);}
     private void instanceMesh(int copies,float dx,float dy,float dz){
@@ -505,7 +505,7 @@ public final class Meshy3DCore {
         int edgeIndex=selectedEdges.nextSetBit(0);if(edgeIndex<0||edgeIndex>=edges.size())return;
         Edge edge=edges.get(edgeIndex);if(edge.faces.size()!=2)return;
         int fa=edge.faces.get(0),fb=edge.faces.get(1);int[] a=faces.get(fa).vertices,b=faces.get(fb).vertices;
-        ArrayList<Integer> pathA=boundaryPath(a,edge.b,edge.a),pathB=boundaryPath(b,edge.a,edge.b);
+        long shared=edgeKey(edge.a,edge.b);ArrayList<Integer> pathA=boundaryPath(a,edge.b,edge.a,shared),pathB=boundaryPath(b,edge.a,edge.b,shared);
         if(pathA.size()<2||pathB.size()<2)return;
         ArrayList<Integer> merged=new ArrayList<>(pathA);
         for(int i=1;i<pathB.size()-1;i++)merged.add(pathB.get(i));
@@ -514,13 +514,14 @@ public final class Meshy3DCore {
         int hi=Math.max(fa,fb),lo=Math.min(fa,fb);faces.remove(hi);faces.remove(lo);faces.add(new Face(polygon));
         clearSelection();rebuildEdges();revision++;
     }
-    private ArrayList<Integer> boundaryPath(int[] face,int start,int end){
+    private ArrayList<Integer> boundaryPath(int[] face,int start,int end,long sharedEdge){
         int startIndex=-1;for(int i=0;i<face.length;i++)if(face[i]==start){startIndex=i;break;}
         if(startIndex<0)return new ArrayList<>();
         for(int direction:new int[]{1,-1}){
             ArrayList<Integer> path=new ArrayList<>();int index=startIndex;path.add(face[index]);
             for(int step=0;step<face.length;step++){
                 int next=(index+direction+face.length)%face.length;
+                if(edgeKey(face[index],face[next])==sharedEdge)break;
                 path.add(face[next]);if(face[next]==end)return path;index=next;
             }
         }return new ArrayList<>();
@@ -530,11 +531,6 @@ public final class Meshy3DCore {
         for(int i=0;i<faces.size();i++){Face f=faces.get(i);if(!selectedFaces.isEmpty()&&!selectedFaces.get(i)){out.add(f);continue;}
             int[] ids=f.vertices;for(int j=1;j<ids.length-1;j++)out.add(new Face(ids[0],ids[j],ids[j+1]));
         }faces.clear();faces.addAll(out);clearSelection();rebuildEdges();revision++;
-    }
-    public void deleteSelectedFaces(){
-        if(selectedFaces.isEmpty())return;ArrayList<Face> keep=new ArrayList<>();
-        for(int i=0;i<faces.size();i++)if(!selectedFaces.get(i))keep.add(faces.get(i));
-        faces.clear();faces.addAll(keep);clearSelection();rebuildEdges();revision++;
     }
     public void mergeSelectedByDistance(float threshold){
         if(selectedVertices.cardinality()<2)return;
