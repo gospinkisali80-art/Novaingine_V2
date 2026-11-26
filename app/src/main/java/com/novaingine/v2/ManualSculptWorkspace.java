@@ -509,9 +509,16 @@ public final class ManualSculptWorkspace extends FrameLayout {
                                 status.setText("Modeling | Mesh bisected by "+axes[w]);
                             })).show();
                 } else if ("Knife".equals(item)) {
-                    new android.app.AlertDialog.Builder(activity).setTitle("Knife Tool")
-                            .setMessage("Interactive knife strokes are not implemented yet. Use Bisect for a plane cut; no geometry was changed.")
-                            .setPositiveButton("OK",null).show();
+                    meshyViewport.startKnifeCut();status.setText("Modeling | Knife: drag a straight cut across the mesh");
+                } else if ("Poly Build".equals(item)) {
+                    meshyViewport.startPolyBuild();status.setText("Modeling | Poly Build: tap points, then tap the first point to close the face");
+                } else if ("Un-Subdivide".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.unSubdividePlanar();status.setText("Modeling | Coplanar subdivision edges dissolved");
+                } else if ("Decimate".equals(item)) {
+                    showAmountDialog("Planar decimation angle",0f,45f,value->{
+                        checkpointMeshEdit();meshyViewport.decimatePlanar(value,Math.max(4,meshyViewport.getFaceCount()/2));
+                        status.setText("Modeling | Planar decimation reduced coplanar face count");
+                    });
                 } else if ("Spin".equals(item) || "Screw".equals(item)) {
                     final boolean screw="Screw".equals(item);
                     showAmountDialog(screw?"Screw rotation (degrees)":"Spin rotation (degrees)",15f,360f,value->{
@@ -525,7 +532,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     showAmountDialog("Solidify thickness",0.01f,.5f,value->{checkpointMeshEdit();meshyViewport.solidifySelected(value);status.setText("Modeling | Solid thickness generated");});
                 } else if ("Bevel Modifier".equals(item)) {
                     showAmountDialog("Bevel width",.001f,.45f,value->{checkpointMeshEdit();meshyViewport.bevelSelected(value);status.setText("Modeling | Bevel geometry generated");});
-                } else if ("Remesh".equals(item) || "Un-Subdivide".equals(item) || "Decimate".equals(item) || "Poly Build".equals(item)) {
+                } else if ("Remesh".equals(item)) {
                     new android.app.AlertDialog.Builder(activity).setTitle(item)
                             .setMessage("This operator is not implemented yet. No geometry was changed.")
                             .setPositiveButton("OK",null).show();
