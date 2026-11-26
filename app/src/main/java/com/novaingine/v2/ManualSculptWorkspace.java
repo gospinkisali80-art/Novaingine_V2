@@ -2657,6 +2657,49 @@ public final class ManualSculptWorkspace extends FrameLayout {
 
     public int getMeshUndoCount() { return meshUndoStack.size(); }
 
+    public String getDocumentDataPreview() {
+        if (meshyViewport == null) return "Meshy3D viewport is not open.";
+        Meshy3DObjectScene scene = meshyViewport.getObjectScene();
+        java.util.List<Meshy3DObjectScene.Object3D> objects = scene.getObjects();
+        int meshObjects = 0;
+        int totalVertices = 0;
+        int totalEdges = 0;
+        int totalFaces = 0;
+        StringBuilder summary = new StringBuilder();
+        summary.append("Workspace: ").append(WORKSPACE_NAMES[activeWorkspaceIndex]).append('\n');
+        summary.append("Objects: ").append(objects.size())
+                .append(" | Collections: ").append(scene.getCollectionCount())
+                .append(" | Selected: ").append(scene.getSelectedObjects().size()).append("\n\n");
+        for (Meshy3DObjectScene.Object3D object : objects) {
+            summary.append(object.active ? "● " : "  ")
+                    .append(object.name).append("  [").append(object.type).append("]");
+            if (object.mesh != null) {
+                int vertices = object.mesh.getVertexCount();
+                int edges = object.mesh.getEdgeCount();
+                int faces = object.mesh.getFaceCount();
+                meshObjects++;
+                totalVertices += vertices;
+                totalEdges += edges;
+                totalFaces += faces;
+                summary.append("\n     ").append(vertices).append(" vertices, ")
+                        .append(edges).append(" edges, ").append(faces).append(" faces");
+            }
+            if (object.modifiers != null && !object.modifiers.isEmpty()) {
+                summary.append("\n     ").append(object.modifiers.size()).append(" modifier(s)");
+            }
+            if (object.parentId != null && !object.parentId.isEmpty()) {
+                Meshy3DObjectScene.Object3D parent = scene.getObject(object.parentId);
+                if (parent != null) summary.append("\n     Parent: ").append(parent.name);
+            }
+            summary.append('\n');
+        }
+        summary.append("\nMesh totals: ").append(meshObjects).append(" mesh object(s), ")
+                .append(totalVertices).append(" vertices, ")
+                .append(totalEdges).append(" edges, ")
+                .append(totalFaces).append(" faces");
+        return summary.toString();
+    }
+
     public String getActiveObjectName() {
         if (meshyViewport == null) return null;
         Meshy3DObjectScene.Object3D active = meshyViewport.getObjectScene().getActiveObject();
