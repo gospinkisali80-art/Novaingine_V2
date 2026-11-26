@@ -397,7 +397,11 @@ public final class Meshy3DViewport extends View {
         Meshy3DObjectScene.Object3D next=null;
         for(Meshy3DObjectScene.Object3D o:objectScene.getObjects())if(o.selected){next=o;break;}
         if(next==null)for(Meshy3DObjectScene.Object3D o:objectScene.getObjects()){next=o;break;}
-        if(next==null)next=objectScene.createMeshObject("Cube",new Meshy3DCore());
+        if(next==null){
+            objectSceneActiveId=null;meshVisible=false;invalidate();
+            if(onObjectSelectionChanged!=null)onObjectSelectionChanged.run();
+            return;
+        }
         activateSceneObject(next.id);
     }
 
@@ -407,8 +411,10 @@ public final class Meshy3DViewport extends View {
         objectSceneActiveId=null;
         Meshy3DObjectScene.Object3D next=null;
         for(Meshy3DObjectScene.Object3D candidate:objectScene.getObjects()){next=candidate;break;}
-        if(next==null) {
-            next=objectScene.createMeshObject("Cube",new Meshy3DCore());
+        if(next==null){
+            objectSceneActiveId=null;meshVisible=false;invalidate();
+            if(onObjectSelectionChanged!=null)onObjectSelectionChanged.run();
+            return;
         }
         activateSceneObject(next.id);
     }
