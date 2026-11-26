@@ -30,8 +30,8 @@ public final class Meshy3DUvUnwrapper {
             if(pinned.size()>=2){pinA=pinned.get(0);pinB=pinned.get(1);}
             else if(pinned.size()==1)pinA=pinned.get(0);
             double[] target=new double[count*2],penalty=new double[count*2];
-            float[] oldA=findOldUv(previousUvs,faceIds,ids[pinA]);
-            float[] oldB=findOldUv(previousUvs,faceIds,ids[pinB]);
+            float[] oldA=findOldUv(previousUvs,faces,faceIds,ids[pinA]);
+            float[] oldB=findOldUv(previousUvs,faces,faceIds,ids[pinB]);
             target[pinA*2]=oldA==null?0:oldA[0];target[pinA*2+1]=oldA==null?0:oldA[1];
             target[pinB*2]=oldB==null?target[pinA*2]+1:oldB[0];target[pinB*2+1]=oldB==null?target[pinA*2+1]:oldB[1];
             double lambda=100000.0;
@@ -58,9 +58,9 @@ public final class Meshy3DUvUnwrapper {
         }
         return result;
     }
-    private static float[] findOldUv(float[][][] old,List<Integer> faceIds,int vertex){
+    private static float[] findOldUv(float[][][] old,int[][] faces,List<Integer> faceIds,int vertex){
         if(old==null)return null;for(int fi:faceIds)if(fi<old.length&&old[fi]!=null)
-            for(int j=0;j<old[fi].length;j++)if(old[fi][j]!=null)return old[fi][j].clone();
+            for(int j=0;j<faces[fi].length&&j<old[fi].length;j++)if(faces[fi][j]==vertex&&old[fi][j]!=null)return old[fi][j].clone();
         return null;
     }
     private static void addTriangleEquations(float[][] vertices,Integer[] ids,int a,int b,int c,List<Row> rows){
