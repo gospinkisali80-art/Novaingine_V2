@@ -483,9 +483,9 @@ public final class Meshy3DViewport extends View {
         }
         for(int n=0;n<count;n++){
             int f=order[n]; int[] face=drawFaces[f];
-            float[] ca=cameraPoint(vertices[face[0]][0],drawVertices[face[0]][1],drawVertices[face[0]][2]);
-            float[] cb=cameraPoint(vertices[face[1]][0],drawVertices[face[1]][1],drawVertices[face[1]][2]);
-            float[] cc=cameraPoint(vertices[face[2]][0],drawVertices[face[2]][1],drawVertices[face[2]][2]);
+            float[] ca=cameraPoint(drawVertices[face[0]][0],drawVertices[face[0]][1],drawVertices[face[0]][2]);
+            float[] cb=cameraPoint(drawVertices[face[1]][0],drawVertices[face[1]][1],drawVertices[face[1]][2]);
+            float[] cc=cameraPoint(drawVertices[face[2]][0],drawVertices[face[2]][1],drawVertices[face[2]][2]);
             float abx=cb[0]-ca[0],aby=cb[1]-ca[1],abz=cb[2]-ca[2];
             float acx=cc[0]-ca[0],acy=cc[1]-ca[1],acz=cc[2]-ca[2];
             float nx=aby*acz-abz*acy,ny=abz*acx-abx*acz,nz=abx*acy-aby*acx;
