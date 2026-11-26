@@ -101,7 +101,7 @@ final class Meshy3DPhoneControls extends LinearLayout {
 
         LinearLayout mouse = row();
         add(mouse, button("L Click", () -> viewport.virtualLeftClick()));
-        add(mouse, button("R Click", () -> showContextMenu()));
+        add(mouse, button("R Click", () -> showVirtualContextMenu()));
         add(mouse, button("M Click", () -> setMouseMode(mouseMode == 1 ? 0 : 1)));
         body.addView(mouse);
 
@@ -176,7 +176,7 @@ final class Meshy3DPhoneControls extends LinearLayout {
         }
     }
 
-    private void showContextMenu() {
+    private void showVirtualContextMenu() {
         final String[] options = {"Frame Selected", "Frame All", "Move", "Rotate", "Scale", "Undo", "Redo"};
         new AlertDialog.Builder(getContext()).setTitle("Viewport context menu")
                 .setItems(options, (dialog, which) -> {
