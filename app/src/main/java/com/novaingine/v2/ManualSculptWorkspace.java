@@ -123,6 +123,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private final java.util.ArrayDeque<org.json.JSONObject> meshRedoStack = new java.util.ArrayDeque<>();
     private final Handler timelineHandler = new Handler(Looper.getMainLooper());
     private boolean timelinePlaying;
+    private boolean timelineReverse;
     private long timelineStartMs;
     private int currentTimelineFrame=1;
     private Runnable timelineTick;
@@ -1180,33 +1181,100 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private void showAnimationTimeline() {
         LinearLayout panel=new LinearLayout(activity);panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dp(14),dp(10),dp(14),dp(8));
-        TextView frameLabel=new TextView(activity);frameLabel.setTextColor(Color.WHITE);frameLabel.setText("Frame "+currentTimelineFrame);
-        SeekBar frame=new SeekBar(activity);frame.setMax(249);frame.setProgress(currentTimelineFrame-1);
+        TextView frameLabel=new TextView(activity);
+        frameLabel.setTextColor(Color.WHITE);
+        SeekBar frame=new SeekBar(activity);frame.setMax(249);
+        frame.setProgress(Math.max(0,Math.min(249,currentTimelineFrame-1)));
+        Runnable refreshLabel=()->{
+            String[] interpolation={"Smooth","Linear","Constant"};
+            frameLabel.setText("Frame "+currentTimelineFrame+"  •  "+meshyViewport.getMeshKeyframeCount()
+                    +" keyframes  •  "+interpolation[meshyViewport.getAnimationInterpolationMode()]);
+        };
         frame.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
-            public void onProgressChanged(SeekBar b,int p,boolean user){currentTimelineFrame=p+1;frameLabel.setText("Frame "+currentTimelineFrame+"  •  "+meshyViewport.getMeshKeyframeCount()+" keyframes");meshyViewport.applyAnimationFrame(currentTimelineFrame);}
+            public void onProgressChanged(SeekBar b,int p,boolean user){
+                currentTimelineFrame=p+1;refreshLabel.run();
+                meshyViewport.applyAnimationFrame(currentTimelineFrame);
+            }
             public void onStartTrackingTouch(SeekBar b){}
             public void onStopTrackingTouch(SeekBar b){}
         });
+        refreshLabel.run();
         panel.addView(frameLabel);panel.addView(frame);
-        HorizontalScrollView actions=new HorizontalScrollView(activity);actions.setHorizontalScrollBarEnabled(false);
+
+        HorizontalScrollView actions=new HorizontalScrollView(activity);
+        actions.setHorizontalScrollBarEnabled(false);
         LinearLayout row=new LinearLayout(activity);row.setOrientation(LinearLayout.HORIZONTAL);
-        TextView insert=dockItem("Insert Keyframe",false),remove=dockItem("Delete Keyframe",false),play=dockItem("Play",false);
-        row.addView(insert);row.addView(remove);row.addView(play);actions.addView(row);panel.addView(actions);
-        insert.setOnClickListener(v->{checkpointMeshEdit();meshyViewport.storeMeshKeyframe(currentTimelineFrame);frameLabel.setText("Frame "+currentTimelineFrame+"  •  "+meshyViewport.getMeshKeyframeCount()+" keyframes");});
-        remove.setOnClickListener(v->{checkpointMeshEdit();meshyViewport.deleteMeshKeyframe(currentTimelineFrame);frameLabel.setText("Frame "+currentTimelineFrame+"  •  "+meshyViewport.getMeshKeyframeCount()+" keyframes");});
+        TextView first=dockItem("|◀",false),last=dockItem("▶|",false);
+        TextView insert=dockItem("Insert Keyframe",false),remove=dockItem("Delete Keyframe",false);
+        TextView duplicate=dockItem("Duplicate",false);
+        TextView interpolation=dockItem("Smooth",false),reverse=dockItem("Reverse",false);
+        TextView play=dockItem("Play",false);
+        for(TextView control:new TextView[]{first,last,insert,remove,duplicate,interpolation,reverse,play})
+            row.addView(control);
+        actions.addView(row);panel.addView(actions);
+
+        first.setOnClickListener(v->{
+            currentTimelineFrame=1;frame.setProgress(0);meshyViewport.applyAnimationFrame(1);refreshLabel.run();
+        });
+        last.setOnClickListener(v->{
+            currentTimelineFrame=250;frame.setProgress(249);meshyViewport.applyAnimationFrame(250);refreshLabel.run();
+        });
+        insert.setOnClickListener(v->{
+            checkpointMeshEdit();meshyViewport.storeMeshKeyframe(currentTimelineFrame);
+            refreshLabel.run();status.setText("Animation | Keyframe stored for scene objects and mesh");
+        });
+        remove.setOnClickListener(v->{
+            checkpointMeshEdit();meshyViewport.deleteMeshKeyframe(currentTimelineFrame);
+            refreshLabel.run();status.setText("Animation | Keyframe removed");
+        });
+        duplicate.setOnClickListener(v->{
+            int target=currentTimelineFrame>=250?1:currentTimelineFrame+1;
+            checkpointMeshEdit();
+            boolean copied=meshyViewport.duplicateMeshKeyframe(currentTimelineFrame,target);
+            status.setText(copied?"Animation | Duplicated keyframe to "+target
+                    :"Animation | No keyframe exists at the current frame");
+            refreshLabel.run();
+        });
+        interpolation.setOnClickListener(v->{
+            int mode=(meshyViewport.getAnimationInterpolationMode()+1)%3;
+            meshyViewport.setAnimationInterpolationMode(mode);
+            String[] labels={"Smooth","Linear","Constant"};
+            interpolation.setText(labels[mode]);refreshLabel.run();
+            meshyViewport.applyAnimationFrame(currentTimelineFrame);
+        });
+        interpolation.setText(new String[]{"Smooth","Linear","Constant"}[
+                meshyViewport.getAnimationInterpolationMode()]);
+        reverse.setOnClickListener(v->{
+            timelineReverse=!timelineReverse;
+            reverse.setText(timelineReverse?"Reverse ✓":"Reverse");
+        });
         play.setOnClickListener(v->{
-            timelinePlaying=!timelinePlaying;play.setText(timelinePlaying?"Pause":"Play");
+            timelinePlaying=!timelinePlaying;
+            play.setText(timelinePlaying?"Pause":"Play");
             if(timelinePlaying){
-                timelineTick=new Runnable(){public void run(){
-                    if(!timelinePlaying)return;currentTimelineFrame=currentTimelineFrame>=250?1:currentTimelineFrame+1;
-                    frame.setProgress(currentTimelineFrame-1);meshyViewport.applyAnimationFrame(currentTimelineFrame);
+                if(timelineTick!=null)timelineHandler.removeCallbacks(timelineTick);
+                timelineTick=new Runnable(){@Override public void run(){
+                    if(!timelinePlaying)return;
+                    int next=currentTimelineFrame+(timelineReverse?-1:1);
+                    if(next>250)next=1;
+                    if(next<1)next=250;
+                    currentTimelineFrame=next;
+                    frame.setProgress(next-1);
+                    refreshLabel.run();
                     timelineHandler.postDelayed(this,33L);
-                }};timelineHandler.post(timelineTick);
+                }};
+                timelineHandler.post(timelineTick);
             }else if(timelineTick!=null)timelineHandler.removeCallbacks(timelineTick);
         });
-        android.app.AlertDialog dialog=new android.app.AlertDialog.Builder(activity).setTitle("Animation Timeline")
-                .setView(panel).setPositiveButton("Done",null).setNegativeButton("Close",null).create();
-        dialog.setOnDismissListener(d->{timelinePlaying=false;if(timelineTick!=null)timelineHandler.removeCallbacks(timelineTick);});
+
+        android.app.AlertDialog dialog=new android.app.AlertDialog.Builder(activity)
+                .setTitle("Animation Timeline")
+                .setView(panel).setPositiveButton("Done",null)
+                .setNegativeButton("Close",null).create();
+        dialog.setOnDismissListener(d->{
+            timelinePlaying=false;
+            if(timelineTick!=null)timelineHandler.removeCallbacks(timelineTick);
+        });
         dialog.show();
     }
 
@@ -1218,7 +1286,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
         graphView.setLinks(core.getGraphLinks(graph));
         graphView.setOnNodeClickListener(index->{
             String type=core.getGraphNodeType(graph,index);float current=core.getGraphNodeValue(graph,index);
-            if(type.equals("Base Color")||type.equals("Set Material")){
+            if("Material Output".equals(type)) {
+                status.setText(title+" | Output node receives the evaluated material graph");
+            } else if(type.equals("Base Color")||type.equals("Set Material")){
                 String[] names={"Grey","Orange","Blue","Green","Red","White"};
                 int[] colors={0xFF9DAAB7,0xFFE79A45,0xFF5D9BEA,0xFF63B887,0xFFD85B5B,0xFFF2F2F2};
                 new android.app.AlertDialog.Builder(activity).setTitle(type+" Node Color").setItems(names,(d,w)->{
@@ -1245,8 +1315,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
         row.addView(add);row.addView(evaluate);actions.addView(row);
         add.setOnClickListener(v->{
             String[] choices=graph==0
-                    ?new String[]{"Transform Geometry","Set Position","Subdivide Mesh","Smooth","Delete Geometry","Join Geometry","Instance on Points","Set Material","Random Value","Math"}
-                    :graph==1?new String[]{"Image Texture","Base Color","Principled BSDF","Metallic","Roughness","Material Output"}
+                    ?new String[]{"Transform Geometry","Set Position","Subdivide Mesh","Smooth","Delete Geometry","Instance on Points","Set Material","Random Value","Math"}
+                    :graph==1?new String[]{"Base Color","Metallic","Roughness","Material Output"}
                     :new String[]{"Grayscale","Brightness","Contrast","Blur","Invert","Alpha Over","Color Balance","Composite"};
             new android.app.AlertDialog.Builder(activity).setTitle("Add "+title+" Node").setItems(choices,(d,w)->{
                 String type=choices[w];float value=graph==0?.15f:graph==1
@@ -1259,10 +1329,31 @@ public final class ManualSculptWorkspace extends FrameLayout {
             }).setNegativeButton("Cancel",null).show();
         });
         evaluate.setOnClickListener(v->{
+            if(graph==2) {
+                try {
+                    android.graphics.Bitmap source=meshyViewport.renderFinalImage(640,360);
+                    int width=source.getWidth(),height=source.getHeight();
+                    int[] pixels=new int[width*height];
+                    source.getPixels(pixels,0,width,0,0,width,height);
+                    source.recycle();
+                    int[] processed=core.evaluateCompositor(pixels,width,height);
+                    android.graphics.Bitmap preview=android.graphics.Bitmap.createBitmap(
+                            processed,width,height,android.graphics.Bitmap.Config.ARGB_8888);
+                    android.widget.ImageView image=new android.widget.ImageView(activity);
+                    image.setImageBitmap(preview);
+                    image.setAdjustViewBounds(true);
+                    image.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+                    new android.app.AlertDialog.Builder(activity).setTitle("Compositor Preview")
+                            .setView(image).setPositiveButton("Done",(d,w)->preview.recycle()).show();
+                    status.setText("Compositor | Preview evaluated through "+core.getCompositorNodeCount()+" nodes");
+                } catch(Exception error) {
+                    status.setText("Compositor | Preview failed: "+error.getMessage());
+                }
+                return;
+            }
             checkpointMeshEdit();core.evaluateGraph(graph);
             if(graph==0){meshyViewport.setMeshTint(core.getBaseColor());meshyViewport.refreshFromDocument();status.setText("Geometry Nodes | "+core.getVertexCount()+" vertices, "+core.getFaceCount()+" faces evaluated");}
             else if(graph==1){meshyViewport.setMeshTint(core.getBaseColor());meshyViewport.setMaterialParameters(core.getMetallic(),core.getRoughness());status.setText("Shading | Shader graph evaluated");}
-            else {status.setText("Compositor | "+core.getCompositorNodeCount()+" image operations ready; they run on the next final render");}
             graphView.setNodes(core.getGraphNodeLabels(graph));graphView.setLinks(core.getGraphLinks(graph));
         });
         root.addView(actions,new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT,dp(44)));
