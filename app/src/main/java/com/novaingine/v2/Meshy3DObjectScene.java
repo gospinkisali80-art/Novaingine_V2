@@ -81,6 +81,7 @@ public final class Meshy3DObjectScene {
     public static final class Collection3D {
         public final String id;
         public String name;
+        public String parentId;
         public boolean visible=true;
         public boolean renderVisible=true;
         private Collection3D(String id,String name){this.id=id;this.name=name;}
@@ -619,10 +620,32 @@ int flags=caseSensitive?0:java.util.regex.Pattern.CASE_INSENSITIVE;
     public void setSelectable(String objectId,boolean selectable) {requireObject(objectId).selectable=selectable;revision++;}
     public void setRenderVisibility(String objectId,boolean visible) {requireObject(objectId).renderVisible=visible;revision++;}
 
-    public Collection3D createCollection(String name) {
+    public Collection3D createCollection(String name) {return createCollection(name,null);}
+    public Collection3D createCollection(String name,String parentId) {
+        if(parentId!=null)requireCollection(parentId);
         String clean=name==null?"":name.trim();if(clean.isEmpty())clean="Collection";
         Collection3D c=new Collection3D(UUID.randomUUID().toString(),uniqueCollectionName(clean));
-        collections.put(c.id,c);revision++;return c;
+        c.parentId=parentId;collections.put(c.id,c);revision++;return c;
+    }
+    public void setCollectionParent(String collectionId,String parentId) {
+        Collection3D collection=requireCollection(collectionId);
+        if(collectionId.equals(parentId))throw new IllegalArgumentException("A collection cannot parent itself");
+        if(parentId!=null)requireCollection(parentId);
+        String p=parentId;int guard=0;
+        while(p!=null&&guard++<=collections.size()){
+            if(collectionId.equals(p))throw new IllegalArgumentException("Collection parenting would create a cycle");
+            Collection3D parent=collections.get(p);if(parent==null)break;p=parent.parentId;
+        }
+        if(guard>collections.size())throw new IllegalArgumentException("Collection hierarchy is invalid");
+        collection.parentId=parentId;revision++;
+    }
+    public int getCollectionDepth(String collectionId) {
+        Collection3D collection=requireCollection(collectionId);
+        int depth=0,guard=0;String p=collection.parentId;
+        while(p!=null&&guard++<collections.size()){
+            Collection3D parent=collections.get(p);if(parent==null)break;depth++;p=parent.parentId;
+        }
+        return depth;
     }
     public void renameCollection(String collectionId,String name) {
         Collection3D c=requireCollection(collectionId);String clean=name==null?"":name.trim();
@@ -635,7 +658,12 @@ int flags=caseSensitive?0:java.util.regex.Pattern.CASE_INSENSITIVE;
         Collection3D deleting=requireCollection(collectionId);
         if(collections.size()<=1)throw new IllegalStateException("A scene must keep at least one collection");
         String fallback=null;
-        for(String id:collections.keySet())if(!id.equals(collectionId)){fallback=id;break;}
+        for(String id:collections.keySet())if(!id.equals(collectionId)){
+            Collection3D candidate=collections.get(id);
+            if(java.util.Objects.equals(candidate.parentId,deleting.parentId)){fallback=id;break;}
+        }
+        if(fallback==null)for(String id:collections.keySet())if(!id.equals(collectionId)){fallback=id;break;}
+        for(Collection3D child:collections.values())if(collectionId.equals(child.parentId))child.parentId=deleting.parentId;
         for(Object3D object:objects.values()){
             object.collectionIds.remove(collectionId);
             if(object.collectionIds.isEmpty())object.collectionIds.add(fallback);
@@ -655,10 +683,19 @@ int flags=caseSensitive?0:java.util.regex.Pattern.CASE_INSENSITIVE;
         if(o.collectionIds.size()>1)o.collectionIds.remove(collectionId);
         revision++;
     }
+    private boolean collectionVisible(String id,boolean render) {
+        Collection3D c=collections.get(id);int guard=0;
+        while(c!=null&&guard++<=collections.size()){
+            if(render?!c.renderVisible:!c.visible)return false;
+            c=c.parentId==null?null:collections.get(c.parentId);
+        }
+        return true;
+    }
+
     public boolean isVisibleInViewport(Object3D o) {
         if(!o.visible)return false;
         boolean anyVisibleCollection=false;
-        for(String id:o.collectionIds){Collection3D c=collections.get(id);if(c!=null&&c.visible){anyVisibleCollection=true;break;}}
+        for(String id:o.collectionIds)if(collectionVisible(id,false)){anyVisibleCollection=true;break;}
         if(!anyVisibleCollection)return false;
         String parent=o.parentId;int guard=0;
         while(parent!=null&&guard++<objects.size()){
@@ -669,7 +706,7 @@ int flags=caseSensitive?0:java.util.regex.Pattern.CASE_INSENSITIVE;
     public boolean isVisibleInRender(Object3D o) {
         if(!o.renderVisible)return false;
         boolean anyVisibleCollection=false;
-        for(String id:o.collectionIds){Collection3D c=collections.get(id);if(c!=null&&c.renderVisible){anyVisibleCollection=true;break;}}
+        for(String id:o.collectionIds)if(collectionVisible(id,true)){anyVisibleCollection=true;break;}
         if(!anyVisibleCollection)return false;
         String parent=o.parentId;int guard=0;
         while(parent!=null&&guard++<objects.size()){
@@ -787,7 +824,9 @@ int flags=caseSensitive?0:java.util.regex.Pattern.CASE_INSENSITIVE;
             root.put("cursor",vector(cursorX,cursorY,cursorZ));
             JSONArray collectionArray=new JSONArray();
             for(Collection3D c:collections.values()){
-                JSONObject item=new JSONObject();item.put("id",c.id);item.put("name",c.name);item.put("visible",c.visible);item.put("renderVisible",c.renderVisible);collectionArray.put(item);
+                JSONObject item=new JSONObject();item.put("id",c.id);item.put("name",c.name);
+                item.put("parentId",c.parentId==null?JSONObject.NULL:c.parentId);
+                item.put("visible",c.visible);item.put("renderVisible",c.renderVisible);collectionArray.put(item);
             }
             root.put("collections",collectionArray);
         }catch(JSONException e){throw new IllegalStateException("Could not serialize object scene",e);}
@@ -802,9 +841,19 @@ int flags=caseSensitive?0:java.util.regex.Pattern.CASE_INSENSITIVE;
             if(collectionArray!=null)for(int i=0;i<collectionArray.length();i++){
                 JSONObject item=collectionArray.getJSONObject(i);String id=item.getString("id");
                 Collection3D c=new Collection3D(id,item.optString("name","Collection"));
+                Object parent=item.opt("parentId");
+                c.parentId=parent==null||parent==JSONObject.NULL?null:String.valueOf(parent);
                 c.visible=item.optBoolean("visible",true);c.renderVisible=item.optBoolean("renderVisible",true);newCollections.put(id,c);
             }
             if(newCollections.isEmpty()){Collection3D c=new Collection3D("collection-scene","Collection");newCollections.put(c.id,c);}
+            for(Collection3D collection:newCollections.values()){
+                String p=collection.parentId;int guard=0;
+                while(p!=null&&guard++<=newCollections.size()){
+                    if(collection.id.equals(p))return false;
+                    Collection3D parent=newCollections.get(p);if(parent==null)return false;p=parent.parentId;
+                }
+                if(guard>newCollections.size())return false;
+            }
             LinkedHashMap<String,Object3D> newObjects=new LinkedHashMap<>();
             java.util.HashMap<String,Meshy3DCore> meshDataMap=new java.util.HashMap<>();
             JSONArray objectArray=root.getJSONArray("objects");
