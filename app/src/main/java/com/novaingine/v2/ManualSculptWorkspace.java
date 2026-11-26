@@ -581,6 +581,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     status.setText("Modeling | "+item+" completed");
                 } else if ("Parent To".equals(item)) showObjectPickerDialog(true);
                 else if ("Align Objects".equals(item)) showAlignObjectsDialog();
+                else if ("Mirror Objects".equals(item)) showMirrorObjectsDialog();
                 else if ("Parent Selected to Active".equals(item)) {
                     try{meshyViewport.parentSelectedToActive();refreshModelingOutliner();status.setText("Modeling | Selected objects parented to active object");}
                     catch(Exception error){showObjectOperationError(error);}
@@ -1230,6 +1231,19 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 }).setNegativeButton("Cancel",null).show();
     }
 
+    private void showMirrorObjectsDialog() {
+        String[] options={"Global X","Global Y","Global Z","Local X","Local Y","Local Z"};
+        new android.app.AlertDialog.Builder(activity).setTitle("Mirror Selected Objects")
+                .setItems(options,(d,w)->{
+                    try{
+                        checkpointMeshEdit();
+                        meshyViewport.mirrorSelectedObjects(w%3,w>=3);
+                        refreshModelingOutliner();
+                        status.setText("Modeling | Selected objects mirrored across "+options[w]);
+                    }catch(Exception error){showObjectOperationError(error);}
+                }).setNegativeButton("Cancel",null).show();
+    }
+
     private void showAlignObjectsDialog() {
         String[] axes={"X","Y","Z","All Axes"};
         new android.app.AlertDialog.Builder(activity).setTitle("Align Selected Objects to Active")
@@ -1853,7 +1867,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         "Hide Selected", "Hide Unselected", "Show All Objects", "Invert Hidden", "Toggle Local View",
                         "Lock Selection", "Unlock Selection", "Disable in Render", "Enable in Render",
                         "Apply Location", "Apply Rotation & Scale", "Apply All Transforms", "Clear Location", "Clear Rotation", "Clear Scale",
-                        "Set Origin to Geometry", "Set Origin to 3D Cursor", "Align Objects", "Parent To", "Parent Selected to Active", "Clear Parent",
+                        "Set Origin to Geometry", "Set Origin to 3D Cursor", "Align Objects", "Mirror Objects", "Parent To", "Parent Selected to Active", "Clear Parent",
                         "Add Collection", "Manage Collections", "Move To Collection", "Link To Collection", "Make Single User", "Link Mesh Data",
                         "Set Active Camera", "View Camera", "Camera Settings", "Light Settings", "Object Statistics",
                         "EDIT MODE", "Vertex Select", "Edge Select", "Face Select",
