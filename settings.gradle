@@ -1,6 +1,8 @@
 pluginManagement {
     repositories {
         google()
+        // Google-hosted Maven Central mirror avoids transient Maven Central 429 throttling.
+        maven { url = uri("https://maven-central.storage-download.googleapis.com/maven2/") }
         mavenCentral()
         gradlePluginPortal()
     }
@@ -10,6 +12,8 @@ dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         google()
+        // Keep the same mirror for transitive Android Gradle Plugin dependencies.
+        maven { url = uri("https://maven-central.storage-download.googleapis.com/maven2/") }
         mavenCentral()
     }
 }
