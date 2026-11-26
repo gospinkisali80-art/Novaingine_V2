@@ -43,6 +43,13 @@ public final class Meshy3DViewport extends View {
     private boolean localViewActive;
     private final java.util.HashSet<String> localViewObjectIds=new java.util.HashSet<>();
     private Runnable onObjectSelectionChanged;
+    private Runnable onObjectTransformStart;
+    private int objectTransformTool=-1;
+    private boolean objectGizmoDragging;
+    private int objectGizmoAxis=-1;
+    private float gizmoStartX,gizmoStartY,gizmoAxisScreenX,gizmoAxisScreenY,gizmoStartWorldX;
+    private final java.util.ArrayList<String> gizmoObjectIds=new java.util.ArrayList<>();
+    private final java.util.ArrayList<Meshy3DObjectScene.Transform> gizmoInitialTransforms=new java.util.ArrayList<>();
 
     private static final class RenderData {
         float[][] vertices;
@@ -53,6 +60,12 @@ public final class Meshy3DViewport extends View {
     public Meshy3DObjectScene getObjectScene(){return objectScene;}
     public Meshy3DCore getDocumentCore(){return document;}
     public void setObjectSelectionListener(Runnable listener){onObjectSelectionChanged=listener;}
+    public void setObjectTransformStartListener(Runnable listener){onObjectTransformStart=listener;}
+    public void setObjectTransformTool(int mode){
+        objectTransformTool=mode<0||mode>2?-1:mode;
+        objectGizmoDragging=false;objectGizmoAxis=-1;invalidate();
+    }
+    public int getObjectTransformTool(){return objectTransformTool;}
 
     private Meshy3DCore copyMeshCore(Meshy3DCore source) {
         Meshy3DCore copy=new Meshy3DCore();
@@ -747,6 +760,7 @@ public final class Meshy3DViewport extends View {
             paint.setStyle(Paint.Style.FILL);
         }
         drawSceneObjectMarkers(canvas,cx,cy,unit);
+        if(!meshEditMode&&objectSelectionEnabled&&objectTransformTool>=0)drawObjectTransformGizmo(canvas,cx,cy,unit);
         drawNavigationGizmo(canvas, width, 18f*getResources().getDisplayMetrics().density);
     }
 
@@ -780,6 +794,127 @@ public final class Meshy3DViewport extends View {
             paint.setStyle(Paint.Style.FILL);paint.setTextSize(10f*density);paint.setColor(color);
             canvas.drawText(object.name,screen[0]+radius+3f*density,screen[1]-radius-2f*density,paint);
         }
+    }
+
+    private void drawObjectTransformGizmo(Canvas canvas,float cx,float cy,float unit) {
+        Meshy3DObjectScene.Object3D active=objectScene.getObject(objectSceneActiveId);
+        if(active==null)return;
+        float[] origin=objectScene.transformPoint(active.id,0,0,0);
+        float[] center=project(origin[0],origin[1],origin[2],cx,cy,unit);
+        float density=getResources().getDisplayMetrics().density;
+        float handleLength=76f*density;
+        float[][] axes={{1,0,0},{0,1,0},{0,0,1}};
+        int[] colors={0xFFE45C5C,0xFF5CBD83,0xFF6AA7F5};
+        String[] names={"X","Y","Z"};
+        paint.setTextSize(12f*density);
+        for(int axis=0;axis<3;axis++){
+            float[] endWorld=objectScene.transformPoint(active.id,axes[axis][0],axes[axis][1],axes[axis][2]);
+            float[] end=project(endWorld[0],endWorld[1],endWorld[2],cx,cy,unit);
+            float dx=end[0]-center[0],dy=end[1]-center[1],len=(float)Math.sqrt(dx*dx+dy*dy);
+            if(len<1e-4f)continue;
+            dx=dx/len*handleLength;dy=dy/len*handleLength;
+            float ex=center[0]+dx,ey=center[1]+dy;
+            paint.setColor(colors[axis]);paint.setStrokeWidth(3.3f*density);paint.setStyle(Paint.Style.STROKE);
+            canvas.drawLine(center[0],center[1],ex,ey,paint);
+            paint.setStyle(Paint.Style.FILL);
+            if(objectTransformTool==2){
+                canvas.drawRect(ex-5*density,ey-5*density,ex+5*density,ey+5*density,paint);
+            }else{
+                float bx=ex-dx*.16f,by=ey-dy*.16f;
+                float px=-dy*.13f,py=dx*.13f;
+                Path arrow=new Path();arrow.moveTo(ex,ey);arrow.lineTo(bx+px,by+py);arrow.lineTo(bx-px,by-py);arrow.close();
+                canvas.drawPath(arrow,paint);
+            }
+            canvas.drawText(names[axis],ex+5*density,ey-5*density,paint);
+        }
+        if(objectTransformTool==1){
+            paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(2f*density);paint.setColor(0xFFE2E5E9);
+            canvas.drawCircle(center[0],center[1],handleLength*.72f,paint);
+        }
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private boolean beginObjectGizmoDrag(float x,float y) {
+        Meshy3DObjectScene.Object3D active=objectScene.getObject(objectSceneActiveId);
+        if(active==null)return false;
+        float cx=getWidth()*.5f,cy=getHeight()*.49f,unit=Math.min(getWidth(),getHeight())*.235f*zoom;
+        float[] world=objectScene.transformPoint(active.id,0,0,0);
+        float[] center=project(world[0],world[1],world[2],cx,cy,unit);
+        float density=getResources().getDisplayMetrics().density;
+        float handleLength=76f*density,hitWidth=18f*density;
+        float[][] axes={{1,0,0},{0,1,0},{0,0,1}};
+        float nearest=Float.MAX_VALUE;int selectedAxis=-1;float selectedX=0,selectedY=0;
+        for(int axis=0;axis<3;axis++){
+            float[] endWorld=objectScene.transformPoint(active.id,axes[axis][0],axes[axis][1],axes[axis][2]);
+            float[] end=project(endWorld[0],endWorld[1],endWorld[2],cx,cy,unit);
+            float vx=end[0]-center[0],vy=end[1]-center[1],len=(float)Math.sqrt(vx*vx+vy*vy);
+            if(len<1e-4f)continue;
+            vx=vx/len*handleLength;vy=vy/len*handleLength;
+            float t=((x-center[0])*vx+(y-center[1])*vy)/(handleLength*handleLength);
+            t=Math.max(0f,Math.min(1f,t));
+            float dx=x-(center[0]+vx*t),dy=y-(center[1]+vy*t);
+            float distance=(float)Math.sqrt(dx*dx+dy*dy);
+            if(distance<hitWidth&&distance<nearest){nearest=distance;selectedAxis=axis;selectedX=vx/handleLength;selectedY=vy/handleLength;}
+        }
+        if(objectTransformTool==1&&selectedAxis<0){
+            float dx=x-center[0],dy=y-center[1],rad=(float)Math.sqrt(dx*dx+dy*dy);
+            if(Math.abs(rad-handleLength*.72f)<hitWidth){
+                selectedAxis=2;selectedX=1f;selectedY=0f;
+                gizmoStartWorldX=(float)Math.atan2(dy,dx);
+            }
+        }
+        if(selectedAxis<0)return false;
+        gizmoObjectIds.clear();gizmoInitialTransforms.clear();
+        for(Meshy3DObjectScene.Object3D object:objectScene.getSelectedObjects()){
+            gizmoObjectIds.add(object.id);gizmoInitialTransforms.add(object.transform.copy());
+        }
+        if(gizmoObjectIds.isEmpty()){gizmoObjectIds.add(active.id);gizmoInitialTransforms.add(active.transform.copy());}
+        objectGizmoAxis=selectedAxis;gizmoStartX=x;gizmoStartY=y;
+        gizmoAxisScreenX=selectedX;gizmoAxisScreenY=selectedY;
+        if(objectTransformTool==1&&Math.abs(gizmoStartWorldX)<1e-7f)
+            gizmoStartWorldX=(float)Math.atan2(y-center[1],x-center[0]);
+        objectGizmoDragging=true;moved=true;
+        if(onObjectTransformStart!=null)onObjectTransformStart.run();
+        return true;
+    }
+
+    private void updateObjectGizmoDrag(float x,float y) {
+        float density=getResources().getDisplayMetrics().density;
+        float dx=x-gizmoStartX,dy=y-gizmoStartY;
+        float along=dx*gizmoAxisScreenX+dy*gizmoAxisScreenY;
+        float perpendicular=dx*(-gizmoAxisScreenY)+dy*gizmoAxisScreenX;
+        float amount=along/Math.max(1f,76f*density);
+        float rotation=perpendicular*1.5f;
+        if(objectTransformTool==1){
+            float cx=getWidth()*.5f,cy=getHeight()*.49f,unit=Math.min(getWidth(),getHeight())*.235f*zoom;
+            Meshy3DObjectScene.Object3D active=objectScene.getObject(objectSceneActiveId);
+            if(active!=null){
+                float[] world=objectScene.transformPoint(active.id,0,0,0);
+                float[] center=project(world[0],world[1],world[2],cx,cy,unit);
+                float now=(float)Math.atan2(y-center[1],x-center[0]);
+                float start=gizmoStartWorldX;
+                rotation=(float)Math.toDegrees(now-start);
+            }
+        }
+        for(int i=0;i<gizmoObjectIds.size();i++){
+            Meshy3DObjectScene.Object3D object=objectScene.getObject(gizmoObjectIds.get(i));
+            if(object==null)continue;
+            Meshy3DObjectScene.Transform initial=gizmoInitialTransforms.get(i).copy();
+            if(objectTransformTool==0){
+                if(objectGizmoAxis==0)initial.x+=amount;else if(objectGizmoAxis==1)initial.y+=amount;else initial.z+=amount;
+            }else if(objectTransformTool==1){
+                if(objectGizmoAxis==0)initial.rotationX+=rotation;
+                else if(objectGizmoAxis==1)initial.rotationY+=rotation;
+                else initial.rotationZ+=rotation;
+            }else{
+                float factor=Math.max(.001f,1f+amount);
+                if(objectGizmoAxis==0)initial.scaleX*=factor;
+                else if(objectGizmoAxis==1)initial.scaleY*=factor;
+                else initial.scaleZ*=factor;
+            }
+            objectScene.setTransform(object.id,initial);
+        }
+        invalidate();
     }
 
     private void drawNavigationGizmo(Canvas canvas,float width,float margin) {
@@ -1135,6 +1270,8 @@ public final class Meshy3DViewport extends View {
             case MotionEvent.ACTION_DOWN:
                 downX=lastX=event.getX(); downY=lastY=event.getY();
                 moved=false; lastPinchDistance=0;
+                if(!sculpting&&!meshEditMode&&objectSelectionEnabled&&objectTransformTool>=0
+                        &&beginObjectGizmoDrag(event.getX(),event.getY()))return true;
                 if(sculpting){
                     strokeActive=true;
                     strokeX=previousStrokeX=event.getX();
@@ -1146,6 +1283,9 @@ public final class Meshy3DViewport extends View {
             case MotionEvent.ACTION_POINTER_DOWN:
                 lastPinchDistance=pointerDistance(event); moved=true; return true;
             case MotionEvent.ACTION_MOVE:
+                if(objectGizmoDragging&&event.getPointerCount()==1){
+                    updateObjectGizmoDrag(event.getX(),event.getY());return true;
+                }
                 if(sculpting && strokeActive && event.getPointerCount()==1){
                     float sx=event.getX(), sy=event.getY();
                     applySculptSegment(sx,sy,sx-previousStrokeX,sy-previousStrokeY,event.getPressure());
@@ -1177,6 +1317,8 @@ public final class Meshy3DViewport extends View {
                 return true;
             case MotionEvent.ACTION_UP:
                 strokeActive=false;
+                if(objectGizmoDragging){objectGizmoDragging=false;objectGizmoAxis=-1;
+                    gizmoObjectIds.clear();gizmoInitialTransforms.clear();invalidate();performClick();return true;}
                 if(polyBuildMode){if(!moved)addPolyBuildPoint(event.getX(),event.getY());performClick();return true;}
                 if(sculpting){syncCoreFromViewport();}
                 if(!moved && !sculpting){
