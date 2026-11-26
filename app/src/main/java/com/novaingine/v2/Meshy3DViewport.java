@@ -1040,8 +1040,25 @@ public final class Meshy3DViewport extends View {
         setBackgroundColor(0xFF30343B);
         setLayerType(View.LAYER_TYPE_SOFTWARE, null);
         setClickable(true);
+        // Blender-style startup scene: retain the selected default cube and add a usable camera/light.
         Meshy3DObjectScene.Object3D starter = objectScene.createMeshObject("Cube", document);
+        Meshy3DObjectScene.Object3D camera = objectScene.createTypedObject("Camera", "CAMERA", null);
+        camera.transform.x = 7.0f;
+        camera.transform.y = 5.0f;
+        camera.transform.z = 7.0f;
+        camera.transform.rotationX = (float)Math.toRadians(22.0);
+        camera.transform.rotationY = (float)Math.toRadians(45.0);
+        objectScene.setActiveCamera(camera.id);
+        Meshy3DObjectScene.Object3D light = objectScene.createTypedObject("Light", "LIGHT", null);
+        light.transform.x = -3.5f;
+        light.transform.y = 5.0f;
+        light.transform.z = 3.0f;
+        light.lightType = "SUN";
+        light.lightPower = 2.0f;
+        objectScene.selectOnly(starter.id);
         objectSceneActiveId = starter.id;
+        objectSelectionEnabled = true;
+        objectTransformTool = -1;
     }
 
     private float[] cameraPoint(float x, float y, float z) {
@@ -1489,7 +1506,7 @@ public final class Meshy3DViewport extends View {
 
     private void drawNavigationGizmo(Canvas canvas,float width,float margin) {
         float d=getResources().getDisplayMetrics().density;
-        float gx=width-190*d, gy=150*d, r=23*d;
+        float gx=width-42*d, gy=48*d, r=18*d;
         paint.setStyle(Paint.Style.FILL); paint.setColor(0xFF20252C);
         canvas.drawCircle(gx,gy,r+8*d,paint);
         paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(1*d);
@@ -2051,7 +2068,7 @@ public final class Meshy3DViewport extends View {
                 if(polyBuildMode){if(!moved)addPolyBuildPoint(event.getX(),event.getY());performClick();return true;}
                 if(sculpting){syncCoreFromViewport();}
                 if(!moved && !sculpting){
-                    float gx=getWidth()-190*d, gy=150*d, radius=35*d;
+                    float gx=getWidth()-42*d, gy=48*d, radius=30*d;
                     float dx=event.getX()-gx,dy=event.getY()-gy;
                     if(dx*dx+dy*dy<=radius*radius){
                         snapToNearestAxis(dx,dy);
