@@ -916,6 +916,7 @@ int flags=caseSensitive?0:java.util.regex.Pattern.CASE_INSENSITIVE;
             Object camera=root.opt("activeCameraId");
             activeCameraId=camera==null||camera==JSONObject.NULL?null:String.valueOf(camera);
             if(activeCameraId!=null&&(!objects.containsKey(activeCameraId)||!"CAMERA".equals(objects.get(activeCameraId).type)))activeCameraId=null;
+            cursorX=cursorY=cursorZ=0f;
             readVector(root.optJSONArray("cursor"),v->{cursorX=finite(v[0]);cursorY=finite(v[1]);cursorZ=finite(v[2]);});
             for(Object3D o:objects.values()){o.active=o.id.equals(activeObjectId);if(o.active)o.selected=true;}
             revision++;return true;
