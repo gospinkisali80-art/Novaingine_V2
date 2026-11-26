@@ -51,6 +51,7 @@ public final class Meshy3DViewport extends View {
     private Runnable onObjectTransformStart;
     private int objectTransformTool=-1;
     private boolean objectGizmoDragging;
+    private boolean objectGizmoRotationRing;
     private boolean objectBoxSelectEnabled;
     private boolean objectBoxSelecting;
     private float objectBoxEndX,objectBoxEndY;
@@ -58,6 +59,7 @@ public final class Meshy3DViewport extends View {
     private float gizmoStartX,gizmoStartY,gizmoAxisScreenX,gizmoAxisScreenY,gizmoStartWorldX;
     private final java.util.ArrayList<String> gizmoObjectIds=new java.util.ArrayList<>();
     private final java.util.ArrayList<Meshy3DObjectScene.Transform> gizmoInitialTransforms=new java.util.ArrayList<>();
+    private final java.util.ArrayList<float[]> gizmoInitialWorldLocations=new java.util.ArrayList<>();
 
     private static final class RenderData {
         float[][] vertices;
@@ -1164,22 +1166,27 @@ public final class Meshy3DViewport extends View {
             float distance=(float)Math.sqrt(dx*dx+dy*dy);
             if(distance<hitWidth&&distance<nearest){nearest=distance;selectedAxis=axis;selectedX=vx/handleLength;selectedY=vy/handleLength;}
         }
+        objectGizmoRotationRing=false;
         if(objectTransformTool==1&&selectedAxis<0){
             float dx=x-center[0],dy=y-center[1],rad=(float)Math.sqrt(dx*dx+dy*dy);
             if(Math.abs(rad-handleLength*.72f)<hitWidth){
-                selectedAxis=2;selectedX=1f;selectedY=0f;
+                selectedAxis=2;selectedX=1f;selectedY=0f;objectGizmoRotationRing=true;
                 gizmoStartWorldX=(float)Math.atan2(dy,dx);
             }
         }
         if(selectedAxis<0)return false;
-        gizmoObjectIds.clear();gizmoInitialTransforms.clear();
+        gizmoObjectIds.clear();gizmoInitialTransforms.clear();gizmoInitialWorldLocations.clear();
         for(Meshy3DObjectScene.Object3D object:objectScene.getSelectedObjects()){
             gizmoObjectIds.add(object.id);gizmoInitialTransforms.add(object.transform.copy());
+            gizmoInitialWorldLocations.add(objectScene.worldLocation(object.id));
         }
-        if(gizmoObjectIds.isEmpty()){gizmoObjectIds.add(active.id);gizmoInitialTransforms.add(active.transform.copy());}
+        if(gizmoObjectIds.isEmpty()){
+            gizmoObjectIds.add(active.id);gizmoInitialTransforms.add(active.transform.copy());
+            gizmoInitialWorldLocations.add(objectScene.worldLocation(active.id));
+        }
         objectGizmoAxis=selectedAxis;gizmoStartX=x;gizmoStartY=y;
         gizmoAxisScreenX=selectedX;gizmoAxisScreenY=selectedY;
-        if(objectTransformTool==1)
+        if(objectTransformTool==1&&objectGizmoRotationRing)
             gizmoStartWorldX=(float)Math.atan2(y-center[1],x-center[0]);
         objectGizmoDragging=true;moved=true;
         if(onObjectTransformStart!=null)onObjectTransformStart.run();
@@ -1193,24 +1200,38 @@ public final class Meshy3DViewport extends View {
         float perpendicular=dx*(-gizmoAxisScreenY)+dy*gizmoAxisScreenX;
         float amount=along/Math.max(1f,76f*density);
         float rotation=perpendicular*1.5f;
-        if(objectTransformTool==1){
+        Meshy3DObjectScene.Object3D active=objectScene.getObject(objectSceneActiveId);
+        if(objectTransformTool==1&&objectGizmoRotationRing&&active!=null){
             float cx=getWidth()*.5f,cy=getHeight()*.49f,unit=Math.min(getWidth(),getHeight())*.235f*zoom;
-            Meshy3DObjectScene.Object3D active=objectScene.getObject(objectSceneActiveId);
-            if(active!=null){
-                float[] world=objectScene.transformPoint(active.id,0,0,0);
-                float[] center=project(world[0],world[1],world[2],cx,cy,unit);
-                float now=(float)Math.atan2(y-center[1],x-center[0]);
-                float start=gizmoStartWorldX;
-                rotation=(float)Math.toDegrees(now-start);
-            }
+            float[] world=objectScene.transformPoint(active.id,0,0,0);
+            float[] center=project(world[0],world[1],world[2],cx,cy,unit);
+            float now=(float)Math.atan2(y-center[1],x-center[0]);
+            rotation=(float)Math.toDegrees(now-gizmoStartWorldX);
+        }
+        float[] moveDirection={0,0,0};
+        if(objectTransformTool==0&&active!=null){
+            float[][] axes={{1,0,0},{0,1,0},{0,0,1}};
+            float[] origin=objectScene.transformPoint(active.id,0,0,0);
+            float[] endpoint=objectScene.transformPoint(active.id,axes[objectGizmoAxis][0],
+                    axes[objectGizmoAxis][1],axes[objectGizmoAxis][2]);
+            moveDirection=new float[]{endpoint[0]-origin[0],endpoint[1]-origin[1],endpoint[2]-origin[2]};
+            float length=(float)Math.sqrt(moveDirection[0]*moveDirection[0]
+                    +moveDirection[1]*moveDirection[1]+moveDirection[2]*moveDirection[2]);
+            if(length>1e-6f){moveDirection[0]/=length;moveDirection[1]/=length;moveDirection[2]/=length;}
         }
         for(int i=0;i<gizmoObjectIds.size();i++){
             Meshy3DObjectScene.Object3D object=objectScene.getObject(gizmoObjectIds.get(i));
             if(object==null)continue;
-            Meshy3DObjectScene.Transform initial=gizmoInitialTransforms.get(i).copy();
             if(objectTransformTool==0){
-                if(objectGizmoAxis==0)initial.x+=amount;else if(objectGizmoAxis==1)initial.y+=amount;else initial.z+=amount;
-            }else if(objectTransformTool==1){
+                float[] initialWorld=gizmoInitialWorldLocations.get(i);
+                objectScene.setWorldLocation(object.id,
+                        initialWorld[0]+moveDirection[0]*amount,
+                        initialWorld[1]+moveDirection[1]*amount,
+                        initialWorld[2]+moveDirection[2]*amount);
+                continue;
+            }
+            Meshy3DObjectScene.Transform initial=gizmoInitialTransforms.get(i).copy();
+            if(objectTransformTool==1){
                 if(objectGizmoAxis==0)initial.rotationX+=rotation;
                 else if(objectGizmoAxis==1)initial.rotationY+=rotation;
                 else initial.rotationZ+=rotation;
@@ -1695,8 +1716,9 @@ public final class Meshy3DViewport extends View {
                     objectBoxSelecting=false;performObjectBoxSelection(downX,downY,event.getX(),event.getY());
                     invalidate();performClick();return true;
                 }
-                if(objectGizmoDragging){objectGizmoDragging=false;objectGizmoAxis=-1;
-                    gizmoObjectIds.clear();gizmoInitialTransforms.clear();invalidate();performClick();return true;}
+                if(objectGizmoDragging){objectGizmoDragging=false;objectGizmoAxis=-1;objectGizmoRotationRing=false;
+                    gizmoObjectIds.clear();gizmoInitialTransforms.clear();gizmoInitialWorldLocations.clear();
+                    invalidate();performClick();return true;}
                 if(polyBuildMode){if(!moved)addPolyBuildPoint(event.getX(),event.getY());performClick();return true;}
                 if(sculpting){syncCoreFromViewport();}
                 if(!moved && !sculpting){
