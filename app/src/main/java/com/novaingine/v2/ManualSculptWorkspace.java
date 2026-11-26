@@ -666,7 +666,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
             }else{
                 float min=(type.equals("Metallic")||type.equals("Roughness"))?0f:-100f;
                 float max=(type.equals("Metallic")||type.equals("Roughness"))?1f:100f;
-                if(type.equals("Blur")){min=1f;max=8f;}
+                if(type.equals("Blur")){min=1f;max=8f;}else if(type.equals("Alpha Over")){min=0f;max=1f;}else if(type.equals("Instance on Points")){min=1f;max=20f;}else if(graph==0&&type.equals("Smooth")){min=0f;max=1f;}
                 showAmountDialog(type+" Node Value",min,max,value->{
                     core.setGraphNodeValue(graph,index,value);graphView.invalidate();
                     status.setText(title+" | "+type+" node value updated");
@@ -690,7 +690,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
             new android.app.AlertDialog.Builder(activity).setTitle("Add "+title+" Node").setItems(choices,(d,w)->{
                 String type=choices[w];float value=graph==0?.15f:graph==1
                         ?(type.equals("Metallic")?.5f:type.equals("Roughness")?.65f:type.equals("Base Color")?(float)(core.getBaseColor()&0xFFFFFF):0f)
-                        :type.equals("Blur")?2f:20f;
+                        :type.equals("Blur")?2f:type.equals("Alpha Over")?.25f:20f;
                 if(graph==0)core.addGeometryNode(type,type.equals("Instance on Points")?2f:0f,0f,0f,type.equals("Instance on Points")?3f:value);
                 else core.addNodeToGraph(graph,type,value);
                 graphView.setNodes(core.getGraphNodeLabels(graph));graphView.setLinks(core.getGraphLinks(graph));
