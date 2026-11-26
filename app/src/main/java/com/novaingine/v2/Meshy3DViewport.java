@@ -871,7 +871,7 @@ public final class Meshy3DViewport extends View {
         if(gizmoObjectIds.isEmpty()){gizmoObjectIds.add(active.id);gizmoInitialTransforms.add(active.transform.copy());}
         objectGizmoAxis=selectedAxis;gizmoStartX=x;gizmoStartY=y;
         gizmoAxisScreenX=selectedX;gizmoAxisScreenY=selectedY;
-        if(objectTransformTool==1&&Math.abs(gizmoStartWorldX)<1e-7f)
+        if(objectTransformTool==1)
             gizmoStartWorldX=(float)Math.atan2(y-center[1],x-center[0]);
         objectGizmoDragging=true;moved=true;
         if(onObjectTransformStart!=null)onObjectTransformStart.run();
