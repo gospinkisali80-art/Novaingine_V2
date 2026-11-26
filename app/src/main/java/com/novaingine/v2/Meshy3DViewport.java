@@ -723,6 +723,7 @@ public final class Meshy3DViewport extends View {
                 }
                 meshKeyframes.put(frame.optInt("frame",i),snapshot);
             }
+            if(coreState==null)syncCoreFromViewport();
             invalidate();
             return true;
         } catch (Exception error) {
