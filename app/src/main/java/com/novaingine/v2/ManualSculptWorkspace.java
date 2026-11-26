@@ -457,6 +457,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     meshyViewport.frameAllObjects();status.setText("Modeling | View framed on all visible objects");
                 } else if ("Object Properties".equals(item)) showObjectPropertiesDialog();
                 else if ("Constraints".equals(item)) showObjectConstraintsDialog();
+                else if ("Modifiers".equals(item)) showObjectModifiersDialog();
                 else if ("Object Transform".equals(item) || "Numeric Transform".equals(item)) showObjectTransformTypeDialog();
                 else if ("Dimensions".equals(item)) {
                     Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
@@ -1644,6 +1645,164 @@ public final class ManualSculptWorkspace extends FrameLayout {
         dialog.show();
     }
 
+    private void showObjectModifiersDialog() {
+        Meshy3DObjectScene scene=meshyViewport.getObjectScene();
+        Meshy3DObjectScene.Object3D active=scene.getActiveObject();
+        if(active==null||active.mesh==null||!"MESH".equals(active.type)){
+            Toast.makeText(activity,"Select a mesh object to manage modifiers.",Toast.LENGTH_SHORT).show();
+            return;
+        }
+        ArrayList<Meshy3DObjectScene.Modifier3D> modifiers=new ArrayList<>(scene.getModifiers(active.id));
+        String[] options=new String[modifiers.size()+1];
+        options[0]="+ Add Modifier";
+        for(int i=0;i<modifiers.size();i++){
+            Meshy3DObjectScene.Modifier3D modifier=modifiers.get(i);
+            options[i+1]=(modifier.enabled?"✓ ":"○ ")+modifier.type.replace('_',' ');
+        }
+        new android.app.AlertDialog.Builder(activity).setTitle(active.name+" | Modifier Stack")
+                .setItems(options,(dialog,which)->{
+                    if(which==0)showObjectModifierTypeChooser();
+                    else if(which-1<modifiers.size())showObjectModifierEditor(modifiers.get(which-1));
+                }).setNegativeButton("Close",null).show();
+    }
+
+    private void showObjectModifierTypeChooser() {
+        String[] labels={"Mirror","Array","Bevel (Linear)","Solidify","Subdivision (Linear)"};
+        String[] types={"MIRROR","ARRAY","BEVEL","SOLIDIFY","SUBDIVIDE"};
+        new android.app.AlertDialog.Builder(activity).setTitle("Add Modifier")
+                .setItems(labels,(dialog,which)->{
+                    try{
+                        checkpointMeshEdit();
+                        Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
+                        Meshy3DObjectScene.Modifier3D modifier=meshyViewport.getObjectScene()
+                                .addModifier(active.id,types[which]);
+                        meshyViewport.invalidate();
+                        showObjectModifierEditor(modifier);
+                    }catch(Exception error){showObjectOperationError(error);}
+                }).setNegativeButton("Cancel",null).show();
+    }
+
+    private EditText modifierNumberField(LinearLayout panel,String label,float value,boolean integer) {
+        LinearLayout row=new LinearLayout(activity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        TextView caption=new TextView(activity);
+        caption.setText(label);
+        row.addView(caption,new LinearLayout.LayoutParams(dp(116),LayoutParams.WRAP_CONTENT));
+        EditText field=new EditText(activity);
+        field.setSingleLine(true);
+        field.setInputType(integer?android.text.InputType.TYPE_CLASS_NUMBER:
+                android.text.InputType.TYPE_CLASS_NUMBER|android.text.InputType.TYPE_NUMBER_FLAG_SIGNED
+                        |android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        field.setText(integer?Integer.toString((int)value):fmt(value));
+        row.addView(field,new LinearLayout.LayoutParams(0,LayoutParams.WRAP_CONTENT,1f));
+        panel.addView(row);
+        return field;
+    }
+
+    private void showObjectModifierEditor(Meshy3DObjectScene.Modifier3D modifier) {
+        Meshy3DObjectScene scene=meshyViewport.getObjectScene();
+        Meshy3DObjectScene.Object3D active=scene.getActiveObject();
+        if(active==null||modifier==null)return;
+        LinearLayout panel=new LinearLayout(activity);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(16),dp(8),dp(16),dp(8));
+
+        android.widget.CheckBox enabled=new android.widget.CheckBox(activity);
+        enabled.setText("Modifier Enabled");
+        enabled.setChecked(modifier.enabled);
+        panel.addView(enabled);
+
+        android.widget.Spinner axisSpinner=null;
+        EditText countField=null,levelsField=null,valueField=null;
+        EditText offsetXField=null,offsetYField=null,offsetZField=null;
+        if("MIRROR".equals(modifier.type)){
+            TextView label=new TextView(activity);label.setText("Mirror Axis");panel.addView(label);
+            axisSpinner=new android.widget.Spinner(activity);
+            android.widget.ArrayAdapter<String> adapter=new android.widget.ArrayAdapter<>(activity,
+                    android.R.layout.simple_spinner_item,new String[]{"X","Y","Z"});
+            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+            axisSpinner.setAdapter(adapter);axisSpinner.setSelection(modifier.axis);panel.addView(axisSpinner);
+        }else if("ARRAY".equals(modifier.type)){
+            countField=modifierNumberField(panel,"Copies (1–20)",modifier.count,true);
+            offsetXField=modifierNumberField(panel,"Offset X",modifier.offsetX,false);
+            offsetYField=modifierNumberField(panel,"Offset Y",modifier.offsetY,false);
+            offsetZField=modifierNumberField(panel,"Offset Z",modifier.offsetZ,false);
+        }else if("SUBDIVIDE".equals(modifier.type)){
+            levelsField=modifierNumberField(panel,"Levels (1–3)",modifier.levels,true);
+        }else if("BEVEL".equals(modifier.type)){
+            valueField=modifierNumberField(panel,"Width (0.001–0.49)",modifier.value,false);
+        }else if("SOLIDIFY".equals(modifier.type)){
+            valueField=modifierNumberField(panel,"Thickness",modifier.value,false);
+        }
+
+        android.app.AlertDialog.Builder builder=new android.app.AlertDialog.Builder(activity)
+                .setTitle(modifier.type.replace('_',' ')+" Modifier")
+                .setView(panel).setPositiveButton("Save",null)
+                .setNegativeButton("Close",null);
+        android.app.AlertDialog dialog=builder.create();
+
+        LinearLayout actions=new LinearLayout(activity);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        android.widget.Button up=new android.widget.Button(activity);up.setText("Move Up");
+        android.widget.Button down=new android.widget.Button(activity);down.setText("Move Down");
+        android.widget.Button apply=new android.widget.Button(activity);apply.setText("Apply");
+        android.widget.Button remove=new android.widget.Button(activity);remove.setText("Remove");
+        actions.addView(up,new LinearLayout.LayoutParams(0,LayoutParams.WRAP_CONTENT,1f));
+        actions.addView(down,new LinearLayout.LayoutParams(0,LayoutParams.WRAP_CONTENT,1f));
+        actions.addView(apply,new LinearLayout.LayoutParams(0,LayoutParams.WRAP_CONTENT,1f));
+        actions.addView(remove,new LinearLayout.LayoutParams(0,LayoutParams.WRAP_CONTENT,1f));
+        panel.addView(actions);
+
+        up.setOnClickListener(view->{
+            try{checkpointMeshEdit();scene.moveModifier(active.id,modifier.id,-1);
+                meshyViewport.invalidate();dialog.dismiss();showObjectModifierEditor(modifier);}
+            catch(Exception error){showObjectOperationError(error);}
+        });
+        down.setOnClickListener(view->{
+            try{checkpointMeshEdit();scene.moveModifier(active.id,modifier.id,1);
+                meshyViewport.invalidate();dialog.dismiss();showObjectModifierEditor(modifier);}
+            catch(Exception error){showObjectOperationError(error);}
+        });
+        remove.setOnClickListener(view->{
+            try{checkpointMeshEdit();scene.removeModifier(active.id,modifier.id);
+                meshyViewport.invalidate();dialog.dismiss();showObjectModifiersDialog();}
+            catch(Exception error){showObjectOperationError(error);}
+        });
+        apply.setOnClickListener(view->{
+            try{
+                ArrayList<Meshy3DObjectScene.Modifier3D> stack=
+                        new ArrayList<>(scene.getModifiers(active.id));
+                int index=-1;for(int i=0;i<stack.size();i++)if(stack.get(i).id.equals(modifier.id)){index=i;break;}
+                if(index<0)throw new IllegalArgumentException("Modifier no longer exists.");
+                checkpointMeshEdit();
+                Meshy3DCore baked=Meshy3DModifierEvaluator.evaluateThrough(active,index);
+                active.mesh=baked;
+                scene.removeModifier(active.id,modifier.id);
+                meshyViewport.invalidate();status.setText("Modeling | "+modifier.type+" modifier applied to mesh");
+                dialog.dismiss();showObjectModifiersDialog();
+            }catch(Exception error){showObjectOperationError(error);}
+        });
+
+        dialog.setOnShowListener(ignored->dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener(view->{
+                    try{
+                        int axis=axisSpinner==null?modifier.axis:axisSpinner.getSelectedItemPosition();
+                        int count=countField==null?modifier.count:Integer.parseInt(countField.getText().toString().trim());
+                        int levels=levelsField==null?modifier.levels:Integer.parseInt(levelsField.getText().toString().trim());
+                        float value=valueField==null?modifier.value:Float.parseFloat(valueField.getText().toString().trim());
+                        float offsetX=offsetXField==null?modifier.offsetX:Float.parseFloat(offsetXField.getText().toString().trim());
+                        float offsetY=offsetYField==null?modifier.offsetY:Float.parseFloat(offsetYField.getText().toString().trim());
+                        float offsetZ=offsetZField==null?modifier.offsetZ:Float.parseFloat(offsetZField.getText().toString().trim());
+                        checkpointMeshEdit();
+                        scene.setModifierParameters(active.id,modifier.id,axis,count,levels,value,offsetX,offsetY,offsetZ);
+                        scene.setModifierEnabled(active.id,modifier.id,enabled.isChecked());
+                        meshyViewport.invalidate();status.setText("Modeling | Modifier settings updated");
+                        dialog.dismiss();showObjectModifiersDialog();
+                    }catch(Exception error){showObjectOperationError(error);}
+                }));
+        dialog.show();
+    }
+
     private void showObjectOperationError(Exception error) {
         String message=error.getMessage()==null?"The operation could not be completed.":error.getMessage();
         new android.app.AlertDialog.Builder(activity).setTitle("Object Mode Operation")
@@ -2023,7 +2182,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 rightTitle = "Tool Properties";
                 rightItems = new String[]{"Object Properties", "Object Transform", "Numeric Transform", "Dimensions",
                         "Set 3D Cursor", "Snap to Grid", "Snap to 3D Cursor", "Frame Selected", "Frame All",
-                        "Parent", "Constraints", "Collections", "Manage Collections",
+                        "Parent", "Constraints", "Modifiers", "Collections", "Manage Collections",
                         "Visibility", "Selectable", "Render Visibility", "Active Camera", "Camera Settings", "Light Settings",
                         "Active Tool", "Selection Mode", "Operation Amount", "Offset", "Segments", "Profile",
                         "Loop Cut Count", "Merge Threshold", "Mesh Statistics", "Vertices", "Edges", "Faces",
