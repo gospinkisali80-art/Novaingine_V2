@@ -805,7 +805,8 @@ public final class MainActivity extends Activity
         android.widget.PopupMenu popup = new android.widget.PopupMenu(this, anchor);
         String[] entries = {"New Window", "New Main Window", "Toggle Window Fullscreen",
                 "Toggle System Console", "Workspaces", "Save Workspace", "Revert Workspace",
-                "Next Workspace", "Previous Workspace"};
+                "Next Workspace", "Previous Workspace", "Show Status Bar",
+                "Save Screenshot", "Save Screenshot (Editor)"};
         for (String entry : entries) popup.getMenu().add(entry);
         popup.setOnMenuItemClickListener(item -> {
             performMeshyWindowAction(item.getTitle().toString());
@@ -843,6 +844,17 @@ public final class MainActivity extends Activity
                 break;
             case "Previous Workspace":
                 changeMeshyWorkspace(-1);
+                break;
+            case "Show Status Bar":
+                meshyStatusBarVisible = !meshyStatusBarVisible;
+                if (manualSculptWorkspace != null) manualSculptWorkspace.setStatusBarVisible(meshyStatusBarVisible);
+                android.widget.Toast.makeText(this, meshyStatusBarVisible ? "Status Bar shown." : "Status Bar hidden.", android.widget.Toast.LENGTH_SHORT).show();
+                break;
+            case "Save Screenshot":
+                captureMeshyScreenshot(false);
+                break;
+            case "Save Screenshot (Editor)":
+                captureMeshyScreenshot(true);
                 break;
         }
     }
@@ -1531,6 +1543,70 @@ public final class MainActivity extends Activity
         super.onActivityResult(requestCode, resultCode, data);
         if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
         Uri uri = data.getData();
+        if (requestCode == REQUEST_SAVE_MESHY_RENDER) {
+            android.graphics.Bitmap bitmap = pendingMeshyImage;
+            pendingMeshyImage = null;
+            if (bitmap == null) return;
+            try (java.io.OutputStream output = getContentResolver().openOutputStream(uri)) {
+                if (output == null) throw new IllegalStateException("Could not open the selected save location.");
+                if (!bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output)) {
+                    throw new IllegalStateException("PNG encoding failed.");
+                }
+                output.flush();
+                android.widget.Toast.makeText(this, "Meshy3D PNG saved.", android.widget.Toast.LENGTH_LONG).show();
+            } catch (Exception error) {
+                android.widget.Toast.makeText(this, "PNG save failed: " + error.getMessage(), android.widget.Toast.LENGTH_LONG).show();
+            }
+            return;
+        }
+        if (requestCode == REQUEST_EXPORT_MESHY_DOCUMENT) {
+            String json = pendingMeshyExportJson;
+            pendingMeshyExportJson = null;
+            if (json == null) return;
+            try (java.io.OutputStream output = getContentResolver().openOutputStream(uri)) {
+                if (output == null) throw new IllegalStateException("Could not open the selected export location.");
+                output.write(json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                output.flush();
+                android.widget.Toast.makeText(this, "Meshy3D document exported.", android.widget.Toast.LENGTH_LONG).show();
+            } catch (Exception error) {
+                android.widget.Toast.makeText(this, "Meshy3D export failed: " + error.getMessage(), android.widget.Toast.LENGTH_LONG).show();
+            }
+            return;
+        }
+        if (requestCode == REQUEST_IMPORT_MESHY_DOCUMENT) {
+            new Thread(() -> {
+                try (InputStream input = getContentResolver().openInputStream(uri)) {
+                    if (input == null) throw new IllegalStateException("Could not open the selected document.");
+                    java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+                    byte[] buffer = new byte[8192];
+                    int count;
+                    long total = 0;
+                    while ((count = input.read(buffer)) != -1) {
+                        total += count;
+                        if (total > 64L * 1024L * 1024L) throw new IllegalArgumentException("Meshy3D document exceeds 64 MB.");
+                        bytes.write(buffer, 0, count);
+                    }
+                    org.json.JSONObject document = new org.json.JSONObject(
+                            new String(bytes.toByteArray(), java.nio.charset.StandardCharsets.UTF_8));
+                    runOnUiThread(() -> {
+                        if (manualSculptWorkspace == null) {
+                            android.widget.Toast.makeText(this, "Open Meshy3D before importing a document.", android.widget.Toast.LENGTH_SHORT).show();
+                            return;
+                        }
+                        manualSculptWorkspace.checkpointMeshEdit();
+                        boolean ok = manualSculptWorkspace.importMeshyDocumentState(document);
+                        android.widget.Toast.makeText(this, ok
+                                ? "Meshy3D document state imported. Save to keep the change."
+                                : "Import rejected: unsupported Meshy3D document format.",
+                                android.widget.Toast.LENGTH_LONG).show();
+                    });
+                } catch (Exception error) {
+                    runOnUiThread(() -> android.widget.Toast.makeText(this,
+                            "Meshy3D import failed: " + error.getMessage(), android.widget.Toast.LENGTH_LONG).show());
+                }
+            }, "Meshy-Import-Document").start();
+            return;
+        }
         if (requestCode == REQUEST_OPEN_NOVA) {
             new Thread(() -> {
                 try {
@@ -2381,6 +2457,96 @@ public final class MainActivity extends Activity
             android.widget.Toast.makeText(this,"Meshy3D mesh and workspace saved; previous save backed up.",android.widget.Toast.LENGTH_SHORT).show();
         }catch(Exception error){
             android.widget.Toast.makeText(this,"Meshy3D save failed: "+error.getMessage(),android.widget.Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private File lastMeshyRenderFile() {
+        File directory = activeMeshyProjectDirectory;
+        if (directory == null) directory = new File(getFilesDir(), "Meshy3DProjects/RenderOutput");
+        if (!directory.exists() && !directory.mkdirs()) throw new IllegalStateException("Cannot create render output folder.");
+        return new File(directory, "LastRender.png");
+    }
+
+    private void renderMeshyImage() {
+        if (manualSculptWorkspace == null) {
+            android.widget.Toast.makeText(this, "Open a Meshy3D workspace before rendering.", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        try {
+            int sourceWidth = Math.max(1, manualSculptWorkspace.getWidth());
+            int sourceHeight = Math.max(1, manualSculptWorkspace.getHeight());
+            float scale = Math.min(2.0f, Math.min(1920.0f / sourceWidth, 1080.0f / sourceHeight));
+            int width = Math.max(320, Math.round(sourceWidth * scale));
+            int height = Math.max(240, Math.round(sourceHeight * scale));
+            android.graphics.Bitmap bitmap = manualSculptWorkspace.renderFinalImage(width, height);
+            if (bitmap == null) throw new IllegalStateException("The renderer returned no image.");
+            File target = lastMeshyRenderFile();
+            try (FileOutputStream output = new FileOutputStream(target)) {
+                if (!bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output)) {
+                    throw new IllegalStateException("PNG encoding failed.");
+                }
+                output.flush();
+                output.getFD().sync();
+            }
+            showMeshyImagePreview(bitmap, "Meshy3D Render Result");
+        } catch (Exception error) {
+            android.widget.Toast.makeText(this, "Render failed: " + error.getMessage(), android.widget.Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void viewLastMeshyRender() {
+        try {
+            File file = lastMeshyRenderFile();
+            if (!file.isFile()) {
+                android.widget.Toast.makeText(this, "No render exists yet. Choose Render > Render Image first.", android.widget.Toast.LENGTH_LONG).show();
+                return;
+            }
+            android.graphics.Bitmap bitmap = android.graphics.BitmapFactory.decodeFile(file.getAbsolutePath());
+            if (bitmap == null) throw new IllegalStateException("The last render could not be decoded.");
+            showMeshyImagePreview(bitmap, "Last Meshy3D Render");
+        } catch (Exception error) {
+            android.widget.Toast.makeText(this, "Could not open render: " + error.getMessage(), android.widget.Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void showMeshyImagePreview(android.graphics.Bitmap bitmap, String title) {
+        if (bitmap == null) return;
+        android.widget.ImageView image = new android.widget.ImageView(this);
+        image.setImageBitmap(bitmap);
+        image.setAdjustViewBounds(true);
+        image.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.addView(image, new ScrollView.LayoutParams(
+                ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
+        new AlertDialog.Builder(this).setTitle(title).setView(scroll)
+                .setNeutralButton("Save PNG", (dialog, which) -> startMeshyImageSave(bitmap, "Meshy3D_" +
+                        (title.toLowerCase(java.util.Locale.ROOT).contains("screenshot") ? "Screenshot" : "Render") + ".png"))
+                .setPositiveButton("Close", null).show();
+    }
+
+    private void startMeshyImageSave(android.graphics.Bitmap bitmap, String filename) {
+        pendingMeshyImage = bitmap;
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("image/png");
+        intent.putExtra(Intent.EXTRA_TITLE, filename);
+        startActivityForResult(intent, REQUEST_SAVE_MESHY_RENDER);
+    }
+
+    private void captureMeshyScreenshot(boolean editorOnly) {
+        View target = editorOnly ? manualSculptWorkspace : rootLayout;
+        if (target == null || target.getWidth() <= 0 || target.getHeight() <= 0) {
+            android.widget.Toast.makeText(this, "The requested window or editor is not available for capture.", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        try {
+            android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(
+                    target.getWidth(), target.getHeight(), android.graphics.Bitmap.Config.ARGB_8888);
+            target.draw(new android.graphics.Canvas(bitmap));
+            showMeshyImagePreview(bitmap, editorOnly ? "Meshy3D Editor Screenshot" : "Meshy3D Window Screenshot");
+        } catch (Exception error) {
+            android.widget.Toast.makeText(this, "Screenshot failed: " + error.getMessage(), android.widget.Toast.LENGTH_LONG).show();
         }
     }
 
