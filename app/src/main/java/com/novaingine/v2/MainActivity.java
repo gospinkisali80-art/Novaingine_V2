@@ -2154,42 +2154,233 @@ public final class MainActivity extends Activity
                 }).setNegativeButton("Cancel", null).show();
     }
 
+    private void recordRecentMeshyDocument(File file) {
+        if (file == null || !file.isFile()) return;
+        android.content.SharedPreferences prefs = getSharedPreferences("meshy3d_editor", MODE_PRIVATE);
+        java.util.LinkedHashSet<String> recent = new java.util.LinkedHashSet<>(
+                prefs.getStringSet("recent_meshy_documents", new java.util.LinkedHashSet<>()));
+        String path = file.getAbsolutePath();
+        recent.remove(path);
+        java.util.LinkedHashSet<String> ordered = new java.util.LinkedHashSet<>();
+        ordered.add(path);
+        for (String item : recent) { if (ordered.size() >= 12) break; ordered.add(item); }
+        prefs.edit().putStringSet("recent_meshy_documents", ordered).apply();
+    }
+
+    private void chooseRecentMeshyProject() {
+        android.content.SharedPreferences prefs = getSharedPreferences("meshy3d_editor", MODE_PRIVATE);
+        java.util.ArrayList<File> files = new java.util.ArrayList<>();
+        java.util.Set<String> saved = prefs.getStringSet("recent_meshy_documents", java.util.Collections.emptySet());
+        if (saved != null) for (String path : saved) {
+            if (path == null) continue;
+            File file = new File(path);
+            if (file.isFile() && file.getName().endsWith(".meshy3d")) files.add(file);
+        }
+        if (files.isEmpty()) { chooseMeshyProject(); return; }
+        java.util.Collections.sort(files, (a,b) -> Long.compare(b.lastModified(), a.lastModified()));
+        String[] labels = new String[files.size()];
+        for (int i=0;i<labels.length;i++) labels[i]=files.get(i).getParentFile().getName()+" / "+files.get(i).getName();
+        new AlertDialog.Builder(this).setTitle("Open Recent Meshy3D").setItems(labels,
+                (d,w) -> openMeshyDocument(files.get(w)))
+                .setNeutralButton("Clear Recent", (d,w) -> {
+                    prefs.edit().remove("recent_meshy_documents").apply();
+                    android.widget.Toast.makeText(this,"Recent Meshy3D list cleared.",android.widget.Toast.LENGTH_SHORT).show();
+                }).setNegativeButton("Cancel",null).show();
+    }
+
+    private void openMeshyDocument(File document) {
+        if (document == null || !document.isFile()) {
+            android.widget.Toast.makeText(this,"The selected Meshy3D document is unavailable.",android.widget.Toast.LENGTH_LONG).show();
+            return;
+        }
+        activeMeshyDocument=document;
+        activeMeshyProjectDirectory=document.getParentFile();
+        if(engineSurface!=null)engineSurface.setVisibility(View.GONE);
+        if(editorToolbar!=null)editorToolbar.setVisibility(View.GONE);
+        if(viewportInput!=null)viewportInput.setVisibility(View.GONE);
+        if(statisticsText!=null)statisticsText.setVisibility(View.GONE);
+        if(centeredStatisticsText!=null)centeredStatisticsText.setVisibility(View.GONE);
+        if(editorPanels!=null)editorPanels.setVisibility(View.GONE);
+        openManualSculpting();
+        loadMeshyDocumentIntoWorkspace(document);
+        recordRecentMeshyDocument(document);
+        android.widget.Toast.makeText(this,"Opened Meshy3D: "+document.getName(),android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+    private org.json.JSONObject buildMeshyDocumentSnapshot() throws Exception {
+        if(manualSculptWorkspace==null)throw new IllegalStateException("Meshy3D workspace is not open.");
+        org.json.JSONObject document=manualSculptWorkspace.exportMeshyDocumentState();
+        document.put("projectName",activeMeshyProjectDirectory==null
+                ?(activeMeshyDocument==null?"Untitled Meshy3D":activeMeshyDocument.getName())
+                :activeMeshyProjectDirectory.getName());
+        document.put("savedAt",System.currentTimeMillis());
+        return document;
+    }
+
+    private void copyMeshyFile(File from,File to) throws Exception {
+        File parent=to.getParentFile();
+        if(parent!=null&&!parent.exists()&&!parent.mkdirs())throw new IllegalStateException("Cannot create destination folder.");
+        try(java.io.FileInputStream input=new java.io.FileInputStream(from);
+            FileOutputStream output=new FileOutputStream(to)){
+            byte[] buffer=new byte[8192];int count;
+            while((count=input.read(buffer))!=-1)output.write(buffer,0,count);
+            output.flush();output.getFD().sync();
+        }
+    }
+
+    private void writeMeshyDocumentFile(File target,boolean keepBackup) throws Exception {
+        if(target==null)throw new IllegalArgumentException("No destination file selected.");
+        File parent=target.getParentFile();
+        if(parent!=null&&!parent.exists()&&!parent.mkdirs())throw new IllegalStateException("Cannot create destination folder.");
+        if(keepBackup&&target.isFile())copyMeshyFile(target,new File(parent,target.getName()+".backup"));
+        File temporary=new File(parent,target.getName()+".tmp");
+        org.json.JSONObject document=buildMeshyDocumentSnapshot();
+        try(FileOutputStream output=new FileOutputStream(temporary)){
+            output.write((document.toString(2)+"\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            output.flush();output.getFD().sync();
+        }
+        if(target.exists()&&!target.delete()){
+            temporary.delete();throw new IllegalStateException("Cannot replace existing document.");
+        }
+        if(!temporary.renameTo(target)){
+            try{copyMeshyFile(temporary,target);}finally{temporary.delete();}
+        }
+    }
+
+    private void saveMeshyDocumentAs() {
+        if(manualSculptWorkspace==null){
+            android.widget.Toast.makeText(this,"Open Meshy3D before using Save As.",android.widget.Toast.LENGTH_SHORT).show();return;
+        }
+        EditText input=new EditText(this);input.setSingleLine(true);input.setHint("Project name");
+        if(activeMeshyProjectDirectory!=null)input.setText(activeMeshyProjectDirectory.getName()+" Copy");
+        new AlertDialog.Builder(this).setTitle("Save Meshy3D As")
+                .setMessage("Create a separate project folder and save the current editor state.")
+                .setView(input).setNegativeButton("Cancel",null)
+                .setPositiveButton("Save",(d,w)->{
+                    String name=input.getText().toString().trim().replaceAll("[^A-Za-z0-9 _-]","");
+                    if(name.length()>40)name=name.substring(0,40).trim();
+                    if(name.isEmpty()){android.widget.Toast.makeText(this,"Enter a project name.",android.widget.Toast.LENGTH_SHORT).show();return;}
+                    File root=new File(getFilesDir(),"Meshy3DProjects");
+                    File folder=new File(root,name);
+                    if(folder.exists()){android.widget.Toast.makeText(this,"A project with that name already exists.",android.widget.Toast.LENGTH_LONG).show();return;}
+                    if(!root.exists()&&!root.mkdirs()){android.widget.Toast.makeText(this,"Cannot create project storage.",android.widget.Toast.LENGTH_LONG).show();return;}
+                    if(!folder.mkdirs()){android.widget.Toast.makeText(this,"Could not create project folder.",android.widget.Toast.LENGTH_LONG).show();return;}
+                    File target=new File(folder,name+".meshy3d");
+                    try{
+                        writeMeshyDocumentFile(target,false);
+                        activeMeshyProjectDirectory=folder;activeMeshyDocument=target;recordRecentMeshyDocument(target);
+                        android.widget.Toast.makeText(this,"Saved new Meshy3D document: "+target.getName(),android.widget.Toast.LENGTH_LONG).show();
+                    }catch(Exception error){
+                        target.delete();folder.delete();
+                        android.widget.Toast.makeText(this,"Save As failed: "+error.getMessage(),android.widget.Toast.LENGTH_LONG).show();
+                    }
+                }).show();
+    }
+
+    private void saveMeshyDocumentCopy() {
+        if(activeMeshyDocument==null||manualSculptWorkspace==null){
+            android.widget.Toast.makeText(this,"Create or open a Meshy3D project first.",android.widget.Toast.LENGTH_SHORT).show();return;
+        }
+        String base=activeMeshyDocument.getName().replaceFirst("\\.meshy3d$","");
+        File target=new File(activeMeshyDocument.getParentFile(),base+"_Copy.meshy3d");
+        int suffix=1;
+        while(target.exists())target=new File(activeMeshyDocument.getParentFile(),base+"_Copy_"+
+                String.format(java.util.Locale.US,"%03d",suffix++)+".meshy3d");
+        try{
+            writeMeshyDocumentFile(target,false);
+            android.widget.Toast.makeText(this,"Current editor state copied to "+target.getName(),android.widget.Toast.LENGTH_LONG).show();
+        }catch(Exception error){
+            android.widget.Toast.makeText(this,"Save Copy failed: "+error.getMessage(),android.widget.Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void recoverMeshyDocument() {
+        if(activeMeshyDocument==null||manualSculptWorkspace==null){
+            android.widget.Toast.makeText(this,"Open a Meshy3D project before recovering it.",android.widget.Toast.LENGTH_SHORT).show();return;
+        }
+        File backup=new File(activeMeshyDocument.getParentFile(),activeMeshyDocument.getName()+".backup");
+        if(!backup.isFile()){
+            android.widget.Toast.makeText(this,"No previous-save backup exists yet.",android.widget.Toast.LENGTH_LONG).show();return;
+        }
+        new AlertDialog.Builder(this).setTitle("Recover Previous Save?")
+                .setMessage("The current document will be preserved before the previous saved version is restored.")
+                .setNegativeButton("Cancel",null).setPositiveButton("Recover",(d,w)->{
+                    try{
+                        copyMeshyFile(activeMeshyDocument,new File(activeMeshyDocument.getParentFile(),activeMeshyDocument.getName()+".before-recovery"));
+                        copyMeshyFile(backup,activeMeshyDocument);
+                        loadMeshyDocumentIntoWorkspace(activeMeshyDocument);
+                        android.widget.Toast.makeText(this,"Previous Meshy3D save recovered.",android.widget.Toast.LENGTH_LONG).show();
+                    }catch(Exception error){
+                        android.widget.Toast.makeText(this,"Recovery failed: "+error.getMessage(),android.widget.Toast.LENGTH_LONG).show();
+                    }
+                }).show();
+    }
+
+    private void restoreMeshyDefaults() {
+        new AlertDialog.Builder(this).setTitle("Restore Meshy3D Defaults?")
+                .setMessage("Reset editor preferences, workspace selection, fullscreen and mode locking. Project objects and mesh data will be preserved.")
+                .setNegativeButton("Cancel",null).setPositiveButton("Restore",(d,w)->{
+                    getSharedPreferences("meshy3d_editor",MODE_PRIVATE).edit()
+                            .remove("saved_workspace_index").remove("saved_workspace_fullscreen")
+                            .remove("lock_object_modes").apply();
+                    meshyObjectModesLocked=false;meshyStatusBarVisible=true;
+                    if(manualSculptWorkspace!=null){
+                        manualSculptWorkspace.setObjectModesLocked(false);
+                        manualSculptWorkspace.setActiveWorkspaceIndex(0);
+                        manualSculptWorkspace.setStatusBarVisible(true);
+                    }
+                    meshyWindowFullscreen=true;applyMeshyWindowFullscreen();
+                    android.widget.Toast.makeText(this,"Editor defaults restored; project data was preserved.",android.widget.Toast.LENGTH_LONG).show();
+                }).show();
+    }
+
+    private void exportMeshyDocumentToPicker() {
+        try{
+            pendingMeshyExportJson=buildMeshyDocumentSnapshot().toString(2)+"\n";
+            Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("application/json");
+            intent.putExtra(Intent.EXTRA_TITLE,activeMeshyDocument==null?"Meshy3D_Export.meshy3d":activeMeshyDocument.getName());
+            startActivityForResult(intent,REQUEST_EXPORT_MESHY_DOCUMENT);
+        }catch(Exception error){
+            pendingMeshyExportJson=null;
+            android.widget.Toast.makeText(this,"Could not prepare Meshy3D export: "+error.getMessage(),android.widget.Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void importMeshyDocumentFromPicker() {
+        if(manualSculptWorkspace==null){
+            android.widget.Toast.makeText(this,"Open Meshy3D before importing a document.",android.widget.Toast.LENGTH_SHORT).show();return;
+        }
+        Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");intent.putExtra(Intent.EXTRA_MIME_TYPES,new String[]{"application/json","application/octet-stream"});
+        startActivityForResult(intent,REQUEST_IMPORT_MESHY_DOCUMENT);
+    }
+
     private void saveMeshyIncremental() {
-        if (activeMeshyDocument == null) { saveMeshyDocument(); return; }
-        File copy = new File(activeMeshyDocument.getParentFile(),
-                activeMeshyDocument.getName().replace(".meshy3d", "_01.meshy3d"));
-        try (java.io.FileInputStream in = new java.io.FileInputStream(activeMeshyDocument);
-             java.io.FileOutputStream out = new java.io.FileOutputStream(copy)) {
-            byte[] buffer=new byte[4096]; int count;
-            while((count=in.read(buffer))!=-1) out.write(buffer,0,count);
-            android.widget.Toast.makeText(this,"Meshy3D version saved: "+copy.getName(),android.widget.Toast.LENGTH_SHORT).show();
-        } catch(Exception e) {
-            android.widget.Toast.makeText(this,"Incremental save failed: "+e.getMessage(),android.widget.Toast.LENGTH_LONG).show();
+        if(activeMeshyDocument==null||manualSculptWorkspace==null){saveMeshyDocument();return;}
+        String base=activeMeshyDocument.getName().replaceFirst("\\.meshy3d$","");
+        int version=1;File target;
+        do{target=new File(activeMeshyDocument.getParentFile(),base+"_"+
+                String.format(java.util.Locale.US,"%03d",version++)+".meshy3d");}
+        while(target.exists()&&version<100000);
+        try{
+            writeMeshyDocumentFile(target,false);
+            android.widget.Toast.makeText(this,"Current Meshy3D state saved as "+target.getName(),android.widget.Toast.LENGTH_LONG).show();
+        }catch(Exception error){
+            android.widget.Toast.makeText(this,"Incremental save failed: "+error.getMessage(),android.widget.Toast.LENGTH_LONG).show();
         }
     }
 
     private void saveMeshyDocument() {
-        if (activeMeshyDocument == null) {
-            android.widget.Toast.makeText(this, "Create or open a Meshy3D project first.", android.widget.Toast.LENGTH_SHORT).show();
-            return;
+        if(activeMeshyDocument==null){
+            android.widget.Toast.makeText(this,"Create or open a Meshy3D project first.",android.widget.Toast.LENGTH_SHORT).show();return;
         }
-        try {
-            if (manualSculptWorkspace == null) {
-                android.widget.Toast.makeText(this, "Meshy3D workspace is not open.", android.widget.Toast.LENGTH_SHORT).show();
-                return;
-            }
-            org.json.JSONObject document = manualSculptWorkspace.exportMeshyDocumentState();
-            document.put("projectName", activeMeshyProjectDirectory == null
-                    ? activeMeshyDocument.getName() : activeMeshyProjectDirectory.getName());
-            document.put("savedAt", System.currentTimeMillis());
-            try (java.io.FileOutputStream out = new java.io.FileOutputStream(activeMeshyDocument)) {
-                out.write((document.toString(2) + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                out.flush();
-                out.getFD().sync();
-            }
-            android.widget.Toast.makeText(this, "Meshy3D mesh and workspace saved.", android.widget.Toast.LENGTH_SHORT).show();
-        } catch (Exception e) {
-            android.widget.Toast.makeText(this, "Meshy3D save failed: " + e.getMessage(), android.widget.Toast.LENGTH_LONG).show();
+        try{
+            writeMeshyDocumentFile(activeMeshyDocument,true);
+            recordRecentMeshyDocument(activeMeshyDocument);
+            android.widget.Toast.makeText(this,"Meshy3D mesh and workspace saved; previous save backed up.",android.widget.Toast.LENGTH_SHORT).show();
+        }catch(Exception error){
+            android.widget.Toast.makeText(this,"Meshy3D save failed: "+error.getMessage(),android.widget.Toast.LENGTH_LONG).show();
         }
     }
 
