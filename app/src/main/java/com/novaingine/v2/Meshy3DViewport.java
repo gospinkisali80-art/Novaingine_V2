@@ -44,9 +44,9 @@ public final class Meshy3DViewport extends View {
                 document.getTexturePixels(),document.getTextureWidth(),document.getTextureHeight(),document.copyFaceUvs());
     }
     public void refreshFromDocument(){syncViewportFromCore();}
-    private void syncCoreFromViewport(){document.replaceGeometry(vertices,faces);}
+    private void syncCoreFromViewport(){document.replaceGeometry(vertices,faces);document.setSculptMask(vertexMask);}
     private void syncViewportFromCore(){
-        vertices=document.copyVertices();faces=document.copyFaces();vertexMask=new float[vertices.length];
+        vertices=document.copyVertices();faces=document.copyFaces();vertexMask=document.getSculptMask();if(vertexMask.length!=vertices.length)vertexMask=new float[vertices.length];
         uvCoordinates=null;invalidate();
     }
     public void setMeshEditMode(boolean enabled){meshEditMode=enabled;if(enabled)showTopology=true;invalidate();}
@@ -161,6 +161,8 @@ public final class Meshy3DViewport extends View {
     private boolean sculptSubtract;
     private float strokeX, strokeY, previousStrokeX, previousStrokeY;
     private boolean strokeActive;
+    private float[] strokePlanePoint=new float[3],strokePlaneNormal=new float[]{0,0,1};
+    private float currentStrokePressure=1f;
     private boolean moved;
     private float downX, downY;
 
@@ -470,68 +472,165 @@ public final class Meshy3DViewport extends View {
         invalidate();
     }
 
-    private void applySculptDab(float x, float y, float dragX, float dragY) {
-        float cx=getWidth()*0.5f, cy=getHeight()*0.49f;
-        float unit=Math.min(getWidth(),getHeight())*0.235f*zoom;
-        float brushPx=Math.max(5f, Math.min(getWidth(),getHeight())*sculptRadius*0.55f);
-        float amount=sculptStrength*sculptPressure*(sculptSubtract?-1f:1f)*0.075f;
-        float meanY=0f; for(float[] v:vertices) meanY+=v[1]; meanY/=vertices.length;
-        float meanX=0f, meanZ=0f;
-        for(float[] v:vertices){meanX+=v[0];meanZ+=v[2];}
-        meanX/=vertices.length; meanZ/=vertices.length;
+    private void beginSculptStroke(float x,float y){
+        float cx=getWidth()*.5f,cy=getHeight()*.49f,unit=Math.max(1,Math.min(getWidth(),getHeight())*.235f*zoom);
+        float[][] normals=calculateVertexNormals();int best=-1;float bestDistance=Float.MAX_VALUE;
         for(int i=0;i<vertices.length;i++){
             float[] q=project(vertices[i][0],vertices[i][1],vertices[i][2],cx,cy,unit);
-            float dx=q[0]-x, dy=q[1]-y, dist=(float)Math.sqrt(dx*dx+dy*dy);
-            if (sculptSymmetry == 1) {
-                float[] mirror=project(-vertices[i][0],vertices[i][1],vertices[i][2],cx,cy,unit);
-                float mdx=mirror[0]-x, mdy=mirror[1]-y;
-                dist=Math.min(dist,(float)Math.sqrt(mdx*mdx+mdy*mdy));
-            } else if (sculptSymmetry == 2) {
-                float[] mirror=project(vertices[i][0],-vertices[i][1],vertices[i][2],cx,cy,unit);
-                float mdx=mirror[0]-x, mdy=mirror[1]-y;
-                dist=Math.min(dist,(float)Math.sqrt(mdx*mdx+mdy*mdy));
-            } else if (sculptSymmetry == 3) {
-                float[] mirror=project(vertices[i][0],vertices[i][1],-vertices[i][2],cx,cy,unit);
-                float mdx=mirror[0]-x, mdy=mirror[1]-y;
-                dist=Math.min(dist,(float)Math.sqrt(mdx*mdx+mdy*mdy));
+            float[] cn=cameraPoint(normals[i][0],normals[i][1],normals[i][2]);
+            if(cn[2]<=0.015f)continue;
+            float dx=q[0]-x,dy=q[1]-y,d=dx*dx+dy*dy;
+            if(d<bestDistance){bestDistance=d;best=i;}
+        }
+        if(best>=0){
+            System.arraycopy(vertices[best],0,strokePlanePoint,0,3);
+            System.arraycopy(normals[best],0,strokePlaneNormal,0,3);
+        }else{
+            strokePlanePoint=new float[]{0,0,0};strokePlaneNormal=new float[]{0,0,1};
+        }
+    }
+    private float[][] calculateVertexNormals(){
+        float[][] normals=new float[vertices.length][3];
+        for(int[] face:faces){
+            if(face.length<3)continue;float[] a=vertices[face[0]];
+            for(int j=1;j<face.length-1;j++){
+                float[] b=vertices[face[j]],cc=vertices[face[j+1]];
+                float ux=b[0]-a[0],uy=b[1]-a[1],uz=b[2]-a[2];
+                float vx=cc[0]-a[0],vy=cc[1]-a[1],vz=cc[2]-a[2];
+                float nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx;
+                for(int id:face){normals[id][0]+=nx;normals[id][1]+=ny;normals[id][2]+=nz;}
             }
-            if(dist>brushPx || vertexMask[i]>0.95f) continue;
-            float t=1f-dist/brushPx;
-            float weight=(float)Math.pow(Math.max(0f,t),0.5f+sculptFalloff*3f)*(1f-vertexMask[i]);
-            float a=amount*weight;
-            float nx=vertices[i][0], ny=vertices[i][1], nz=vertices[i][2];
-            float len=(float)Math.sqrt(nx*nx+ny*ny+nz*nz); if(len<0.001f) len=1f;
+        }
+        for(float[] n:normals){float len=(float)Math.sqrt(n[0]*n[0]+n[1]*n[1]+n[2]*n[2]);if(len>1e-8f){n[0]/=len;n[1]/=len;n[2]/=len;}}
+        return normals;
+    }
+    private float[] cameraVectorToWorld(float x,float y,float z){
+        double cp=Math.cos(pitch),sp=Math.sin(pitch),cy=Math.cos(yaw),sy=Math.sin(yaw);
+        float ry=(float)(y*cp+z*sp),rz=(float)(-y*sp+z*cp);
+        return new float[]{(float)(x*cy+rz*sy),ry,(float)(-x*sy+rz*cy)};
+    }
+    private void applySculptSegment(float x,float y,float dx,float dy,float pressure){
+        float step=Math.max(2f,Math.min(getWidth(),getHeight())*sculptRadius*.55f*.22f);
+        int count=Math.max(1,(int)Math.ceil(Math.hypot(dx,dy)/step));
+        for(int i=1;i<=count;i++)applySculptDab(x-dx+dx*i/count,y-dy+dy*i/count,dx/count,dy/count,pressure);
+    }
+    private void applySculptDab(float x,float y,float dragX,float dragY,float eventPressure){
+        if(vertices.length==0||getWidth()<=0||getHeight()<=0)return;
+        float cx=getWidth()*.5f,cy=getHeight()*.49f;
+        float unit=Math.max(1,Math.min(getWidth(),getHeight())*.235f*zoom);
+        float brushPx=Math.max(4f,Math.min(getWidth(),getHeight())*sculptRadius*.55f);
+        float worldRadius=brushPx/unit;
+        float amount=sculptStrength*sculptPressure*Math.max(.05f,eventPressure)*worldRadius*.32f;
+        float[][] normals=calculateVertexNormals();
+        java.util.ArrayList<java.util.HashSet<Integer>> neighbors=new java.util.ArrayList<>();
+        for(int i=0;i<vertices.length;i++)neighbors.add(new java.util.HashSet<>());
+        for(int[] face:faces)for(int j=0;j<face.length;j++){
+            int a=face[j],b=face[(j+1)%face.length];if(a>=0&&b>=0&&a<vertices.length&&b<vertices.length){neighbors.get(a).add(b);neighbors.get(b).add(a);}
+        }
+        float[] dragWorld=cameraVectorToWorld(dragX/unit,-dragY/unit,0);
+        float sign=sculptSubtract?-1f:1f;
+        for(int i=0;i<vertices.length;i++){
+            float[] v=vertices[i],normal=normals[i];
+            float[] screen=project(v[0],v[1],v[2],cx,cy,unit);
+            float sx=screen[0],sy=screen[1];
+            float dx=sx-x,dy=sy-y;
+            if(sculptSymmetry==1){float[] m=project(-v[0],v[1],v[2],cx,cy,unit);dx=Math.min(Math.abs(dx),Math.abs(m[0]-x));dy=Math.min(Math.abs(dy),Math.abs(m[1]-y));}
+            else if(sculptSymmetry==2){float[] m=project(v[0],-v[1],v[2],cx,cy,unit);dx=Math.min(Math.abs(dx),Math.abs(m[0]-x));dy=Math.min(Math.abs(dy),Math.abs(m[1]-y));}
+            else if(sculptSymmetry==3){float[] m=project(v[0],v[1],-v[2],cx,cy,unit);dx=Math.min(Math.abs(dx),Math.abs(m[0]-x));dy=Math.min(Math.abs(dy),Math.abs(m[1]-y));}
+            float distance=(float)Math.hypot(dx,dy);
+            if(distance>brushPx)continue;
+            float[] cameraNormal=cameraPoint(normal[0],normal[1],normal[2]);
+            if(cameraNormal[2]<0.015f)continue;
+            float t=Math.max(0,1-distance/brushPx);
+            float falloff=(float)Math.pow(t,0.5f+sculptFalloff*2.5f);
+            float mask=i<vertexMask.length?Math.max(0,Math.min(1,vertexMask[i])):0;
+            float weight=falloff*(1-mask);
+            if(weight<=0.0001f)continue;
+            float strength=amount*weight;
+            float nx=normal[0],ny=normal[1],nz=normal[2];
+            float planeDistance=(v[0]-strokePlanePoint[0])*strokePlaneNormal[0]
+                    +(v[1]-strokePlanePoint[1])*strokePlaneNormal[1]
+                    +(v[2]-strokePlanePoint[2])*strokePlaneNormal[2];
+            java.util.HashSet<Integer> adjacent=neighbors.get(i);
+            float ax=0,ay=0,az=0;for(int id:adjacent){float[] q=vertices[id];ax+=q[0];ay+=q[1];az+=q[2];}
+            if(!adjacent.isEmpty()){ax/=adjacent.size();ay/=adjacent.size();az/=adjacent.size();}
             switch(sculptBrush){
-                case 0: case 8: case 10: case 12: case 13: case 21:
-                    vertices[i][0]+=nx/len*a*(sculptBrush==12?1.8f:1f);
-                    vertices[i][1]+=ny/len*a*(sculptBrush==8?1.35f:1f);
-                    vertices[i][2]+=nz/len*a; break;
-                case 1: case 19: case 24:
-                    vertices[i][0]+=(meanX-nx)*Math.abs(a)*0.45f;
-                    vertices[i][1]+=(meanY-ny)*Math.abs(a)*0.45f;
-                    vertices[i][2]+=(meanZ-nz)*Math.abs(a)*0.45f; break;
-                case 2: case 14: case 15: case 16: case 17: case 23:
-                    vertices[i][0]+=dragX/Math.max(1f,unit)*a*4f;
-                    vertices[i][1]-=dragY/Math.max(1f,unit)*a*4f;
-                    vertices[i][2]+=a*0.35f; break;
-                case 3:
-                    vertices[i][0]+=nx/len*a*1.2f; vertices[i][1]+=ny/len*a*1.2f;
-                    vertices[i][2]+=nz/len*a*1.2f; break;
-                case 11:
-                    vertexMask[i]=Math.max(0f,vertexMask[i]-weight*0.75f); break;
-                case 4:
-                    vertices[i][0]+=(meanX-nx)*a*1.8f;
-                    vertices[i][2]+=(meanZ-nz)*a*1.8f; break;
-                case 5: case 9: case 20:
-                    vertices[i][1]+=(meanY-ny)*Math.abs(a)*1.5f; break;
-                case 6: case 22:
-                    vertices[i][0]-=nx/len*a; vertices[i][1]-=ny/len*a;
-                    vertices[i][2]-=nz/len*a; break;
-                case 7: vertexMask[i]=Math.min(1f,vertexMask[i]+weight*0.65f); break;
-                case 18:
-                    if(Math.abs(nx)>0.85f || Math.abs(ny)>0.85f || Math.abs(nz)>0.85f)
-                        vertices[i][1]+=a; break;
-                default: vertices[i][0]+=a*0.25f; break;
+                case 0: // Draw: displacement along the averaged surface normal.
+                    v[0]+=nx*strength*sign;v[1]+=ny*strength*sign;v[2]+=nz*strength*sign;break;
+                case 1: // Smooth: local one-ring Laplacian relaxation.
+                case 19: // Slide Relax: relax while preserving most normal displacement.
+                case 24: // Simplify: stronger local relaxation.
+                    if(!adjacent.isEmpty()){
+                        float blend=(sculptBrush==24?.42f:sculptBrush==19?.18f:.30f)*weight*sculptStrength;
+                        float ox=ax-v[0],oy=ay-v[1],oz=az-v[2];
+                        if(sculptBrush==19){float dot=ox*nx+oy*ny+oz*nz;ox-=nx*dot;oy-=ny*dot;oz-=nz*dot;}
+                        v[0]+=ox*blend;v[1]+=oy*blend;v[2]+=oz*blend;
+                    }break;
+                case 2: // Grab: drag the patch in the view plane.
+                case 14: // Elastic Deform: softer, spring-like grab.
+                case 15: // Snake Hook: drag plus normal extension.
+                case 16: // Thumb: directional push and smear.
+                case 17: // Pose: rotate the local patch around the stroke center.
+                case 23: // Nudge: stroke-direction translation.
+                    float factor=sculptBrush==14?.55f:sculptBrush==16?.65f:sculptBrush==23?.8f:1f;
+                    if(sculptBrush==17){
+                        float angle=(dragX-dragY)*.003f*sculptStrength*weight;
+                        float ox=v[0]-strokePlanePoint[0],oy=v[1]-strokePlanePoint[1],oz=v[2]-strokePlanePoint[2];
+                        float co=(float)Math.cos(angle),si=(float)Math.sin(angle);
+                        v[0]=strokePlanePoint[0]+ox*co-oy*si;v[1]=strokePlanePoint[1]+ox*si+oy*co;
+                    }else{
+                        v[0]+=dragWorld[0]*factor*weight*sculptStrength;
+                        v[1]+=dragWorld[1]*factor*weight*sculptStrength;
+                        v[2]+=dragWorld[2]*factor*weight*sculptStrength;
+                        if(sculptBrush==15){v[0]+=nx*strength*.9f;v[1]+=ny*strength*.9f;v[2]+=nz*strength*.9f;}
+                        if(sculptBrush==16&& !adjacent.isEmpty()){v[0]+=(ax-v[0])*.08f*weight;v[1]+=(ay-v[1])*.08f*weight;v[2]+=(az-v[2])*.08f*weight;}
+                    }break;
+                case 3: // Inflate: normal displacement with a slightly expanded response.
+                    v[0]+=nx*strength*1.25f*sign;v[1]+=ny*strength*1.25f*sign;v[2]+=nz*strength*1.25f*sign;break;
+                case 4: // Pinch: move toward the projected stroke center.
+                    float[] toward=cameraVectorToWorld(-dx/unit,dy/unit,0);
+                    v[0]+=toward[0]*strength*1.8f;v[1]+=toward[1]*strength*1.8f;v[2]+=toward[2]*strength*1.8f;break;
+                case 5: // Flatten: converge to the stroke-start plane from either side.
+                case 9: // Scrape: only remove material above the plane.
+                case 20: // Multiplane scrape: stronger plane projection.
+                    if(sculptBrush==5||planeDistance>0){
+                        float f=(sculptBrush==20?.85f:.55f)*weight*sculptStrength;
+                        v[0]-=strokePlaneNormal[0]*planeDistance*f;
+                        v[1]-=strokePlaneNormal[1]*planeDistance*f;
+                        v[2]-=strokePlaneNormal[2]*planeDistance*f;
+                    }break;
+                case 6: // Crease: narrow negative groove plus pinching.
+                case 22: // Deepen: stronger groove.
+                    float crease=(sculptBrush==22?1.7f:1f)*strength*sign;
+                    v[0]-=nx*crease;v[1]-=ny*crease;v[2]-=nz*crease;
+                    float pinch=(float)Math.hypot(dx,dy)/brushPx;
+                    float pin=(1f-pinch)*strength*.35f;
+                    v[0]+=(strokePlanePoint[0]-v[0])*pin;v[1]+=(strokePlanePoint[1]-v[1])*pin;v[2]+=(strokePlanePoint[2]-v[2])*pin;break;
+                case 7: // Mask.
+                    vertexMask[i]=Math.min(1f,mask+weight*sculptStrength*.75f);break;
+                case 8: // Clay: build volume while gently flattening toward plane.
+                    v[0]+=nx*strength*.78f*sign-strokePlaneNormal[0]*planeDistance*weight*.10f;
+                    v[1]+=ny*strength*.78f*sign-strokePlaneNormal[1]*planeDistance*weight*.10f;
+                    v[2]+=nz*strength*.78f*sign-strokePlaneNormal[2]*planeDistance*weight*.10f;break;
+                case 10: // Layer: fixed plane-height accumulation.
+                    float layer=Math.max(-worldRadius*.45f,Math.min(worldRadius*.45f,planeDistance));
+                    float layerMove=(worldRadius*.18f-layer)*weight*sculptStrength*sign;
+                    v[0]+=nx*layerMove;v[1]+=ny*layerMove;v[2]+=nz*layerMove;break;
+                case 11: // Unmask.
+                    vertexMask[i]=Math.max(0,mask-weight*sculptStrength*.85f);break;
+                case 12: // Blob: rounded radial volume.
+                    float blob=(float)Math.sqrt(Math.max(0,1-(distance/brushPx)*(distance/brushPx)));
+                    v[0]+=nx*strength*blob*1.65f*sign;v[1]+=ny*strength*blob*1.65f*sign;v[2]+=nz*strength*blob*1.65f*sign;break;
+                case 13: // Clay Strips: square footprint with broad buildup.
+                    float square=Math.max(Math.abs(dx),Math.abs(dy))/brushPx;
+                    float stripWeight=(float)Math.pow(Math.max(0,1-square),1.2f)*(1-mask);
+                    v[0]+=nx*amount*stripWeight*1.15f*sign;v[1]+=ny*amount*stripWeight*1.15f*sign;v[2]+=nz*amount*stripWeight*1.15f*sign;break;
+                case 18: // Boundary: emphasize the visible silhouette/edge region.
+                    float silhouette=1f-Math.min(1f,Math.abs(cameraNormal[2]));
+                    v[0]+=nx*strength*silhouette*.7f*sign;v[1]+=ny*strength*silhouette*.7f*sign;v[2]+=nz*strength*silhouette*.7f*sign;break;
+                case 21: // Fill: push only vertices below the stroke plane toward it.
+                    if(planeDistance<0){float f=Math.min(-planeDistance,strength)*weight;v[0]+=strokePlaneNormal[0]*f;v[1]+=strokePlaneNormal[1]*f;v[2]+=strokePlaneNormal[2]*f;}break;
+                default: break;
             }
         }
         invalidate();
@@ -553,7 +652,8 @@ public final class Meshy3DViewport extends View {
                     strokeActive=true;
                     strokeX=previousStrokeX=event.getX();
                     strokeY=previousStrokeY=event.getY();
-                    applySculptDab(strokeX,strokeY,0f,0f);
+                    beginSculptStroke(strokeX,strokeY);
+                    applySculptDab(strokeX,strokeY,0f,0f,event.getPressure());
                 }
                 return true;
             case MotionEvent.ACTION_POINTER_DOWN:
@@ -561,7 +661,7 @@ public final class Meshy3DViewport extends View {
             case MotionEvent.ACTION_MOVE:
                 if(sculpting && strokeActive && event.getPointerCount()==1){
                     float sx=event.getX(), sy=event.getY();
-                    applySculptDab(sx,sy,sx-previousStrokeX,sy-previousStrokeY);
+                    applySculptSegment(sx,sy,sx-previousStrokeX,sy-previousStrokeY,event.getPressure());
                     previousStrokeX=sx; previousStrokeY=sy;
                     moved=true;
                     return true;
