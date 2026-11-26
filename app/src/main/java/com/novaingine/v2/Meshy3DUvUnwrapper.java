@@ -27,17 +27,20 @@ public final class Meshy3DUvUnwrapper {
                 if(d>farthest){farthest=d;pinA=i;pinB=j;}
             }
             ArrayList<Integer> pinned=new ArrayList<>();for(int i=0;i<count;i++)if(pins.contains((long)ids[i]))pinned.add(i);
-            if(pinned.size()>=2){pinA=pinned.get(0);pinB=pinned.get(1);}
-            else if(pinned.size()==1)pinA=pinned.get(0);
+            boolean preservePinned=!pinned.isEmpty();
+            ArrayList<Integer> anchors=new ArrayList<>(pinned);
+            if(anchors.isEmpty()){anchors.add(pinA);anchors.add(pinB);}
+            else if(anchors.size()==1&&pinA!=anchors.get(0))anchors.add(pinB);
             double[] target=new double[count*2],penalty=new double[count*2];
-            float[] oldA=findOldUv(previousUvs,faces,faceIds,ids[pinA]);
-            float[] oldB=findOldUv(previousUvs,faces,faceIds,ids[pinB]);
-            target[pinA*2]=oldA==null?0:oldA[0];target[pinA*2+1]=oldA==null?0:oldA[1];
-            target[pinB*2]=oldB==null?target[pinA*2]+1:oldB[0];target[pinB*2+1]=oldB==null?target[pinA*2+1]:oldB[1];
-            double lambda=100000.0;
-            penalty[pinA*2]=lambda;penalty[pinA*2+1]=lambda;penalty[pinB*2]=lambda;penalty[pinB*2+1]=lambda;
-            double[] rhs=new double[count*2];rhs[pinA*2]=lambda*target[pinA*2];rhs[pinA*2+1]=lambda*target[pinA*2+1];
-            rhs[pinB*2]=lambda*target[pinB*2];rhs[pinB*2+1]=lambda*target[pinB*2+1];
+            double[] rhs=new double[count*2];double lambda=100000.0;
+            for(int anchor:anchors){
+                float[] old=findOldUv(previousUvs,faces,faceIds,ids[anchor]);
+                double u=old==null?0:old[0],v=old==null?0:old[1];
+                if(old==null&&anchor==pinB)u=1;
+                target[anchor*2]=u;target[anchor*2+1]=v;
+                penalty[anchor*2]=lambda;penalty[anchor*2+1]=lambda;
+                rhs[anchor*2]=lambda*u;rhs[anchor*2+1]=lambda*v;
+            }
             double[] x=solve(equations,penalty,rhs,count*2);
             double minU=Double.POSITIVE_INFINITY,minV=Double.POSITIVE_INFINITY,maxU=Double.NEGATIVE_INFINITY,maxV=Double.NEGATIVE_INFINITY;
             for(int i=0;i<count;i++){minU=Math.min(minU,x[2*i]);maxU=Math.max(maxU,x[2*i]);minV=Math.min(minV,x[2*i+1]);maxV=Math.max(maxV,x[2*i+1]);}
@@ -46,14 +49,19 @@ public final class Meshy3DUvUnwrapper {
                 minU=Double.POSITIVE_INFINITY;minV=Double.POSITIVE_INFINITY;maxU=Double.NEGATIVE_INFINITY;maxV=Double.NEGATIVE_INFINITY;
                 for(int i=0;i<count;i++){minU=Math.min(minU,x[2*i]);maxU=Math.max(maxU,x[2*i]);minV=Math.min(minV,x[2*i+1]);maxV=Math.max(maxV,x[2*i+1]);}
             }
-            double rangeU=Math.max(1e-7,maxU-minU),rangeV=Math.max(1e-7,maxV-minV);
             float tileW=1f/cols,tileH=1f/rows,margin=.035f;
-            float scale=(float)Math.min((tileW-2*margin)/rangeU,(tileH-2*margin)/rangeV);
-            float usedW=(float)rangeU*scale,usedH=(float)rangeV*scale;
-            float ox=(islandIndex%cols)*tileW+(tileW-usedW)*.5f;
-            float oy=(islandIndex/cols)*tileH+(tileH-usedH)*.5f;
+            float scale=1f,ox=0f,oy=0f;
+            if(!preservePinned){
+                double rangeU=Math.max(1e-7,maxU-minU),rangeV=Math.max(1e-7,maxV-minV);
+                scale=(float)Math.min((tileW-2*margin)/rangeU,(tileH-2*margin)/rangeV);
+                float usedW=(float)rangeU*scale,usedH=(float)rangeV*scale;
+                ox=(islandIndex%cols)*tileW+(tileW-usedW)*.5f;
+                oy=(islandIndex/cols)*tileH+(tileH-usedH)*.5f;
+            }
             HashMap<Integer,float[]> uvByVertex=new HashMap<>();
-            for(int i=0;i<count;i++)uvByVertex.put(ids[i],new float[]{ox+(float)(x[2*i]-minU)*scale,oy+(float)(x[2*i+1]-minV)*scale});
+            for(int i=0;i<count;i++)uvByVertex.put(ids[i],preservePinned
+                    ?new float[]{(float)x[2*i],(float)x[2*i+1]}
+                    :new float[]{ox+(float)(x[2*i]-minU)*scale,oy+(float)(x[2*i+1]-minV)*scale});
             for(int fi:faceIds){int[] f=faces[fi];result[fi]=new float[f.length][2];for(int j=0;j<f.length;j++)result[fi][j]=uvByVertex.get(f[j]).clone();}
         }
         return result;
