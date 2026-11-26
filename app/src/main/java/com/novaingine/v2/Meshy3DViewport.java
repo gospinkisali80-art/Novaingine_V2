@@ -1880,6 +1880,7 @@ public final class Meshy3DViewport extends View {
     }
     public void setMeshVisible(boolean visible){meshVisible=visible;invalidate();}
     public void toggleMeshVisible(){meshVisible=!meshVisible;invalidate();}
+    public boolean isFloorGridVisible(){return showFloorGrid;}
     public void setShowFloorGrid(boolean visible){showFloorGrid=visible;invalidate();}
     public void toggleFloorGrid(){showFloorGrid=!showFloorGrid;invalidate();}
     public void setShowTopology(boolean visible){showTopology=visible;invalidate();}
