@@ -40,6 +40,8 @@ public final class Meshy3DViewport extends View {
 
     private String objectSceneActiveId;
     private boolean objectSelectionEnabled;
+    private boolean localViewActive;
+    private final java.util.HashSet<String> localViewObjectIds=new java.util.HashSet<>();
 
     private static final class RenderData {
         float[][] vertices;
@@ -64,13 +66,17 @@ public final class Meshy3DViewport extends View {
         Meshy3DObjectScene.Object3D previous=objectScene.getObject(objectSceneActiveId);
         if(previous!=null && previous.mesh==document && target.mesh!=document)
             previous.mesh=copyMeshCore(document);
-        if(target.mesh!=document && !document.importState(target.mesh.exportState()))
-            throw new IllegalStateException("Could not activate object mesh");
-        target.mesh=document;
+        if(target.mesh!=null){
+            if(target.mesh!=document && !document.importState(target.mesh.exportState()))
+                throw new IllegalStateException("Could not activate object mesh");
+            target.mesh=document;
+            syncViewportFromCore();
+        } else {
+            meshVisible=false;
+        }
         if(exclusiveSelection)objectScene.selectOnly(id);else objectScene.setActiveObject(id);
         objectSceneActiveId=id;
-        syncViewportFromCore();
-        meshVisible=target.visible;
+        meshVisible=target.mesh!=null&&target.visible;
         invalidate();
     }
 
@@ -85,9 +91,105 @@ public final class Meshy3DViewport extends View {
         Meshy3DObjectScene.Object3D active=objectScene.getObject(objectSceneActiveId);
         if(active==null)return null;
         syncCoreFromViewport();
-        Meshy3DObjectScene.Object3D copy=objectScene.duplicate(active.id,linked);
+        java.util.List<Meshy3DObjectScene.Object3D> copies=objectScene.duplicateSelected(linked);
+        if(copies.isEmpty())return null;
+        Meshy3DObjectScene.Object3D copy=copies.get(copies.size()-1);
         activateSceneObject(copy.id);
         return copy.id;
+    }
+
+    public String addCameraObject() {
+        Meshy3DObjectScene.Object3D camera=objectScene.createTypedObject("Camera","CAMERA",null);
+        camera.displaySize=.9f;objectScene.setActiveCamera(camera.id);activateSceneObject(camera.id);return camera.id;
+    }
+
+    public String addLightObject() {
+        Meshy3DObjectScene.Object3D light=objectScene.createTypedObject("Point Light","LIGHT",null);
+        light.displaySize=.7f;activateSceneObject(light.id);return light.id;
+    }
+
+    public String addEmptyObject() {
+        Meshy3DObjectScene.Object3D empty=objectScene.createTypedObject("Empty","EMPTY",null);
+        empty.displaySize=.65f;activateSceneObject(empty.id);return empty.id;
+    }
+
+    public void makeActiveCamera() {
+        Meshy3DObjectScene.Object3D active=objectScene.getObject(objectSceneActiveId);
+        if(active==null)throw new IllegalStateException("Select a Camera object first");
+        objectScene.setActiveCamera(active.id);invalidate();
+    }
+
+    public void toggleLocalView() {
+        if(localViewActive){localViewActive=false;localViewObjectIds.clear();invalidate();return;}
+        localViewObjectIds.clear();
+        for(Meshy3DObjectScene.Object3D o:objectScene.getSelectedObjects())localViewObjectIds.add(o.id);
+        if(localViewObjectIds.isEmpty()&&objectSceneActiveId!=null)localViewObjectIds.add(objectSceneActiveId);
+        if(localViewObjectIds.isEmpty())return;
+        localViewActive=true;invalidate();
+    }
+
+    public boolean isLocalViewActive(){return localViewActive;}
+
+    public void hideSelectedObjects(){objectScene.hideSelected();invalidate();}
+    public void hideUnselectedObjects(){objectScene.hideUnselected();invalidate();}
+    public void showAllObjects(){objectScene.showAllObjects();localViewActive=false;localViewObjectIds.clear();invalidate();}
+    public void invertHiddenObjects(){objectScene.invertHiddenObjects();invalidate();}
+    public void setSelectedObjectsSelectable(boolean selectable){objectScene.setSelectedSelectable(selectable);invalidate();}
+    public void setSelectedObjectsRenderVisible(boolean visible){objectScene.setSelectedRenderVisible(visible);invalidate();}
+
+    public void selectObjectsByType(String type,boolean extend){
+        objectScene.selectByType(type,extend);activateCurrentObjectWithoutClearing();
+    }
+    public void selectLinkedDataObjects(boolean extend){
+        objectScene.selectLinkedData(extend);activateCurrentObjectWithoutClearing();
+    }
+    public void selectChildren(boolean recursive,boolean extend){
+        objectScene.selectChildren(recursive,extend);activateCurrentObjectWithoutClearing();
+    }
+    public void selectParent(boolean extend){
+        objectScene.selectParent(extend);activateCurrentObjectWithoutClearing();
+    }
+    public void selectSiblings(boolean extend){
+        objectScene.selectSiblings(extend);activateCurrentObjectWithoutClearing();
+    }
+    public void selectSameCollection(boolean extend){
+        objectScene.selectSameCollection(extend);activateCurrentObjectWithoutClearing();
+    }
+    public void selectObjectPattern(String pattern,boolean extend,boolean caseSensitive){
+        objectScene.selectPattern(pattern,extend,caseSensitive);activateCurrentObjectWithoutClearing();
+    }
+    private void activateCurrentObjectWithoutClearing(){
+        String id=objectScene.getActiveObjectId();
+        if(id!=null)activateSceneObject(id,false);else {objectSceneActiveId=null;invalidate();}
+    }
+
+    public void parentSelectedToActive(){
+        objectScene.parentSelectedToActive();invalidate();
+    }
+    public void clearSelectedParents(){
+        objectScene.clearSelectedParents();invalidate();
+    }
+    public void joinSelectedObjects(){
+        syncCoreFromViewport();
+        Meshy3DObjectScene.Object3D joined=objectScene.joinSelectedMeshes();
+        objectSceneActiveId=joined.id;
+        activateSceneObject(joined.id);
+    }
+    public void moveSelectedToCollection(String collectionId){
+        for(Meshy3DObjectScene.Object3D o:objectScene.getSelectedObjects())objectScene.moveToCollection(o.id,collectionId);
+        invalidate();
+    }
+    public void linkSelectedToCollection(String collectionId){
+        for(Meshy3DObjectScene.Object3D o:objectScene.getSelectedObjects())objectScene.linkToCollection(o.id,collectionId);
+        invalidate();
+    }
+    public void makeActiveObjectSingleUser(){
+        Meshy3DObjectScene.Object3D active=objectScene.getObject(objectSceneActiveId);
+        if(active==null||active.mesh==null)return;
+        syncCoreFromViewport();
+        Meshy3DCore copy=copyMeshCore(active.mesh);
+        active.mesh=copy;
+        if(active.id.equals(objectSceneActiveId))activateSceneObject(active.id);
     }
 
     public void selectSceneObject(String id) { activateSceneObject(id); }
@@ -97,7 +199,8 @@ public final class Meshy3DViewport extends View {
         float cx=getWidth()*.5f,cy=getHeight()*.49f,unit=Math.min(getWidth(),getHeight())*.235f*zoom;
         Meshy3DObjectScene.Object3D best=null;float bestDistance=Float.MAX_VALUE;
         for(Meshy3DObjectScene.Object3D object:objectScene.getObjects()) {
-            if(!objectScene.isVisibleInViewport(object)||!object.renderVisible||!object.selectable)continue;
+            if(!objectScene.isVisibleInViewport(object)||!object.renderVisible||!object.selectable
+                    ||(localViewActive&&!localViewObjectIds.contains(object.id)))continue;
             float[] center=objectScene.transformPoint(object.id,0,0,0);
             float[] screen=project(center[0],center[1],center[2],cx,cy,unit);
             float maxScale=Math.max(Math.abs(object.transform.scaleX),
@@ -245,7 +348,8 @@ public final class Meshy3DViewport extends View {
         java.util.ArrayList<int[]> allFaces=new java.util.ArrayList<>();
         java.util.ArrayList<Boolean> active=new java.util.ArrayList<>();
         for(Meshy3DObjectScene.Object3D object:objectScene.getObjects()) {
-            if(!objectScene.isVisibleInViewport(object)||!object.renderVisible)continue;
+            if(!objectScene.isVisibleInViewport(object)||!object.renderVisible
+                    ||(localViewActive&&!localViewObjectIds.contains(object.id))||object.mesh==null)continue;
             float[][] meshVertices=object.mesh==document?vertices:object.mesh.copyVertices();
             int[][] meshFaces=object.mesh==document?faces:object.mesh.copyFaces();
             int offset=allVertices.size();
@@ -274,7 +378,7 @@ public final class Meshy3DViewport extends View {
     private void syncCoreFromViewport(){
         document.replaceGeometry(vertices,faces);document.setSculptMask(vertexMask);
         Meshy3DObjectScene.Object3D active=objectScene.getObject(objectSceneActiveId);
-        if(active!=null)active.mesh=document;
+        if(active!=null&&active.mesh!=null)active.mesh=document;
     }
     private void syncViewportFromCore(){
         vertices=document.copyVertices();faces=document.copyFaces();vertexMask=document.getSculptMask();if(vertexMask.length!=vertices.length)vertexMask=new float[vertices.length];
@@ -595,7 +699,40 @@ public final class Meshy3DViewport extends View {
             canvas.drawCircle(sculptCursorX,sculptCursorY,radius*(1f-sculptStrength*.35f),paint);
             paint.setStyle(Paint.Style.FILL);
         }
+        drawSceneObjectMarkers(canvas,cx,cy,unit);
         drawNavigationGizmo(canvas, width, 18f*getResources().getDisplayMetrics().density);
+    }
+
+    private void drawSceneObjectMarkers(Canvas canvas,float cx,float cy,float unit) {
+        float density=getResources().getDisplayMetrics().density;
+        for(Meshy3DObjectScene.Object3D object:objectScene.getObjects()) {
+            if(object.mesh!=null||!objectScene.isVisibleInViewport(object)
+                    ||(localViewActive&&!localViewObjectIds.contains(object.id)))continue;
+            float[] world=objectScene.transformPoint(object.id,0,0,0);
+            float[] screen=project(world[0],world[1],world[2],cx,cy,unit);
+            float radius=Math.max(5f,object.displaySize*9f*density);
+            int color=object.selected?0xFFFFC04A:("CAMERA".equals(object.type)?0xFF69A9F5:
+                    "LIGHT".equals(object.type)?0xFFFFD36A:0xFFB8C5D2);
+            paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(2f*density);paint.setColor(color);
+            if("CAMERA".equals(object.type)) {
+                canvas.drawRect(screen[0]-radius,screen[1]-radius*.65f,screen[0]+radius,screen[1]+radius*.65f,paint);
+                canvas.drawLine(screen[0]-radius*.55f,screen[1]-radius*.65f,screen[0]-radius*.9f,screen[1]-radius*1.25f,paint);
+                canvas.drawLine(screen[0]+radius*.55f,screen[1]-radius*.65f,screen[0]+radius*.9f,screen[1]-radius*1.25f,paint);
+                canvas.drawLine(screen[0]-radius*.9f,screen[1]-radius*1.25f,screen[0]+radius*.9f,screen[1]-radius*1.25f,paint);
+                canvas.drawLine(screen[0],screen[1]+radius*.65f,screen[0],screen[1]+radius*1.35f,paint);
+            } else if("LIGHT".equals(object.type)) {
+                canvas.drawCircle(screen[0],screen[1],radius,paint);
+                for(int i=0;i<8;i++){double a=Math.PI*i/4d;
+                    canvas.drawLine(screen[0]+(float)Math.cos(a)*radius*1.2f,screen[1]+(float)Math.sin(a)*radius*1.2f,
+                            screen[0]+(float)Math.cos(a)*radius*1.65f,screen[1]+(float)Math.sin(a)*radius*1.65f,paint);}
+            } else {
+                canvas.drawLine(screen[0]-radius,screen[1],screen[0]+radius,screen[1],paint);
+                canvas.drawLine(screen[0],screen[1]-radius,screen[0],screen[1]+radius,paint);
+                canvas.drawCircle(screen[0],screen[1],radius*.3f,paint);
+            }
+            paint.setStyle(Paint.Style.FILL);paint.setTextSize(10f*density);paint.setColor(color);
+            canvas.drawText(object.name,screen[0]+radius+3f*density,screen[1]-radius-2f*density,paint);
+        }
     }
 
     private void drawNavigationGizmo(Canvas canvas,float width,float margin) {
