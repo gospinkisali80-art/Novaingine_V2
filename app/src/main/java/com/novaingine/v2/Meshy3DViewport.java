@@ -15,6 +15,7 @@ public final class Meshy3DViewport extends View {
     private float pitch = 0.42f;
     private float lastX, lastY, lastPinchDistance;
     private float zoom = 1.0f;
+    private float viewTargetX,viewTargetY,viewTargetZ;
     // Each cube side is subdivided into a 24 x 24 quad grid.
     // Six independent side grids give 3,750 editable vertices and 3,456 quads.
     // Matching border vertices receive the same screen-space brush dabs.
@@ -622,6 +623,10 @@ public final class Meshy3DViewport extends View {
     }
 
     private float[] cameraPoint(float x, float y, float z) {
+        return cameraDirectionPoint(x-viewTargetX,y-viewTargetY,z-viewTargetZ);
+    }
+
+    private float[] cameraDirectionPoint(float x,float y,float z) {
         double cy=Math.cos(yaw), sy=Math.sin(yaw);
         double cp=Math.cos(pitch), sp=Math.sin(pitch);
         double rx=x*cy-z*sy;
@@ -637,6 +642,48 @@ public final class Meshy3DViewport extends View {
         float perspective=5.2f/Math.max(2.0f,depth);
         return new float[]{cx+q[0]*unit*perspective,cy-q[1]*unit*perspective,q[2]};
     }
+
+    public void frameSelectedObjects(){frameObjects(false);}
+    public void frameAllObjects(){frameObjects(true);}
+    private void frameObjects(boolean all) {
+        java.util.ArrayList<Meshy3DObjectScene.Object3D> targets=new java.util.ArrayList<>();
+        if(all) {
+            for(Meshy3DObjectScene.Object3D object:objectScene.getObjects())
+                if(objectScene.isVisibleInViewport(object))targets.add(object);
+        } else {
+            targets.addAll(objectScene.getSelectedObjects());
+            if(targets.isEmpty()&&objectSceneActiveId!=null)targets.add(objectScene.getObject(objectSceneActiveId));
+        }
+        if(targets.isEmpty())return;
+        float[] min={Float.MAX_VALUE,Float.MAX_VALUE,Float.MAX_VALUE};
+        float[] max={-Float.MAX_VALUE,-Float.MAX_VALUE,-Float.MAX_VALUE};
+        boolean found=false;
+        for(Meshy3DObjectScene.Object3D object:targets) {
+            if(object==null)continue;
+            if(object.mesh!=null) {
+                for(float[] vertex:object.mesh.copyVertices()) {
+                    float[] world=objectScene.transformPoint(object.id,vertex[0],vertex[1],vertex[2]);
+                    for(int axis=0;axis<3;axis++){min[axis]=Math.min(min[axis],world[axis]);max[axis]=Math.max(max[axis],world[axis]);}
+                    found=true;
+                }
+            } else {
+                float[] world=objectScene.transformPoint(object.id,0,0,0);
+                float radius=Math.max(.1f,object.displaySize);
+                for(int axis=0;axis<3;axis++){min[axis]=Math.min(min[axis],world[axis]-radius);max[axis]=Math.max(max[axis],world[axis]+radius);}
+                found=true;
+            }
+        }
+        if(!found)return;
+        viewTargetX=(min[0]+max[0])*.5f;viewTargetY=(min[1]+max[1])*.5f;viewTargetZ=(min[2]+max[2])*.5f;
+        float extent=Math.max(max[0]-min[0],Math.max(max[1]-min[1],max[2]-min[2]));
+        zoom=Math.max(.35f,Math.min(3.4f,3.0f/Math.max(.75f,extent)));
+        invalidate();
+    }
+
+    public void setSceneCursorLocation(float x,float y,float z){objectScene.setCursorLocation(x,y,z);invalidate();}
+    public void snapSelectedObjectsToGrid(float step){objectScene.snapSelectedToGrid(step);invalidate();}
+    public void snapSelectedObjectsToCursor(){objectScene.snapSelectedToCursor();invalidate();}
+    public float[] getSceneCursorLocation(){return objectScene.getCursorLocation();}
 
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
@@ -677,7 +724,7 @@ public final class Meshy3DViewport extends View {
         float[][] p=new float[drawVertices.length][3];
         for(int i=0;i<drawVertices.length;i++) p[i]=project(drawVertices[i][0],drawVertices[i][1],drawVertices[i][2],cx,cy,unit);
 
-        float[] viewportLight=cameraPoint(-.45f,.82f,.65f);
+        float[] viewportLight=cameraDirectionPoint(-.45f,.82f,.65f);
         boolean hasActiveTexture=meshEditMode&&document.hasTexture()&&document.hasFaceUvs();
         // Draw only outward-facing faces, sorted far-to-near. This prevents the
         // previous see-through/inverted-looking cube caused by drawing all six sides.
@@ -760,6 +807,7 @@ public final class Meshy3DViewport extends View {
             paint.setStyle(Paint.Style.FILL);
         }
         drawSceneObjectMarkers(canvas,cx,cy,unit);
+        drawSceneCursor(canvas,cx,cy,unit);
         if(!meshEditMode&&objectSelectionEnabled&&objectTransformTool>=0)drawObjectTransformGizmo(canvas,cx,cy,unit);
         drawNavigationGizmo(canvas, width, 18f*getResources().getDisplayMetrics().density);
     }
@@ -794,6 +842,17 @@ public final class Meshy3DViewport extends View {
             paint.setStyle(Paint.Style.FILL);paint.setTextSize(10f*density);paint.setColor(color);
             canvas.drawText(object.name,screen[0]+radius+3f*density,screen[1]-radius-2f*density,paint);
         }
+    }
+
+    private void drawSceneCursor(Canvas canvas,float cx,float cy,float unit) {
+        float[] cursor=objectScene.getCursorLocation();
+        float[] screen=project(cursor[0],cursor[1],cursor[2],cx,cy,unit);
+        float d=getResources().getDisplayMetrics().density,r=9f*d;
+        paint.setColor(0xFFFFC84A);paint.setStrokeWidth(2f*d);paint.setStyle(Paint.Style.STROKE);
+        canvas.drawCircle(screen[0],screen[1],r,paint);
+        canvas.drawLine(screen[0]-r*1.7f,screen[1],screen[0]+r*1.7f,screen[1],paint);
+        canvas.drawLine(screen[0],screen[1]-r*1.7f,screen[0],screen[1]+r*1.7f,paint);
+        paint.setStyle(Paint.Style.FILL);
     }
 
     private void drawObjectTransformGizmo(Canvas canvas,float cx,float cy,float unit) {
@@ -928,7 +987,7 @@ public final class Meshy3DViewport extends View {
         int[] colors={0xFFE35D5D,0xFF59B77C,0xFF669BE8};
         String[] labels={"X","Y","Z"};
         for(int i=0;i<3;i++){
-            float[] q=cameraPoint(axes[i][0],axes[i][1],axes[i][2]);
+            float[] q=cameraDirectionPoint(axes[i][0],axes[i][1],axes[i][2]);
             float ex=gx+q[0]*r*0.88f, ey=gy-q[1]*r*0.88f;
             paint.setColor(colors[i]); paint.setStrokeWidth(3*d);
             canvas.drawLine(gx,gy,ex,ey,paint);
@@ -1096,7 +1155,7 @@ public final class Meshy3DViewport extends View {
         float[][] normals=calculateVertexNormals();int best=-1;float bestDistance=Float.MAX_VALUE;
         for(int i=0;i<vertices.length;i++){
             float[] q=project(vertices[i][0],vertices[i][1],vertices[i][2],cx,cy,unit);
-            float[] cn=cameraPoint(normals[i][0],normals[i][1],normals[i][2]);
+            float[] cn=cameraDirectionPoint(normals[i][0],normals[i][1],normals[i][2]);
             if(cn[2]<=0.015f)continue;
             float dx=q[0]-x,dy=q[1]-y,d=dx*dx+dy*dy;
             if(d<bestDistance){bestDistance=d;best=i;}
@@ -1161,7 +1220,7 @@ public final class Meshy3DViewport extends View {
             else if(sculptSymmetry==3){float[] m=project(v[0],v[1],-v[2],cx,cy,unit);dx=Math.min(Math.abs(dx),Math.abs(m[0]-x));dy=Math.min(Math.abs(dy),Math.abs(m[1]-y));}
             float distance=(float)Math.hypot(dx,dy);
             if(distance>brushPx)continue;
-            float[] cameraNormal=cameraPoint(normal[0],normal[1],normal[2]);
+            float[] cameraNormal=cameraDirectionPoint(normal[0],normal[1],normal[2]);
             if(cameraNormal[2]<(sculptBrush==18?-0.05f:0.015f))continue;
             float t=Math.max(0,1-distance/brushPx);
             float falloff=(float)Math.pow(t,0.5f+sculptFalloff*2.5f);
@@ -1375,6 +1434,7 @@ public final class Meshy3DViewport extends View {
             state.put("vertices", vertexArray);
             state.put("mask", maskArray);
             state.put("yaw", yaw); state.put("pitch", pitch); state.put("zoom", zoom);
+            state.put("viewTargetX",viewTargetX);state.put("viewTargetY",viewTargetY);state.put("viewTargetZ",viewTargetZ);
             state.put("meshTint", meshTint); state.put("metallic", metallic); state.put("roughness", roughness);
             state.put("meshVisible", meshVisible); state.put("showFloorGrid", showFloorGrid);
             state.put("showTopology", showTopology);
@@ -1441,6 +1501,9 @@ public final class Meshy3DViewport extends View {
             yaw = (float) state.optDouble("yaw", yaw);
             pitch = Math.max(-1.35f, Math.min(1.35f, (float) state.optDouble("pitch", pitch)));
             zoom = Math.max(0.35f, Math.min(3.4f, (float) state.optDouble("zoom", zoom)));
+            viewTargetX=(float)state.optDouble("viewTargetX",viewTargetX);
+            viewTargetY=(float)state.optDouble("viewTargetY",viewTargetY);
+            viewTargetZ=(float)state.optDouble("viewTargetZ",viewTargetZ);
             meshTint = state.optInt("meshTint", meshTint);
             metallic = (float) state.optDouble("metallic", metallic);
             roughness = (float) state.optDouble("roughness", roughness);
