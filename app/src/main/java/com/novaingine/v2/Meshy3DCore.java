@@ -269,7 +269,10 @@ public final class Meshy3DCore {
         int cols=Math.max(1,(int)Math.ceil(Math.sqrt(islands.size()))),rows=(int)Math.ceil(islands.size()/(float)cols);
         float tw=1f/cols,th=1f/rows,margin=.025f;
         for(int i=0;i<islands.size();i++){
-            UvIsland island=islands.get(i);float minU=Float.MAX_VALUE,minV=Float.MAX_VALUE,maxU=-Float.MAX_VALUE,maxV=-Float.MAX_VALUE;
+            UvIsland island=islands.get(i);boolean hasPinned=false;
+            for(int fi:island.faces)for(int vertex:faces.get(fi).vertices)if(pins.contains((long)vertex))hasPinned=true;
+            if(hasPinned)continue;
+            float minU=Float.MAX_VALUE,minV=Float.MAX_VALUE,maxU=-Float.MAX_VALUE,maxV=-Float.MAX_VALUE;
             for(int fi:island.faces)for(float[] uv:faceUvs[fi]){minU=Math.min(minU,uv[0]);minV=Math.min(minV,uv[1]);maxU=Math.max(maxU,uv[0]);maxV=Math.max(maxV,uv[1]);}
             float rw=Math.max(.0001f,maxU-minU),rh=Math.max(.0001f,maxV-minV);
             float scale=Math.min((tw-2*margin)/rw,(th-2*margin)/rh);
