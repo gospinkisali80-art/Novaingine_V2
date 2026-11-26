@@ -771,6 +771,29 @@ public final class Meshy3DCore {
         }
         faces.clear();faces.addAll(out);clearSelection();rebuildEdges();revision++;
     }
+    public int addVertex(float x,float y,float z){
+        int id=vertices.size();vertices.add(new float[]{x,y,z});sculptMask=Arrays.copyOf(sculptMask,vertices.size());revision++;return id;
+    }
+    public boolean addFaceFromVertices(int[] ids){
+        if(ids==null||ids.length<3)return false;HashSet<Integer> unique=new HashSet<>();
+        for(int id:ids)if(id<0||id>=vertices.size()||!unique.add(id))return false;
+        faces.add(new Face(ids.clone()));rebuildEdges();revision++;return true;
+    }
+    public void decimatePlanar(float maxAngleDegrees,int targetFaces){
+        targetFaces=Math.max(4,targetFaces);float cos=(float)Math.cos(Math.toRadians(Math.max(0,Math.min(90,maxAngleDegrees))));
+        int guard=0;
+        while(faces.size()>targetFaces&&guard++<5000){
+            int best=-1;float bestDot=cos-1e-5f;
+            for(int i=0;i<edges.size();i++){Edge e=edges.get(i);if(e.faces.size()!=2)continue;
+                float[] a=normal(faces.get(e.faces.get(0)).vertices),b=normal(faces.get(e.faces.get(1)).vertices);
+                float la=(float)Math.sqrt(a[0]*a[0]+a[1]*a[1]+a[2]*a[2]),lb=(float)Math.sqrt(b[0]*b[0]+b[1]*b[1]+b[2]*b[2]);
+                if(la<1e-8||lb<1e-8)continue;float dot=(a[0]*b[0]+a[1]*b[1]+a[2]*b[2])/(la*lb);
+                if(dot>bestDot){bestDot=dot;best=i;}
+            }
+            if(best<0)break;selectedEdges.clear();selectedEdges.set(best);dissolveSelectedEdges();
+        }
+        revision++;
+    }
     public void splitSelectedFaces(){
         if(selectedFaces.isEmpty())return;
         HashMap<Integer,Integer> duplicates=new HashMap<>();
