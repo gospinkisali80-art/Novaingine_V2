@@ -493,7 +493,7 @@ public final class Meshy3DObjectScene {
         String candidate=base;int suffix=1;
         while(true){boolean found=false;for(Collection3D c:collections.values())if(!c.id.equals(exceptId)&&c.name.equals(candidate)){found=true;break;}if(!found)return candidate;candidate=base+"."+String.format(java.util.Locale.US,"%03d",suffix++);}
     }
-    private static JSONArray vector(float x,float y,float z){JSONArray a=new JSONArray();a.put(x);a.put(y);a.put(z);return a;}
+    private static JSONArray vector(float x,float y,float z) throws JSONException {JSONArray a=new JSONArray();a.put(x);a.put(y);a.put(z);return a;}
     private interface VectorConsumer{void accept(float[] v);}
     private static void readVector(JSONArray a,VectorConsumer consumer){if(a==null||a.length()!=3)return;consumer.accept(new float[]{(float)a.optDouble(0,0),(float)a.optDouble(1,0),(float)a.optDouble(2,0)});}
     private static float finite(float v){return Float.isNaN(v)||Float.isInfinite(v)?0f:Math.max(-100000f,Math.min(100000f,v));}
