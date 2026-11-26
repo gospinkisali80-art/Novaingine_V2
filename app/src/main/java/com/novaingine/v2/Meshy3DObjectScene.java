@@ -61,6 +61,7 @@ public final class Meshy3DObjectScene {
         public final ArrayList<String> collectionIds = new ArrayList<>();
         public final ArrayList<Constraint3D> constraints = new ArrayList<>();
         public final ArrayList<Modifier3D> modifiers = new ArrayList<>();
+        public final LinkedHashMap<String,CustomProperty3D> customProperties = new LinkedHashMap<>();
         public boolean selected;
         public boolean active;
         public boolean visible = true;
@@ -105,6 +106,15 @@ public final class Meshy3DObjectScene {
             if("BEVEL".equals(type))value=.1f;
             else if("SOLIDIFY".equals(type))value=.1f;
             else if("SUBDIVIDE".equals(type))levels=1;
+        }
+    }
+
+    public static final class CustomProperty3D {
+        public final String key;
+        public String type;
+        public String value;
+        private CustomProperty3D(String key,String type,String value){
+            this.key=key;this.type=type;this.value=value;
         }
     }
 
@@ -316,6 +326,77 @@ public final class Meshy3DObjectScene {
         if(objectId.equals(targetId)||dependencyReaches(objects,targetId,objectId,new java.util.HashSet<>()))
             throw new IllegalArgumentException("That target would create a transform dependency cycle.");
         constraint.targetId=target.id;revision++;
+    }
+
+    public List<CustomProperty3D> getCustomProperties(String objectId){
+        return Collections.unmodifiableList(new ArrayList<>(requireObject(objectId).customProperties.values()));
+    }
+
+    public CustomProperty3D addCustomProperty(String objectId,String key,String type,String value){
+        Object3D object=requireObject(objectId);
+        String cleanKey=cleanCustomPropertyKey(key);
+        if(object.customProperties.containsKey(cleanKey))
+            throw new IllegalArgumentException("A custom property with that name already exists.");
+        String cleanType=cleanCustomPropertyType(type);
+        String cleanValue=cleanCustomPropertyValue(cleanType,value);
+        CustomProperty3D property=new CustomProperty3D(cleanKey,cleanType,cleanValue);
+        object.customProperties.put(cleanKey,property);revision++;return property;
+    }
+
+    public void setCustomProperty(String objectId,String oldKey,String newKey,String type,String value){
+        Object3D object=requireObject(objectId);
+        CustomProperty3D existing=object.customProperties.get(oldKey);
+        if(existing==null)throw new IllegalArgumentException("Custom property no longer exists.");
+        String cleanKey=cleanCustomPropertyKey(newKey);
+        if(!oldKey.equals(cleanKey)&&object.customProperties.containsKey(cleanKey))
+            throw new IllegalArgumentException("A custom property with that name already exists.");
+        String cleanType=cleanCustomPropertyType(type);
+        String cleanValue=cleanCustomPropertyValue(cleanType,value);
+        object.customProperties.remove(oldKey);
+        existing.type=cleanType;existing.value=cleanValue;
+        object.customProperties.put(cleanKey,new CustomProperty3D(cleanKey,cleanType,cleanValue));
+        revision++;
+    }
+
+    public void removeCustomProperty(String objectId,String key){
+        Object3D object=requireObject(objectId);
+        if(object.customProperties.remove(key)==null)
+            throw new IllegalArgumentException("Custom property no longer exists.");
+        revision++;
+    }
+
+    private static String cleanCustomPropertyKey(String key){
+        String clean=key==null?"":key.trim();
+        if(clean.isEmpty()||clean.length()>64)
+            throw new IllegalArgumentException("Custom property names must contain 1 to 64 characters.");
+        return clean;
+    }
+
+    private static String cleanCustomPropertyType(String type){
+        String clean=type==null?"":type.trim().toUpperCase(java.util.Locale.ROOT);
+        if(!"STRING".equals(clean)&&!"NUMBER".equals(clean)&&!"BOOLEAN".equals(clean))
+            throw new IllegalArgumentException("Custom property type must be String, Number or Boolean.");
+        return clean;
+    }
+
+    private static String cleanCustomPropertyValue(String type,String value){
+        String clean=value==null?"":value.trim();
+        if("NUMBER".equals(type)){
+            try{
+                double number=Double.parseDouble(clean);
+                if(!Double.isFinite(number))throw new NumberFormatException();
+                return Double.toString(number);
+            }catch(NumberFormatException error){
+                throw new IllegalArgumentException("Enter a finite numeric custom property value.");
+            }
+        }
+        if("BOOLEAN".equals(type)){
+            if(!"true".equalsIgnoreCase(clean)&&!"false".equalsIgnoreCase(clean))
+                throw new IllegalArgumentException("Boolean values must be true or false.");
+            return clean.toLowerCase(java.util.Locale.ROOT);
+        }
+        if(clean.length()>4096)throw new IllegalArgumentException("Text custom property values are limited to 4096 characters.");
+        return clean;
     }
 
     public List<Modifier3D> getModifiers(String objectId){
@@ -556,6 +637,8 @@ public final class Meshy3DObjectScene {
         for(Constraint3D constraint:source.constraints)
             copy.constraints.add(new Constraint3D(UUID.randomUUID().toString(),constraint.type,
                     constraint.targetId,constraint.influence,constraint.enabled));
+        for(CustomProperty3D property:source.customProperties.values())
+            copy.customProperties.put(property.key,new CustomProperty3D(property.key,property.type,property.value));
         for(Modifier3D modifier:source.modifiers){
             Modifier3D duplicated=new Modifier3D(UUID.randomUUID().toString(),modifier.type);
             duplicated.enabled=modifier.enabled;duplicated.axis=modifier.axis;duplicated.count=modifier.count;
@@ -1430,6 +1513,12 @@ public final class Meshy3DObjectScene {
                     saved.put("enabled",constraint.enabled);constraintArray.put(saved);
                 }
                 item.put("constraints",constraintArray);
+                JSONArray customArray=new JSONArray();
+                for(CustomProperty3D property:o.customProperties.values()){
+                    JSONObject saved=new JSONObject();saved.put("key",property.key);
+                    saved.put("type",property.type);saved.put("value",property.value);customArray.put(saved);
+                }
+                item.put("customProperties",customArray);
                 JSONArray modifierArray=new JSONArray();
                 for(Modifier3D modifier:o.modifiers){
                     JSONObject saved=new JSONObject();saved.put("id",modifier.id);saved.put("type",modifier.type);
@@ -1511,6 +1600,15 @@ public final class Meshy3DObjectScene {
                     if(targetId.isEmpty()||!Float.isFinite(influence)||influence<0f||influence>1f)return false;
                     o.constraints.add(new Constraint3D(saved.optString("id",UUID.randomUUID().toString()),
                             constraintType,targetId,influence,saved.optBoolean("enabled",true)));
+                }
+                JSONArray savedCustomProperties=item.optJSONArray("customProperties");
+                if(savedCustomProperties!=null)for(int j=0;j<savedCustomProperties.length();j++){
+                    JSONObject saved=savedCustomProperties.getJSONObject(j);
+                    String key=cleanCustomPropertyKey(saved.optString("key",""));
+                    String type=cleanCustomPropertyType(saved.optString("type","STRING"));
+                    String value=cleanCustomPropertyValue(type,saved.optString("value",""));
+                    if(o.customProperties.containsKey(key))return false;
+                    o.customProperties.put(key,new CustomProperty3D(key,type,value));
                 }
                 JSONArray savedModifiers=item.optJSONArray("modifiers");
                 if(savedModifiers!=null)for(int j=0;j<savedModifiers.length();j++){
