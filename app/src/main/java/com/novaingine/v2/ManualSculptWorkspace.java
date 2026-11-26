@@ -140,7 +140,12 @@ public final class ManualSculptWorkspace extends FrameLayout {
             if(activeWorkspaceIndex==1)refreshModelingOutliner();
         });
         meshyViewport.setObjectTransformStartListener(this::checkpointMeshEdit);
-        addView(meshyViewport, new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+        // The viewport must begin below the 86dp Blender-style title/menu/workspace header.
+        // Previously it was centered behind that opaque header, hiding the default cube on phones.
+        FrameLayout.LayoutParams viewportParams = new FrameLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT);
+        viewportParams.topMargin = dp(86);
+        addView(meshyViewport, viewportParams);
 
         // Meshy3D is being rebuilt from the Blender reference one section at a time.
         // This pass contains ONLY the complete top header; the native viewport remains below.
