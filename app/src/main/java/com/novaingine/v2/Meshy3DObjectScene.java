@@ -597,9 +597,16 @@ public final class Meshy3DObjectScene {
                     ||mesh.getTextureWidth()!=referenceTextureWidth||mesh.getTextureHeight()!=referenceTextureHeight
                     ||!java.util.Arrays.equals(mesh.getTexturePixels(),referenceTexture))
                 throw new IllegalStateException("Join cannot merge different image textures yet. Use the same texture image on the selected meshes first.");
-            if(referenceHasTexture&&!mesh.hasFaceUvs())
-                throw new IllegalStateException("Every textured mesh needs UV coordinates before joining.");
-            anyUv|=mesh.copyFaceUvs()!=null;
+            float[][][] checkedUvs=mesh.copyFaceUvs();
+            if(referenceHasTexture){
+                if(checkedUvs==null||checkedUvs.length!=mesh.getFaceCount())
+                    throw new IllegalStateException("Every textured mesh needs complete UV coordinates before joining.");
+                int[][] checkedFaces=mesh.copyFaces();
+                for(int fi=0;fi<checkedFaces.length;fi++)
+                    if(checkedUvs[fi]==null||checkedUvs[fi].length!=checkedFaces[fi].length)
+                        throw new IllegalStateException("A textured mesh has missing UV corners on face "+fi+". Repair its UV map before joining.");
+            }
+            anyUv|=checkedUvs!=null;
         }
 
         double[] inverseActive=invertAffine(worldMatrix(active.id));
