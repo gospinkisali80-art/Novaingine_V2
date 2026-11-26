@@ -96,9 +96,15 @@ public final class Meshy3DViewport extends View {
     }
 
     public String addCubeObject() {
+        return addPrimitiveObject("Cube");
+    }
+
+    public String addPrimitiveObject(String primitive) {
         syncCoreFromViewport();
-        Meshy3DObjectScene.Object3D created=objectScene.createMeshObject("Cube",new Meshy3DCore());
+        Meshy3DCore mesh=Meshy3DPrimitiveFactory.create(primitive);
+        Meshy3DObjectScene.Object3D created=objectScene.createMeshObject(primitive,mesh);
         activateSceneObject(created.id);
+        meshEditMode=false;objectSelectionEnabled=true;
         return created.id;
     }
 
