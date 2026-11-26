@@ -308,6 +308,119 @@ public final class Meshy3DCore {
             uv[0]=cx+x*co-y*si+du;uv[1]=cy+x*si+y*co+dv;
         }revision++;
     }
+    private float[] uvIslandBounds(int index) {
+        if(index<0||index>=islands.size()||faceUvs==null)return null;
+        float minU=Float.MAX_VALUE,minV=Float.MAX_VALUE,maxU=-Float.MAX_VALUE,maxV=-Float.MAX_VALUE;
+        for(int fi:islands.get(index).faces)for(float[] uv:faceUvs[fi]){
+            minU=Math.min(minU,uv[0]);minV=Math.min(minV,uv[1]);
+            maxU=Math.max(maxU,uv[0]);maxV=Math.max(maxV,uv[1]);
+        }
+        return new float[]{minU,minV,maxU,maxV};
+    }
+
+    public boolean selectPinnedUvIsland() {
+        for(int i=0;i<islands.size();i++)
+            for(int fi:islands.get(i).faces)
+                for(int vertex:faces.get(fi).vertices)
+                    if(pins.contains((long)vertex)){selectUvIsland(i);return true;}
+        return false;
+    }
+
+    /** Select the first pair whose UV island bounds overlap in the 0–1 tile. */
+    public boolean selectOverlappingUvIsland() {
+        for(int i=0;i<islands.size();i++){
+            float[] a=uvIslandBounds(i);if(a==null)continue;
+            for(int j=i+1;j<islands.size();j++){
+                float[] b=uvIslandBounds(j);if(b==null)continue;
+                float overlapU=Math.min(a[2],b[2])-Math.max(a[0],b[0]);
+                float overlapV=Math.min(a[3],b[3])-Math.max(a[1],b[1]);
+                if(overlapU>1e-4f&&overlapV>1e-4f){selectUvIsland(i);return true;}
+            }
+        }
+        return false;
+    }
+
+    public boolean selectBoundaryUvIsland() {
+        if(islands.isEmpty())return false;
+        int best=0;
+        for(int i=1;i<islands.size();i++)
+            if(islands.get(i).faces.size()>islands.get(best).faces.size())best=i;
+        selectUvIsland(best);
+        return true;
+    }
+
+    /** Mirror the active UV island around its U (axis 0) or V (axis 1) centroid. */
+    public void mirrorSelectedUv(int axis) {
+        if(faceUvs==null||selectedUvIsland<0||selectedUvIsland>=islands.size())return;
+        axis=axis==1?1:0;
+        float center=0;int count=0;
+        for(int fi:islands.get(selectedUvIsland).faces)for(float[] uv:faceUvs[fi]){
+            center+=uv[axis];count++;
+        }
+        if(count==0)return;center/=count;
+        for(int fi:islands.get(selectedUvIsland).faces)for(float[] uv:faceUvs[fi])
+            uv[axis]=2f*center-uv[axis];
+        revision++;
+    }
+
+    /** Move the active island so its minimum U or V edge aligns with zero. */
+    public void alignSelectedUv(int axis) {
+        if(faceUvs==null||selectedUvIsland<0||selectedUvIsland>=islands.size())return;
+        axis=axis==1?1:0;
+        float min=Float.MAX_VALUE;
+        for(int fi:islands.get(selectedUvIsland).faces)for(float[] uv:faceUvs[fi])
+            min=Math.min(min,uv[axis]);
+        if(min==Float.MAX_VALUE)return;
+        for(int fi:islands.get(selectedUvIsland).faces)for(float[] uv:faceUvs[fi])
+            uv[axis]-=min;
+        revision++;
+    }
+
+    /** Weld duplicate UV corners that refer to the same mesh vertex in the active island. */
+    public void weldSelectedUv(float tolerance) {
+        if(faceUvs==null||selectedUvIsland<0||selectedUvIsland>=islands.size())return;
+        tolerance=Math.max(0f,Math.min(.1f,tolerance));
+        java.util.HashMap<Integer,float[]> sums=new java.util.HashMap<>();
+        java.util.HashMap<Integer,Integer> counts=new java.util.HashMap<>();
+        for(int fi:islands.get(selectedUvIsland).faces){
+            int[] ids=faces.get(fi).vertices;
+            for(int j=0;j<ids.length;j++){
+                int id=ids[j];float[] sum=sums.get(id);
+                if(sum==null){sum=new float[2];sums.put(id,sum);counts.put(id,0);}
+                sum[0]+=faceUvs[fi][j][0];sum[1]+=faceUvs[fi][j][1];
+                counts.put(id,counts.get(id)+1);
+            }
+        }
+        for(int fi:islands.get(selectedUvIsland).faces){
+            int[] ids=faces.get(fi).vertices;
+            for(int j=0;j<ids.length;j++){
+                float[] sum=sums.get(ids[j]);int n=counts.get(ids[j]);
+                float u=sum[0]/n,v=sum[1]/n;
+                if(Math.abs(faceUvs[fi][j][0]-u)<=tolerance+1e-6f
+                        &&Math.abs(faceUvs[fi][j][1]-v)<=tolerance+1e-6f){
+                    faceUvs[fi][j][0]=u;faceUvs[fi][j][1]=v;
+                }
+            }
+        }
+        revision++;
+    }
+
+    /** Split the selected UV island from neighboring faces by marking its shared boundary as seams. */
+    public boolean splitSelectedUvIsland() {
+        if(selectedUvIsland<0||selectedUvIsland>=islands.size())return false;
+        java.util.HashSet<Integer> selected=new java.util.HashSet<>(islands.get(selectedUvIsland).faces);
+        boolean changed=false;
+        for(Edge edge:edges){
+            int inside=0;
+            for(int faceIndex:edge.faces)if(selected.contains(faceIndex))inside++;
+            if(inside==1&&edge.faces.size()>1){
+                changed|=seams.add(edgeKey(edge.a,edge.b));
+            }
+        }
+        if(changed){unwrapLSCM();revision++;}
+        return changed;
+    }
+
     public int findUvIsland(float u,float v){
         if(faceUvs==null)return -1;
         for(int fi=0;fi<faceUvs.length;fi++){float[][] poly=faceUvs[fi];boolean inside=false;
