@@ -771,10 +771,28 @@ int flags=caseSensitive?0:java.util.regex.Pattern.CASE_INSENSITIVE;
         return true;
     }
 
+    private LinkedHashMap<String,double[]> captureDirectChildWorldTransforms(String parentId) {
+        LinkedHashMap<String,double[]> snapshots=new LinkedHashMap<>();
+        for(Object3D object:objects.values())
+            if(parentId.equals(object.parentId))snapshots.put(object.id,worldMatrix(object.id));
+        return snapshots;
+    }
+
+    private void restoreDirectChildWorldTransforms(String parentId,LinkedHashMap<String,double[]> snapshots) {
+        if(snapshots.isEmpty())return;
+        double[] inverseParent=invertAffine(worldMatrix(parentId));
+        for(Map.Entry<String,double[]> entry:snapshots.entrySet()){
+            Object3D child=objects.get(entry.getKey());
+            if(child!=null&&parentId.equals(child.parentId))
+                decompose(multiply(inverseParent,entry.getValue()),child.transform);
+        }
+    }
+
     /** Bake local translation into mesh coordinates without changing the visible object. */
     public void applyLocation(String objectId) {
         Object3D o=requireObject(objectId);
         if(o.mesh==null)throw new IllegalStateException("This object type has no editable mesh data");
+        LinkedHashMap<String,double[]> childWorld=captureDirectChildWorldTransforms(objectId);
         float x=o.transform.x,y=o.transform.y,z=o.transform.z;
         float[][] vertices=o.mesh.copyVertices();
         double rx=Math.toRadians(o.transform.rotationX),ry=Math.toRadians(o.transform.rotationY),rz=Math.toRadians(o.transform.rotationZ);
@@ -786,13 +804,15 @@ int flags=caseSensitive?0:java.util.regex.Pattern.CASE_INSENSITIVE;
         float ux=tx/sx,uy=(float)((ty*Math.cos(rx)+tz*Math.sin(rx))/sy),uz=(float)((-ty*Math.sin(rx)+tz*Math.cos(rx))/sz);
         for(float[] p:vertices){p[0]+=ux;p[1]+=uy;p[2]+=uz;}
         o.mesh.replaceGeometry(vertices,o.mesh.copyFaces());
-        o.transform.x=o.transform.y=o.transform.z=0f;revision++;
+        o.transform.x=o.transform.y=o.transform.z=0f;
+        restoreDirectChildWorldTransforms(objectId,childWorld);revision++;
     }
 
     /** Move the origin to the local mesh bounds center while preserving world geometry. */
     public void setOriginToGeometry(String objectId) {
         Object3D o=requireObject(objectId);
         if(o.mesh==null)throw new IllegalStateException("This object type has no editable mesh origin");
+        LinkedHashMap<String,double[]> childWorld=captureDirectChildWorldTransforms(objectId);
         float[][] vertices=o.mesh.copyVertices();
         if(vertices.length==0)return;
         float minX=Float.MAX_VALUE,minY=Float.MAX_VALUE,minZ=Float.MAX_VALUE;
@@ -803,7 +823,8 @@ int flags=caseSensitive?0:java.util.regex.Pattern.CASE_INSENSITIVE;
         float[] offset=transformVector(o.transform,cx,cy,cz);
         for(float[] p:vertices){p[0]-=cx;p[1]-=cy;p[2]-=cz;}
         o.mesh.replaceGeometry(vertices,o.mesh.copyFaces());
-        o.transform.x+=offset[0];o.transform.y+=offset[1];o.transform.z+=offset[2];revision++;
+        o.transform.x+=offset[0];o.transform.y+=offset[1];o.transform.z+=offset[2];
+        restoreDirectChildWorldTransforms(objectId,childWorld);revision++;
     }
 
     /** Place the origin at the world-space 3D cursor (the world origin in this editor). */
@@ -814,11 +835,13 @@ int flags=caseSensitive?0:java.util.regex.Pattern.CASE_INSENSITIVE;
         float cx=(float)(inverse[0]*cursorX+inverse[1]*cursorY+inverse[2]*cursorZ+inverse[3]);
         float cy=(float)(inverse[4]*cursorX+inverse[5]*cursorY+inverse[6]*cursorZ+inverse[7]);
         float cz=(float)(inverse[8]*cursorX+inverse[9]*cursorY+inverse[10]*cursorZ+inverse[11]);
+        LinkedHashMap<String,double[]> childWorld=captureDirectChildWorldTransforms(objectId);
         float[][] vertices=o.mesh.copyVertices();
         float[] offset=transformVector(o.transform,cx,cy,cz);
         for(float[] p:vertices){p[0]-=cx;p[1]-=cy;p[2]-=cz;}
         o.mesh.replaceGeometry(vertices,o.mesh.copyFaces());
-        o.transform.x+=offset[0];o.transform.y+=offset[1];o.transform.z+=offset[2];revision++;
+        o.transform.x+=offset[0];o.transform.y+=offset[1];o.transform.z+=offset[2];
+        restoreDirectChildWorldTransforms(objectId,childWorld);revision++;
     }
 
     public void clearLocation(String objectId) {Object3D o=requireObject(objectId);o.transform.x=o.transform.y=o.transform.z=0f;revision++;}
@@ -838,6 +861,7 @@ int flags=caseSensitive?0:java.util.regex.Pattern.CASE_INSENSITIVE;
     public void applyRotationAndScale(String objectId) {
         Object3D o=requireObject(objectId);
         if(o.mesh==null)throw new IllegalStateException("This object type has no editable mesh data");
+        LinkedHashMap<String,double[]> childWorld=captureDirectChildWorldTransforms(objectId);
         float rx=(float)Math.toRadians(o.transform.rotationX),ry=(float)Math.toRadians(o.transform.rotationY),rz=(float)Math.toRadians(o.transform.rotationZ);
         float[][] vertices=o.mesh.copyVertices();
         for(float[] p:vertices){
@@ -849,6 +873,7 @@ int flags=caseSensitive?0:java.util.regex.Pattern.CASE_INSENSITIVE;
         o.mesh.replaceGeometry(vertices,o.mesh.copyFaces());
         o.transform.rotationX=o.transform.rotationY=o.transform.rotationZ=0f;
         o.transform.scaleX=o.transform.scaleY=o.transform.scaleZ=1f;
+        restoreDirectChildWorldTransforms(objectId,childWorld);
         revision++;
     }
 
