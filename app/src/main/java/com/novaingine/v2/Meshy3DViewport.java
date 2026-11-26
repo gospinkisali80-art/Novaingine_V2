@@ -19,7 +19,7 @@ public final class Meshy3DViewport extends View {
     // Six independent side grids give 3,750 editable vertices and 3,456 quads.
     // Matching border vertices receive the same screen-space brush dabs.
     private static final int MESH_SUBDIVISIONS = 24;
-    private final Meshy3DCore document = new Meshy3DCore();
+    private Meshy3DCore document = new Meshy3DCore();
     private final Meshy3DObjectScene objectScene = new Meshy3DObjectScene();
     private float[][] vertices = document.copyVertices();
     private int[][] faces = document.copyFaces();
@@ -65,15 +65,14 @@ public final class Meshy3DViewport extends View {
     private void activateSceneObject(String id,boolean exclusiveSelection) {
         Meshy3DObjectScene.Object3D target=objectScene.getObject(id);
         if(target==null)return;
-        Meshy3DObjectScene.Object3D previous=objectScene.getObject(objectSceneActiveId);
-        if(previous!=null && previous.mesh==document && target.mesh!=document)
-            previous.mesh=copyMeshCore(document);
         if(target.mesh!=null){
-            if(target.mesh!=document && !document.importState(target.mesh.exportState()))
-                throw new IllegalStateException("Could not activate object mesh");
-            target.mesh=document;
+            // The viewport edits the object's actual mesh datablock. Keeping this
+            // reference intact is what makes linked duplicates share real geometry.
+            document=target.mesh;
             syncViewportFromCore();
         } else {
+            // Non-mesh objects have no mesh datablock; retain the last mesh datablock
+            // for other objects in the scene without assigning it to this object.
             meshVisible=false;
         }
         if(exclusiveSelection)objectScene.selectOnly(id);else objectScene.setActiveObject(id);
@@ -199,7 +198,9 @@ public final class Meshy3DViewport extends View {
         syncCoreFromViewport();
         Meshy3DCore copy=copyMeshCore(active.mesh);
         active.mesh=copy;
-        if(active.id.equals(objectSceneActiveId))activateSceneObject(active.id);
+        document=copy;
+        syncViewportFromCore();
+        invalidate();
     }
 
     public void selectSceneObject(String id) { activateSceneObject(id); }
