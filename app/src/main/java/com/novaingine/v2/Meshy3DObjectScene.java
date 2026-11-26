@@ -60,6 +60,7 @@ public final class Meshy3DObjectScene {
         public String parentId;
         public final ArrayList<String> collectionIds = new ArrayList<>();
         public final ArrayList<Constraint3D> constraints = new ArrayList<>();
+        public final ArrayList<Modifier3D> modifiers = new ArrayList<>();
         public boolean selected;
         public boolean active;
         public boolean visible = true;
@@ -87,6 +88,23 @@ public final class Meshy3DObjectScene {
         public boolean enabled=true;
         private Constraint3D(String id,String type,String targetId,float influence,boolean enabled){
             this.id=id;this.type=type;this.targetId=targetId;this.influence=influence;this.enabled=enabled;
+        }
+    }
+
+    public static final class Modifier3D {
+        public final String id;
+        public String type;
+        public boolean enabled=true;
+        public int axis=0;
+        public int count=2;
+        public int levels=1;
+        public float value=0.1f;
+        public float offsetX=2f,offsetY,offsetZ;
+        private Modifier3D(String id,String type){
+            this.id=id;this.type=type;
+            if("BEVEL".equals(type))value=.1f;
+            else if("SOLIDIFY".equals(type))value=.1f;
+            else if("SUBDIVIDE".equals(type))levels=1;
         }
     }
 
@@ -197,6 +215,70 @@ public final class Meshy3DObjectScene {
     public void setConstraintType(String objectId,String constraintId,String type){
         Constraint3D constraint=findConstraint(requireObject(objectId),constraintId);
         constraint.type=cleanConstraintType(type);revision++;
+    }
+
+    public List<Modifier3D> getModifiers(String objectId){
+        return Collections.unmodifiableList(new ArrayList<>(requireObject(objectId).modifiers));
+    }
+
+    public Modifier3D addModifier(String objectId,String type){
+        Object3D object=requireObject(objectId);
+        if(!"MESH".equals(object.type)||object.mesh==null)
+            throw new IllegalArgumentException("Modifiers can only be added to mesh objects.");
+        String clean=cleanModifierType(type);
+        Modifier3D modifier=new Modifier3D(UUID.randomUUID().toString(),clean);
+        object.modifiers.add(modifier);revision++;return modifier;
+    }
+
+    public void removeModifier(String objectId,String modifierId){
+        Object3D object=requireObject(objectId);
+        if(!object.modifiers.removeIf(m->m.id.equals(modifierId)))
+            throw new IllegalArgumentException("Modifier no longer exists.");
+        revision++;
+    }
+
+    public void moveModifier(String objectId,String modifierId,int direction){
+        Object3D object=requireObject(objectId);
+        int index=-1;for(int i=0;i<object.modifiers.size();i++)
+            if(object.modifiers.get(i).id.equals(modifierId)){index=i;break;}
+        if(index<0)throw new IllegalArgumentException("Modifier no longer exists.");
+        int target=Math.max(0,Math.min(object.modifiers.size()-1,index+Math.max(-1,Math.min(1,direction))));
+        if(target==index)return;
+        Modifier3D modifier=object.modifiers.remove(index);
+        object.modifiers.add(target,modifier);revision++;
+    }
+
+    public void setModifierEnabled(String objectId,String modifierId,boolean enabled){
+        findModifier(requireObject(objectId),modifierId).enabled=enabled;revision++;
+    }
+
+    public void setModifierParameters(String objectId,String modifierId,int axis,int count,
+            int levels,float value,float offsetX,float offsetY,float offsetZ){
+        Modifier3D modifier=findModifier(requireObject(objectId),modifierId);
+        if(axis<0||axis>2||count<1||count>50||levels<1||levels>3
+                ||!Float.isFinite(value)||Math.abs(value)>100f
+                ||!Float.isFinite(offsetX)||!Float.isFinite(offsetY)||!Float.isFinite(offsetZ)
+                ||Math.abs(offsetX)>1000f||Math.abs(offsetY)>1000f||Math.abs(offsetZ)>1000f)
+            throw new IllegalArgumentException("Modifier parameters are outside their supported range.");
+        if("BEVEL".equals(modifier.type)&&(value<.001f||value>.49f))
+            throw new IllegalArgumentException("Bevel width must be between 0.001 and 0.49.");
+        if("SOLIDIFY".equals(modifier.type)&&Math.abs(value)<.0001f)
+            throw new IllegalArgumentException("Solidify thickness must be non-zero.");
+        modifier.axis=axis;modifier.count=count;modifier.levels=levels;modifier.value=value;
+        modifier.offsetX=offsetX;modifier.offsetY=offsetY;modifier.offsetZ=offsetZ;revision++;
+    }
+
+    private static String cleanModifierType(String type){
+        String clean=type==null?"":type.trim().toUpperCase(java.util.Locale.ROOT);
+        if(!"MIRROR".equals(clean)&&!"ARRAY".equals(clean)&&!"BEVEL".equals(clean)
+                &&!"SOLIDIFY".equals(clean)&&!"SUBDIVIDE".equals(clean))
+            throw new IllegalArgumentException("Unsupported modifier type.");
+        return clean;
+    }
+
+    private static Modifier3D findModifier(Object3D object,String id){
+        for(Modifier3D modifier:object.modifiers)if(modifier.id.equals(id))return modifier;
+        throw new IllegalArgumentException("Modifier no longer exists.");
     }
 
     public void setConstraintInfluence(String objectId,String constraintId,float influence){
@@ -349,6 +431,13 @@ public final class Meshy3DObjectScene {
         for(Constraint3D constraint:source.constraints)
             copy.constraints.add(new Constraint3D(UUID.randomUUID().toString(),constraint.type,
                     constraint.targetId,constraint.influence,constraint.enabled));
+        for(Modifier3D modifier:source.modifiers){
+            Modifier3D duplicated=new Modifier3D(UUID.randomUUID().toString(),modifier.type);
+            duplicated.enabled=modifier.enabled;duplicated.axis=modifier.axis;duplicated.count=modifier.count;
+            duplicated.levels=modifier.levels;duplicated.value=modifier.value;
+            duplicated.offsetX=modifier.offsetX;duplicated.offsetY=modifier.offsetY;duplicated.offsetZ=modifier.offsetZ;
+            copy.modifiers.add(duplicated);
+        }
         copy.collectionIds.clear();
         copy.collectionIds.addAll(source.collectionIds);
         revision++;
@@ -1209,6 +1298,16 @@ public final class Meshy3DObjectScene {
                     saved.put("enabled",constraint.enabled);constraintArray.put(saved);
                 }
                 item.put("constraints",constraintArray);
+                JSONArray modifierArray=new JSONArray();
+                for(Modifier3D modifier:o.modifiers){
+                    JSONObject saved=new JSONObject();saved.put("id",modifier.id);saved.put("type",modifier.type);
+                    saved.put("enabled",modifier.enabled);saved.put("axis",modifier.axis);
+                    saved.put("count",modifier.count);saved.put("levels",modifier.levels);
+                    saved.put("value",modifier.value);saved.put("offsetX",modifier.offsetX);
+                    saved.put("offsetY",modifier.offsetY);saved.put("offsetZ",modifier.offsetZ);
+                    modifierArray.put(saved);
+                }
+                item.put("modifiers",modifierArray);
                 objectArray.put(item);
             }
             root.put("objects",objectArray);
@@ -1280,6 +1379,23 @@ public final class Meshy3DObjectScene {
                     if(targetId.isEmpty()||!Float.isFinite(influence)||influence<0f||influence>1f)return false;
                     o.constraints.add(new Constraint3D(saved.optString("id",UUID.randomUUID().toString()),
                             constraintType,targetId,influence,saved.optBoolean("enabled",true)));
+                }
+                JSONArray savedModifiers=item.optJSONArray("modifiers");
+                if(savedModifiers!=null)for(int j=0;j<savedModifiers.length();j++){
+                    JSONObject saved=savedModifiers.getJSONObject(j);
+                    Modifier3D modifier=new Modifier3D(saved.optString("id",UUID.randomUUID().toString()),
+                            cleanModifierType(saved.optString("type","")));
+                    modifier.enabled=saved.optBoolean("enabled",true);
+                    modifier.axis=saved.optInt("axis",0);modifier.count=saved.optInt("count",2);
+                    modifier.levels=saved.optInt("levels",1);modifier.value=(float)saved.optDouble("value",.1f);
+                    modifier.offsetX=(float)saved.optDouble("offsetX",2f);
+                    modifier.offsetY=(float)saved.optDouble("offsetY",0f);
+                    modifier.offsetZ=(float)saved.optDouble("offsetZ",0f);
+                    if(modifier.axis<0||modifier.axis>2||modifier.count<1||modifier.count>50
+                            ||modifier.levels<1||modifier.levels>3||!Float.isFinite(modifier.value)
+                            ||!Float.isFinite(modifier.offsetX)||!Float.isFinite(modifier.offsetY)
+                            ||!Float.isFinite(modifier.offsetZ))return false;
+                    o.modifiers.add(modifier);
                 }
                 newObjects.put(id,o);
             }
