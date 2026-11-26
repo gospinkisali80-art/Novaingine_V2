@@ -716,12 +716,12 @@ public final class Meshy3DViewport extends View {
         syncCoreFromViewport();
         if(!meshEditMode) {
             SceneRenderData scene=buildFinalSceneRenderData();
-            return Meshy3DSoftwareRenderer.renderScene(scene.vertices,scene.faces,width,height,yaw,pitch,zoom,
+            return Meshy3DSoftwareRenderer.renderScene(scene.vertices,scene.faces,width,height,yaw,pitch,viewRoll,zoom,
                     scene.faceMaterialIds,scene.materialColors,scene.materialMetallic,scene.materialRoughness,
                     scene.materialTextures,scene.textureWidths,scene.textureHeights,
                     scene.faceLightDirections,scene.faceLightTints,scene.faceUvs);
         }
-        return Meshy3DSoftwareRenderer.render(vertices,faces,width,height,yaw,pitch,meshTint,metallic,roughness,
+        return Meshy3DSoftwareRenderer.render(vertices,faces,width,height,yaw,pitch,viewRoll,zoom,meshTint,metallic,roughness,
                 document.getTexturePixels(),document.getTextureWidth(),document.getTextureHeight(),document.copyFaceUvs());
     }
     public void refreshFromDocument(){syncViewportFromCore();}
