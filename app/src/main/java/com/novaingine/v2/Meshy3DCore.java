@@ -423,7 +423,19 @@ public final class Meshy3DCore {
     public void deleteSelectedFaces(){
         if(selectedFaces.isEmpty())return;
         ArrayList<Face> keep=new ArrayList<>();for(int i=0;i<faces.size();i++)if(!selectedFaces.get(i))keep.add(faces.get(i));
-        faces.clear();faces.addAll(keep);clearSelection();rebuildEdges();revision++;
+        faces.clear();faces.addAll(keep);compactUnusedVertices();clearSelection();rebuildEdges();revision++;
+    }
+    public void deleteSelectedVertices(){
+        if(selectedVertices.isEmpty())return;
+        faces.removeIf(face->{for(int id:face.vertices)if(selectedVertices.get(id))return true;return false;});
+        compactUnusedVertices();clearSelection();rebuildEdges();revision++;
+    }
+    private void compactUnusedVertices(){
+        boolean[] used=new boolean[vertices.size()];for(Face face:faces)for(int id:face.vertices)used[id]=true;
+        int[] remap=new int[vertices.size()];Arrays.fill(remap,-1);ArrayList<float[]> kept=new ArrayList<>();
+        for(int i=0;i<vertices.size();i++)if(used[i]){remap[i]=kept.size();kept.add(vertices.get(i));}
+        for(Face face:faces)for(int i=0;i<face.vertices.length;i++)face.vertices[i]=remap[face.vertices[i]];
+        vertices.clear();vertices.addAll(kept);
     }
     private void duplicateMesh(float dx,float dy,float dz){instanceMesh(1,dx,dy,dz);}
     private void instanceMesh(int copies,float dx,float dy,float dz){
