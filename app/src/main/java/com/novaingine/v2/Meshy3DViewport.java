@@ -324,6 +324,10 @@ public final class Meshy3DViewport extends View {
             int base = FACE_COLORS[side];
             int shaded = document.isFaceSelected(f) ? 0xFFFFA52B : blendColor(base, meshTint, 0.48f);
             if(hasActiveTexture)shaded=blendColor(shaded,document.sampleFaceTextureColor(f),0.72f);
+            if(sculpting&&vertexMask.length==vertices.length){
+                float faceMask=0;for(int id:face)faceMask+=vertexMask[id]/face.length;
+                if(faceMask>0.001f)shaded=blendColor(shaded,0xFF7B3446,Math.min(.72f,faceMask*.72f));
+            }
             if(!document.isFaceSelected(f))shaded=shadeViewportColor(shaded,nx,ny,nz,viewportLight);
             paint.setStyle(Paint.Style.FILL); paint.setColor(shaded); canvas.drawPath(path,paint);
             if (showTopology) {
@@ -610,11 +614,11 @@ public final class Meshy3DViewport extends View {
             float distance=(float)Math.hypot(dx,dy);
             if(distance>brushPx)continue;
             float[] cameraNormal=cameraPoint(normal[0],normal[1],normal[2]);
-            if(cameraNormal[2]<0.015f)continue;
+            if(cameraNormal[2]<(sculptBrush==18?-0.05f:0.015f))continue;
             float t=Math.max(0,1-distance/brushPx);
             float falloff=(float)Math.pow(t,0.5f+sculptFalloff*2.5f);
             float mask=i<vertexMask.length?Math.max(0,Math.min(1,vertexMask[i])):0;
-            float weight=falloff*(1-mask);
+            float weight=falloff*(sculptBrush==11?mask:1-mask);
             if(weight<=0.0001f)continue;
             float strength=amount*weight;
             float nx=normal[0],ny=normal[1],nz=normal[2];
