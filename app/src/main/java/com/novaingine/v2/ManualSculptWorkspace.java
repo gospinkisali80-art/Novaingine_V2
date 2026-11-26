@@ -2101,6 +2101,11 @@ public final class ManualSculptWorkspace extends FrameLayout {
             searchField.setBackgroundColor(0xFF27313D);
             content.addView(searchField,new LinearLayout.LayoutParams(
                     LayoutParams.MATCH_PARENT,dp(38)));
+            TextView rootDropTarget=dockItem("↥  Drop object here to clear its parent",false);
+            rootDropTarget.setGravity(Gravity.CENTER_VERTICAL);
+            content.addView(rootDropTarget,new LinearLayout.LayoutParams(
+                    LayoutParams.MATCH_PARENT,dp(32)));
+            attachOutlinerDropTarget(rootDropTarget,null);
             searchField.addTextChangedListener(new android.text.TextWatcher(){
                 public void beforeTextChanged(CharSequence text,int start,int count,int after){}
                 public void onTextChanged(CharSequence text,int start,int before,int count){
@@ -2124,8 +2129,16 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 TextView expandRow=dockItem(hasChildren?(collapsedOutlinerObjectIds.contains(object.id)?"▸":"▾"):"·",false);
                 expandRow.setGravity(Gravity.CENTER);
                 objectLine.addView(expandRow,new LinearLayout.LayoutParams(dp(22),LayoutParams.WRAP_CONTENT));
+                TextView dragHandle=dockItem("⠿",false);
+                dragHandle.setGravity(Gravity.CENTER);
+                objectLine.addView(dragHandle,new LinearLayout.LayoutParams(dp(22),LayoutParams.WRAP_CONTENT));
                 TextView objectRow=dockItem(indentation+typeIcon+object.name+"  "+flags,object.active);
                 objectLine.addView(objectRow,new LinearLayout.LayoutParams(0,LayoutParams.WRAP_CONTENT,1f));
+                dragHandle.setOnLongClickListener(v->{
+                    android.content.ClipData dragData=android.content.ClipData.newPlainText("Meshy3DObject",object.id);
+                    return v.startDrag(dragData,new View.DragShadowBuilder(objectRow),object.id,0);
+                });
+                attachOutlinerDropTarget(objectRow,object.id);
                 outlinerObjectRows.put(object.id,objectRow);
                 outlinerExpandRows.put(object.id,expandRow);
                 outlinerParentIds.put(object.id,object.parentId);
@@ -2149,6 +2162,46 @@ public final class ManualSculptWorkspace extends FrameLayout {
         for (String item : items) content.addView(dockItem(item, false));
         dock.addView(scroll, new LinearLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT, 0, 1f));
+    }
+
+    private void attachOutlinerDropTarget(View targetView,String targetObjectId) {
+        targetView.setOnDragListener((view,event)->{
+            switch(event.getAction()){
+                case android.view.DragEvent.ACTION_DRAG_STARTED:
+                    return event.getClipDescription()!=null
+                            &&event.getClipDescription().hasMimeType("text/plain");
+                case android.view.DragEvent.ACTION_DRAG_ENTERED:
+                    view.setBackgroundColor(0x665B91C7);
+                    return true;
+                case android.view.DragEvent.ACTION_DRAG_EXITED:
+                    view.setBackgroundColor(Color.TRANSPARENT);
+                    return true;
+                case android.view.DragEvent.ACTION_DROP:
+                    view.setBackgroundColor(Color.TRANSPARENT);
+                    Object local=event.getLocalState();
+                    if(!(local instanceof String))return false;
+                    String sourceObjectId=(String)local;
+                    try{
+                        checkpointMeshEdit();
+                        meshyViewport.getObjectScene().setParent(sourceObjectId,targetObjectId);
+                        meshyViewport.invalidate();
+                        refreshModelingOutliner();
+                        Meshy3DObjectScene.Object3D source=meshyViewport.getObjectScene().getObject(sourceObjectId);
+                        Meshy3DObjectScene.Object3D parent=targetObjectId==null?null:
+                                meshyViewport.getObjectScene().getObject(targetObjectId);
+                        status.setText("Modeling | "+(source==null?"Object":source.name)
+                                +(parent==null?" moved to scene root":" parented to "+parent.name));
+                        return true;
+                    }catch(Exception error){
+                        showObjectOperationError(error);
+                        return false;
+                    }
+                case android.view.DragEvent.ACTION_DRAG_ENDED:
+                    view.setBackgroundColor(Color.TRANSPARENT);
+                    return true;
+                default:return true;
+            }
+        });
     }
 
     private void updateOutlinerObjectRowVisibility(String rawFilter) {
