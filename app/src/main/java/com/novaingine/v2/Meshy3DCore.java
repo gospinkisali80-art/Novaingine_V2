@@ -166,8 +166,11 @@ public final class Meshy3DCore {
     }
     public void selectAll(){
         if(selectMode==SelectMode.VERTEX)selectedVertices.set(0,vertices.size());
-        else if(selectMode==SelectMode.EDGE)selectedEdges.set(0,edges.size());
-        else {selectedFaces.set(0,faces.size());for(Face f:faces)f.selected=true;}
+        else if(selectMode==SelectMode.EDGE){
+            selectedEdges.set(0,edges.size());for(Edge e:edges){selectedVertices.set(e.a);selectedVertices.set(e.b);}
+        }else{
+            selectedFaces.set(0,faces.size());for(Face f:faces){f.selected=true;for(int v:f.vertices)selectedVertices.set(v);}
+        }
         revision++;
     }
     public void selectLinkedFromCurrent(){int seed=selectedFaces.nextSetBit(0);if(seed>=0)selectLinked(seed);}
