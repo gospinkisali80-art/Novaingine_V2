@@ -1462,93 +1462,84 @@ public final class MainActivity extends Activity
 
     private void showMeshyOperationDialog(String action, int operation, int initialElement,
                                          float initialAmount, boolean adjusting) {
+        if (manualSculptWorkspace == null) {
+            android.widget.Toast.makeText(this, "Open the Meshy3D workspace first.", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
         LinearLayout form = new LinearLayout(this);
         form.setOrientation(LinearLayout.VERTICAL);
         int pad = dp(16);
         form.setPadding(pad, pad, pad, 0);
-        EditText element = new EditText(this);
-        element.setSingleLine(true);
-        element.setInputType(android.text.InputType.TYPE_CLASS_NUMBER | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
-        element.setHint("Element index (0 for default)");
-        element.setText(String.valueOf(initialElement));
-        form.addView(element);
+        TextView label = new TextView(this);
+        String parameter = "Operation amount";
+        if ("Extrude".equals(action)) parameter = "Extrusion distance";
+        else if ("Inset".equals(action)) parameter = "Inset thickness";
+        else if ("Bevel".equals(action)) parameter = "Bevel width";
+        else if ("Loop Cut".equals(action)) parameter = "Loop position (0–1)";
+        else if ("Merge by Distance".equals(action)) parameter = "Merge threshold";
+        label.setText(parameter);
+        form.addView(label);
         EditText amount = new EditText(this);
         amount.setSingleLine(true);
-        amount.setInputType(android.text.InputType.TYPE_CLASS_NUMBER | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
-        amount.setHint("Amount / cut factor");
+        amount.setInputType(android.text.InputType.TYPE_CLASS_NUMBER
+                | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+                | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+        amount.setHint(parameter);
         amount.setText(String.valueOf(initialAmount));
         form.addView(amount);
         new AlertDialog.Builder(this).setTitle((adjusting ? "Adjust Last Operation: " : "") + action)
-                .setMessage("Set the native mesh operation parameters.")
+                .setMessage("This operation edits the active Meshy3D mesh document.")
                 .setView(form).setNegativeButton("Cancel", null)
                 .setPositiveButton(adjusting ? "Apply Adjustment" : "Apply", (dialog, which) -> {
-                    int elementIndex; float value;
+                    final float value;
                     try {
-                        elementIndex = Integer.parseInt(element.getText().toString().trim());
                         value = Float.parseFloat(amount.getText().toString().trim());
                         if (!Float.isFinite(value)) throw new NumberFormatException();
                     } catch (Exception error) {
-                        android.widget.Toast.makeText(this, "Enter a valid element index and amount.", android.widget.Toast.LENGTH_LONG).show();
+                        android.widget.Toast.makeText(this, "Enter a valid operation amount.", android.widget.Toast.LENGTH_LONG).show();
                         return;
                     }
                     Runnable apply = () -> {
-                        if (adjusting) {
-                            if (meshyUndo.isEmpty()) {
-                                android.widget.Toast.makeText(this, "The original operation checkpoint is unavailable.", android.widget.Toast.LENGTH_SHORT).show();
-                                return;
-                            }
-                            File originalState = meshyUndo.peekLast();
-                            engineSurface.loadSceneAsync(originalState.getAbsolutePath(), loaded -> {
-                                if (!loaded) {
-                                    android.widget.Toast.makeText(this, "Could not restore the mesh before adjusting.", android.widget.Toast.LENGTH_LONG).show();
-                                    return;
-                                }
-                                meshyUndo.removeLast();
-                                meshyRedo.clear();
-                                runMeshyMeshOperation(action, operation, elementIndex, value);
-                            });
-                        } else runMeshyMeshOperation(action, operation, elementIndex, value);
+                        if (adjusting && !manualSculptWorkspace.undoMeshEdit()) {
+                            android.widget.Toast.makeText(this, "The original Meshy3D operation checkpoint is unavailable.", android.widget.Toast.LENGTH_LONG).show();
+                            return;
+                        }
+                        runMeshyMeshOperation(action, operation, 0, value);
                     };
                     boolean confirm = getSharedPreferences("meshy3d_editor", MODE_PRIVATE).getBoolean("confirm_ops", true);
                     if (confirm) new AlertDialog.Builder(this).setTitle("Confirm " + (adjusting ? "adjustment" : action))
                             .setMessage(adjusting
-                                    ? "Restore the mesh before the previous operation, then apply the updated settings?"
-                                    : "Apply this operation to the active mesh? Meshy3D will create an editor undo checkpoint first.")
+                                    ? "Restore the previous Meshy3D checkpoint, then apply the updated settings?"
+                                    : "Apply this operation to the active Meshy3D mesh? An undo checkpoint will be created first.")
                             .setNegativeButton("Cancel", null).setPositiveButton("Apply", (d, w) -> apply.run()).show();
                     else apply.run();
                 }).show();
     }
 
     private void runMeshyMeshOperation(String action, int operation, int elementIndex, float value) {
-        if (meshyEditBusy) {
-            android.widget.Toast.makeText(this, "Wait for the current Meshy3D edit to finish.", android.widget.Toast.LENGTH_SHORT).show();
+        if (manualSculptWorkspace == null) {
+            android.widget.Toast.makeText(this, "Open the Meshy3D workspace first.", android.widget.Toast.LENGTH_SHORT).show();
             return;
         }
-        meshyEditBusy = true;
-        captureMeshyState(meshyUndo, action, () -> {
-            meshyRedo.clear();
-            engineSurface.modelSelectedMesh(operation, elementIndex, value, result -> {
-                meshyEditBusy = false;
-                String message = result == 1 ? action + " completed."
-                        : result == -1 ? "Select a supported editable mesh first."
-                        : result == -2 ? "The engine is not initialized."
-                        : action + " failed (result " + result + ").";
-                android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG).show();
-                if (result == 1) {
-                    meshyLastOperation = action;
-                    meshyLastOperationCode = operation;
-                    meshyLastElementIndex = elementIndex;
-                    meshyLastAmount = value;
-                    String record = action + "|" + operation + "|" + elementIndex + "|" + value;
-                    meshyRepeatHistory.add(record);
-                    if (meshyRepeatHistory.size() > 50) meshyRepeatHistory.remove(0);
-                    recordMeshyHistory(action);
-                } else if (!meshyUndo.isEmpty()) {
-                    File unused = meshyUndo.removeLast();
-                    if (unused.exists()) unused.delete();
-                }
-            });
-        });
+        try {
+            boolean applied = manualSculptWorkspace.executeEditMenuMeshOperation(operation, value);
+            if (!applied) {
+                android.widget.Toast.makeText(this,
+                        "Switch to Edit Mode and select mesh elements before running " + action + ".",
+                        android.widget.Toast.LENGTH_LONG).show();
+                return;
+            }
+            meshyLastOperation = action;
+            meshyLastOperationCode = operation;
+            meshyLastElementIndex = 0;
+            meshyLastAmount = value;
+            String record = action + "|" + operation + "|0|" + value;
+            meshyRepeatHistory.add(record);
+            if (meshyRepeatHistory.size() > 50) meshyRepeatHistory.remove(0);
+            recordMeshyHistory(action);
+        } catch (Exception error) {
+            android.widget.Toast.makeText(this, action + " failed: " + error.getMessage(), android.widget.Toast.LENGTH_LONG).show();
+        }
     }
 
     private void openNovaDocumentPicker() {
