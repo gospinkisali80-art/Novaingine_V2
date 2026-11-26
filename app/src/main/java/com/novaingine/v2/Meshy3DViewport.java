@@ -76,6 +76,18 @@ public final class Meshy3DViewport extends View {
     public void dissolveSelectedEdges(){document.dissolveSelectedEdges();syncViewportFromCore();}
     public void triangulateSelectedFaces(){document.triangulateSelectedFaces();syncViewportFromCore();}
     public void recalculateNormals(){document.recalculateNormals();syncViewportFromCore();}
+    public void selectLoops(){document.selectEdgeLoops();invalidate();}
+    public void selectSimilar(){document.selectSimilar();invalidate();}
+    public void mirrorSelected(int axis){document.mirrorSelected(axis);syncViewportFromCore();}
+    public void shrinkFattenSelected(float amount){document.shrinkFattenSelected(amount);syncViewportFromCore();}
+    public void makePlanarSelected(){document.makePlanarSelected();syncViewportFromCore();}
+    public void randomizeSelected(float amount){document.randomizeSelected(amount);syncViewportFromCore();}
+    public void toSphereSelected(float amount){document.toSphereSelected(amount);syncViewportFromCore();}
+    public void shearSelected(float amount){document.shearSelected(amount);syncViewportFromCore();}
+    public void flipSelectedNormals(){document.flipSelectedNormals();syncViewportFromCore();}
+    public void pokeSelectedFaces(float amount){document.pokeSelectedFaces(amount);syncViewportFromCore();}
+    public void fillSelectedBoundary(){document.fillSelectedBoundary();syncViewportFromCore();}
+
     public void deleteSelectedFaces(){document.deleteSelectedFaces();syncViewportFromCore();}
     public void deleteSelectedVertices(){document.deleteSelectedVertices();syncViewportFromCore();}
     public void smoothTopology(float amount,int iterations){document.smooth(amount,iterations);syncViewportFromCore();}
