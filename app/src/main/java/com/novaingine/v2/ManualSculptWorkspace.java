@@ -465,6 +465,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 } else if ("Object Properties".equals(item)) showObjectPropertiesDialog();
                 else if ("Constraints".equals(item)) showObjectConstraintsDialog();
                 else if ("Modifiers".equals(item)) showObjectModifiersDialog();
+                else if ("Custom Properties".equals(item)) showObjectCustomPropertiesDialog();
                 else if ("Object Transform".equals(item) || "Numeric Transform".equals(item)) showObjectTransformTypeDialog();
                 else if ("Dimensions".equals(item)) {
                     Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
@@ -1561,6 +1562,83 @@ public final class ManualSculptWorkspace extends FrameLayout {
         dialog.show();
     }
 
+    private void showObjectCustomPropertiesDialog() {
+        Meshy3DObjectScene scene=meshyViewport.getObjectScene();
+        Meshy3DObjectScene.Object3D active=scene.getActiveObject();
+        if(active==null){
+            Toast.makeText(activity,"Select an object first.",Toast.LENGTH_SHORT).show();return;
+        }
+        ArrayList<Meshy3DObjectScene.CustomProperty3D> properties=
+                new ArrayList<>(scene.getCustomProperties(active.id));
+        String[] options=new String[properties.size()+1];options[0]="+ Add Custom Property";
+        for(int i=0;i<properties.size();i++){
+            Meshy3DObjectScene.CustomProperty3D property=properties.get(i);
+            options[i+1]=property.key+"  ["+property.type+"] = "+property.value;
+        }
+        new android.app.AlertDialog.Builder(activity).setTitle(active.name+" | Custom Properties")
+                .setItems(options,(dialog,which)->{
+                    if(which==0)showObjectCustomPropertyEditor(null);
+                    else if(which-1<properties.size())showObjectCustomPropertyEditor(properties.get(which-1));
+                }).setNegativeButton("Close",null).show();
+    }
+
+    private void showObjectCustomPropertyEditor(Meshy3DObjectScene.CustomProperty3D existing) {
+        Meshy3DObjectScene scene=meshyViewport.getObjectScene();
+        Meshy3DObjectScene.Object3D active=scene.getActiveObject();
+        if(active==null)return;
+        LinearLayout panel=new LinearLayout(activity);panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(16),dp(8),dp(16),dp(8));
+        TextView keyLabel=new TextView(activity);keyLabel.setText("Property Name");
+        panel.addView(keyLabel);
+        EditText keyField=new EditText(activity);keyField.setSingleLine(true);
+        keyField.setText(existing==null?"":existing.key);keyField.setHint("Example: asset_id");
+        panel.addView(keyField);
+        TextView typeLabel=new TextView(activity);typeLabel.setText("Value Type");
+        panel.addView(typeLabel);
+        String[] types={"STRING","NUMBER","BOOLEAN"};
+        String[] typeLabels={"String","Number","Boolean"};
+        android.widget.Spinner typeSpinner=new android.widget.Spinner(activity);
+        android.widget.ArrayAdapter<String> adapter=new android.widget.ArrayAdapter<>(activity,
+                android.R.layout.simple_spinner_item,typeLabels);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        typeSpinner.setAdapter(adapter);
+        if(existing!=null)for(int i=0;i<types.length;i++)if(types[i].equals(existing.type))typeSpinner.setSelection(i);
+        panel.addView(typeSpinner);
+        TextView valueLabel=new TextView(activity);valueLabel.setText("Value");
+        panel.addView(valueLabel);
+        EditText valueField=new EditText(activity);valueField.setSingleLine(true);
+        valueField.setText(existing==null?"":existing.value);
+        valueField.setHint("Enter property value");
+        panel.addView(valueField);
+
+        android.app.AlertDialog.Builder builder=new android.app.AlertDialog.Builder(activity)
+                .setTitle(existing==null?"Add Custom Property":"Edit Custom Property")
+                .setView(panel).setPositiveButton("Save",null).setNegativeButton("Cancel",null);
+        if(existing!=null)builder.setNeutralButton("Delete",(dialog,which)->{
+            try{
+                checkpointMeshEdit();scene.removeCustomProperty(active.id,existing.key);
+                status.setText("Modeling | Custom property deleted");
+                showObjectCustomPropertiesDialog();
+            }catch(Exception error){showObjectOperationError(error);}
+        });
+        android.app.AlertDialog dialog=builder.create();
+        dialog.setOnShowListener(ignored->dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener(view->{
+                    try{
+                        String key=keyField.getText().toString();
+                        String type=types[typeSpinner.getSelectedItemPosition()];
+                        String value=valueField.getText().toString();
+                        checkpointMeshEdit();
+                        if(existing==null)scene.addCustomProperty(active.id,key,type,value);
+                        else scene.setCustomProperty(active.id,existing.key,key,type,value);
+                        meshyViewport.invalidate();refreshModelingOutliner();
+                        status.setText("Modeling | Custom property saved");
+                        dialog.dismiss();showObjectCustomPropertiesDialog();
+                    }catch(Exception error){showObjectOperationError(error);}
+                }));
+        dialog.show();
+    }
+
     private void showObjectConstraintsDialog() {
         Meshy3DObjectScene scene=meshyViewport.getObjectScene();
         Meshy3DObjectScene.Object3D active=scene.getActiveObject();
@@ -2389,7 +2467,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 rightItems = new String[]{"Object Properties", "Object Transform", "Numeric Transform", "Dimensions",
                         "Set 3D Cursor", "Snap to Grid", "Snap to 3D Cursor", "Snap to Active Geometry",
                         "Frame Selected", "Frame All",
-                        "Parent", "Constraints", "Modifiers", "Collections", "Manage Collections",
+                        "Parent", "Constraints", "Modifiers", "Custom Properties", "Collections", "Manage Collections",
                         "Visibility", "Selectable", "Render Visibility", "Active Camera", "Camera Settings", "Light Settings",
                         "Active Tool", "Selection Mode", "Operation Amount", "Offset", "Segments", "Profile",
                         "Loop Cut Count", "Merge Threshold", "Mesh Statistics", "Vertices", "Edges", "Faces",
