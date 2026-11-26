@@ -674,8 +674,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
             }
         });
         graphView.setOnLinkListener((from,to)->{
-            core.connectGraphNodes(graph,from,to);graphView.setLinks(core.getGraphLinks(graph));
-            status.setText(title+" | Connected "+from+" → "+to);
+            boolean connected=core.connectGraphNodes(graph,from,to);graphView.setLinks(core.getGraphLinks(graph));
+            status.setText(connected?title+" | Connected "+from+" → "+to:title+" | Connection rejected (cycle or invalid socket)");
         });
         LinearLayout root=new LinearLayout(activity);root.setOrientation(LinearLayout.VERTICAL);
         HorizontalScrollView actions=new HorizontalScrollView(activity);actions.setHorizontalScrollBarEnabled(false);
