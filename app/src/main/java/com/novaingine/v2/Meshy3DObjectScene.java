@@ -627,6 +627,19 @@ public final class Meshy3DObjectScene {
         return new float[]{(float)m[3],(float)m[7],(float)m[11]};
     }
 
+    public double[] getWorldMatrixCopy(String objectId) {
+        return worldMatrix(objectId).clone();
+    }
+
+    public void setWorldMatrix(String objectId,double[] worldMatrix) {
+        if(worldMatrix==null||worldMatrix.length!=16)throw new IllegalArgumentException("World matrix must contain 16 values");
+        Object3D object=requireObject(objectId);
+        double[] local=object.parentId==null?worldMatrix.clone()
+                :multiply(invertAffine(worldMatrix(object.parentId)),worldMatrix);
+        decompose(local,object.transform);
+        revision++;
+    }
+
     /** Transform a mesh-local point through its object and every parent transform. */
     public float[] transformPoint(String objectId,float x,float y,float z) {
         double[] m=worldMatrix(objectId);
