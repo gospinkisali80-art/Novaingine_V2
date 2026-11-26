@@ -379,10 +379,14 @@ public final class Meshy3DCore {
         revision++;
     }
     public int[][] getGraphLinks(int graph){ArrayList<int[]> links=linksForGraph(graph);int[][] out=new int[links.size()][2];for(int i=0;i<out.length;i++)out[i]=links.get(i).clone();return out;}
-    public void connectGraphNodes(int graph,int from,int to){
-        ArrayList<Node> nodes=nodesForGraph(graph);if(from<0||to<0||from>=nodes.size()||to>=nodes.size()||from==to)return;
-        ArrayList<int[]> links=linksForGraph(graph);links.removeIf(link->link[1]==to);
-        links.add(new int[]{from,to});revision++;
+    public boolean connectGraphNodes(int graph,int from,int to){
+        ArrayList<Node> nodes=nodesForGraph(graph);if(from<0||to<0||from>=nodes.size()||to>=nodes.size()||from==to)return false;
+        ArrayList<int[]> links=linksForGraph(graph);
+        boolean[] visited=new boolean[nodes.size()];ArrayDeque<Integer> queue=new ArrayDeque<>();queue.add(to);visited[to]=true;
+        while(!queue.isEmpty()){int at=queue.removeFirst();if(at==from)return false;
+            for(int[] link:links)if(link[0]==at&&link[1]!=to&&!visited[link[1]]){visited[link[1]]=true;queue.add(link[1]);}
+        }
+        links.removeIf(link->link[1]==to);links.add(new int[]{from,to});revision++;return true;
     }
     private int[] graphExecutionOrder(int graph){
         ArrayList<Node> nodes=nodesForGraph(graph);ArrayList<int[]> links=linksForGraph(graph);
