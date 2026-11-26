@@ -1330,6 +1330,37 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 }).setNegativeButton("Cancel",null).show();
     }
 
+    private void showOutlinerObjectActions(Meshy3DObjectScene.Object3D object) {
+        if(meshyViewport.getObjectScene().getObject(object.id)==null)return;
+        String[] actions={"Make Active","Rename","Duplicate","Duplicate Linked","Hide / Show",
+                "Object Properties","Parent To","Set Origin to Geometry","Set Origin to 3D Cursor","Delete"};
+        new android.app.AlertDialog.Builder(activity).setTitle(object.name)
+                .setItems(actions,(d,which)->{
+                    try{
+                        meshyViewport.selectSceneObject(object.id);refreshModelingOutliner();
+                        if(which==0)status.setText("Modeling | Active object: "+object.name);
+                        else if(which==1)showObjectRenameDialog();
+                        else if(which==2||which==3){
+                            checkpointMeshEdit();meshyViewport.duplicateActiveObject(which==3);refreshModelingOutliner();
+                            status.setText("Modeling | "+(which==3?"Linked duplicate":"Duplicate")+" created");
+                        }else if(which==4){
+                            checkpointMeshEdit();meshyViewport.setActiveObjectVisible(!object.visible);
+                            refreshModelingOutliner();status.setText("Modeling | "+object.name+" visibility toggled");
+                        }else if(which==5)showObjectPropertiesDialog();
+                        else if(which==6)showObjectPickerDialog(true);
+                        else if(which==7||which==8){
+                            checkpointMeshEdit();
+                            if(which==7)meshyViewport.setActiveObjectOriginToGeometry();
+                            else meshyViewport.setActiveObjectOriginToCursor();
+                            status.setText("Modeling | Object origin updated");
+                        }else if(which==9){
+                            checkpointMeshEdit();meshyViewport.deleteActiveObject();refreshModelingOutliner();
+                            status.setText("Modeling | "+object.name+" deleted");
+                        }
+                    }catch(Exception error){showObjectOperationError(error);}
+                }).setNegativeButton("Cancel",null).show();
+    }
+
     private void showCollectionManagerPicker() {
         Meshy3DObjectScene scene=meshyViewport.getObjectScene();
         java.util.ArrayList<Meshy3DObjectScene.Collection3D> collections=new java.util.ArrayList<>(scene.getCollections());
@@ -1499,11 +1530,20 @@ public final class ManualSculptWorkspace extends FrameLayout {
             }
             content.addView(dockHeading("SCENE OUTLINER"));
             for(Meshy3DObjectScene.Object3D object:meshyViewport.getObjectScene().getObjects()) {
-                TextView objectRow=dockItem(object.name,object.active);
+                int depth=0;String parentId=object.parentId;int guard=0;
+                while(parentId!=null&&guard++<meshyViewport.getObjectScene().getObjectCount()){
+                    Meshy3DObjectScene.Object3D parent=meshyViewport.getObjectScene().getObject(parentId);
+                    if(parent==null)break;depth++;parentId=parent.parentId;
+                }
+                String typeIcon="MESH".equals(object.type)?"◈ ":"CAMERA".equals(object.type)?"▣ ":"LIGHT".equals(object.type)?"☼ ":"◇ ";
+                String prefix=new String(new char[Math.min(8,depth)]).replace("\\0","  ");
+                String flags=(object.visible?"":"◌ ")+(object.selectable?"":"🔒 ")+(object.renderVisible?"":"R ");
+                TextView objectRow=dockItem(prefix+typeIcon+object.name+"  "+flags,object.active);
                 objectRow.setOnClickListener(v->{
-                    meshyViewport.selectSceneObject(object.id);
+                    meshyViewport.selectSceneObject(object.id);refreshModelingOutliner();
                     status.setText("Modeling | Active object: "+object.name);
                 });
+                objectRow.setOnLongClickListener(v->{showOutlinerObjectActions(object);return true;});
                 content.addView(objectRow);
             }
             content.addView(dockHeading("OBJECT OPERATIONS"));
