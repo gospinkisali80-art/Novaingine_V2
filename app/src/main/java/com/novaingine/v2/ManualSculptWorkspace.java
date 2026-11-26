@@ -461,11 +461,11 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     checkpointMeshEdit();meshyViewport.deleteSelectedObjects();
                     refreshModelingOutliner();status.setText("Modeling | Selected objects deleted");
                 } else if ("Select All Objects".equals(item)) {
-                    meshyViewport.selectAllSceneObjects();status.setText("Modeling | All scene objects selected");
+                    meshyViewport.selectAllSceneObjects();refreshModelingOutliner();status.setText("Modeling | All scene objects selected");
                 } else if ("Deselect Objects".equals(item)) {
-                    meshyViewport.deselectAllSceneObjects();status.setText("Modeling | Object selection cleared");
+                    meshyViewport.deselectAllSceneObjects();refreshModelingOutliner();status.setText("Modeling | Object selection cleared");
                 } else if ("Invert Selection".equals(item)) {
-                    meshyViewport.invertSceneSelection();status.setText("Modeling | Object selection inverted");
+                    meshyViewport.invertSceneSelection();refreshModelingOutliner();status.setText("Modeling | Object selection inverted");
                 } else if ("Rename Object".equals(item)) showObjectRenameDialog();
                 else if ("Select Object".equals(item)) showObjectPickerDialog(false);
                 else if ("Hide / Show Object".equals(item)) {
@@ -1026,7 +1026,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     try{
                         if(parentMode){if(!target.id.equals(scene.getActiveObjectId()))meshyViewport.setActiveObjectParent(target.id);
                             status.setText("Modeling | Parent set to "+target.name);}
-                        else {meshyViewport.selectSceneObject(target.id);status.setText("Modeling | Active object: "+target.name);}
+                        else {meshyViewport.selectSceneObject(target.id);refreshModelingOutliner();status.setText("Modeling | Active object: "+target.name);}
                     }catch(Exception error){new android.app.AlertDialog.Builder(activity).setTitle("Object Relationship")
                             .setMessage(error.getMessage()).setPositiveButton("OK",null).show();}
                 }).setNegativeButton("Cancel",null).show();
