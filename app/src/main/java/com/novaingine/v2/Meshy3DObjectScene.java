@@ -637,16 +637,27 @@ int flags=caseSensitive?0:java.util.regex.Pattern.CASE_INSENSITIVE;
 
     /** Bake local translation into mesh coordinates without changing the visible object. */
     public void applyLocation(String objectId) {
-        Object3D o=requireObject(objectId);float x=o.transform.x,y=o.transform.y,z=o.transform.z;
+        Object3D o=requireObject(objectId);
+        if(o.mesh==null)throw new IllegalStateException("This object type has no editable mesh data");
+        float x=o.transform.x,y=o.transform.y,z=o.transform.z;
         float[][] vertices=o.mesh.copyVertices();
-        for(float[] p:vertices){p[0]+=x;p[1]+=y;p[2]+=z;}
+        double rx=Math.toRadians(o.transform.rotationX),ry=Math.toRadians(o.transform.rotationY),rz=Math.toRadians(o.transform.rotationZ);
+        float sx=o.transform.scaleX,sy=o.transform.scaleY,sz=o.transform.scaleZ;
+        // Bake T into mesh coordinates using inverse(Rz * Ry * Rx * Scale).
+        float tx=(float)(x*Math.cos(ry)*Math.cos(rz)+y*Math.cos(ry)*Math.sin(rz)-z*Math.sin(ry));
+        float ty=(float)(-x*Math.sin(rz)+y*Math.cos(rz));
+        float tz=(float)(x*Math.sin(ry)*Math.cos(rz)+y*Math.sin(ry)*Math.sin(rz)+z*Math.cos(ry));
+        float ux=tx/sx,uy=(float)((ty*Math.cos(rx)+tz*Math.sin(rx))/sy),uz=(float)((-ty*Math.sin(rx)+tz*Math.cos(rx))/sz);
+        for(float[] p:vertices){p[0]+=ux;p[1]+=uy;p[2]+=uz;}
         o.mesh.replaceGeometry(vertices,o.mesh.copyFaces());
         o.transform.x=o.transform.y=o.transform.z=0f;revision++;
     }
 
     /** Move the origin to the local mesh bounds center while preserving world geometry. */
     public void setOriginToGeometry(String objectId) {
-        Object3D o=requireObject(objectId);float[][] vertices=o.mesh.copyVertices();
+        Object3D o=requireObject(objectId);
+        if(o.mesh==null)throw new IllegalStateException("This object type has no editable mesh origin");
+        float[][] vertices=o.mesh.copyVertices();
         if(vertices.length==0)return;
         float minX=Float.MAX_VALUE,minY=Float.MAX_VALUE,minZ=Float.MAX_VALUE;
         float maxX=-Float.MAX_VALUE,maxY=-Float.MAX_VALUE,maxZ=-Float.MAX_VALUE;
@@ -661,7 +672,9 @@ int flags=caseSensitive?0:java.util.regex.Pattern.CASE_INSENSITIVE;
 
     /** Place the origin at the world-space 3D cursor (the world origin in this editor). */
     public void setOriginToCursor(String objectId) {
-        Object3D o=requireObject(objectId);double[] inverse=invertAffine(worldMatrix(objectId));
+        Object3D o=requireObject(objectId);
+        if(o.mesh==null)throw new IllegalStateException("This object type has no editable mesh origin");
+        double[] inverse=invertAffine(worldMatrix(objectId));
         float cx=(float)inverse[3],cy=(float)inverse[7],cz=(float)inverse[11];
         float[][] vertices=o.mesh.copyVertices();
         float[] offset=transformVector(o.transform,cx,cy,cz);
@@ -686,6 +699,7 @@ int flags=caseSensitive?0:java.util.regex.Pattern.CASE_INSENSITIVE;
     /** Applies local scale and Euler rotation to mesh vertices, then resets those channels. */
     public void applyRotationAndScale(String objectId) {
         Object3D o=requireObject(objectId);
+        if(o.mesh==null)throw new IllegalStateException("This object type has no editable mesh data");
         float rx=(float)Math.toRadians(o.transform.rotationX),ry=(float)Math.toRadians(o.transform.rotationY),rz=(float)Math.toRadians(o.transform.rotationZ);
         float[][] vertices=o.mesh.copyVertices();
         for(float[] p:vertices){
