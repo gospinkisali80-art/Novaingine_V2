@@ -880,7 +880,14 @@ public final class Meshy3DViewport extends View {
                 float faceMask=0;for(int id:face)faceMask+=vertexMask[id]/face.length;
                 if(faceMask>0.001f)shaded=blendColor(shaded,0xFF7B3446,Math.min(.72f,faceMask*.72f));
             }
-            if(!(meshEditMode&&document.isFaceSelected(f)))shaded=shadeViewportColor(shaded,nx,ny,nz,viewportLight);
+            if(!(meshEditMode&&document.isFaceSelected(f))){
+                float wx=0f,wy=0f,wz=0f;
+                for(int id:face){wx+=drawVertices[id][0]/face.length;wy+=drawVertices[id][1]/face.length;wz+=drawVertices[id][2]/face.length;}
+                float[] sceneLight=meshEditMode?new float[]{viewportLight[0],viewportLight[1],viewportLight[2],1f,1f,1f}
+                        :sceneLightForPoint(wx,wy,wz);
+                shaded=tintBySceneLight(shaded,sceneLight);
+                shaded=shadeViewportColor(shaded,nx,ny,nz,sceneLight);
+            }
             paint.setStyle(Paint.Style.FILL); paint.setColor(shaded); canvas.drawPath(path,paint);
             if (showTopology) {
                 paint.setStyle(Paint.Style.STROKE); paint.setColor(0xAA303840);
@@ -1114,6 +1121,63 @@ public final class Meshy3DViewport extends View {
             paint.setStyle(Paint.Style.STROKE);
         }
         paint.setStyle(Paint.Style.FILL);
+    }
+
+    private float[] sceneLightForPoint(float x,float y,float z) {
+        // Keep a small ambient/directional fill so unlit areas remain readable.
+        double sx=-.45*.22,sy=.82*.22,sz=.65*.22,total=.22;
+        double red=.22,green=.22,blue=.22;
+        for(Meshy3DObjectScene.Object3D light:objectScene.getObjects()) {
+            if(!"LIGHT".equals(light.type)||!objectScene.isVisibleInRender(light)||light.lightPower<=0f)continue;
+            float[] origin=objectScene.transformPoint(light.id,0,0,0);
+            double dx,dy,dz,weight;
+            String kind=light.lightType==null?"POINT":light.lightType.toUpperCase(java.util.Locale.ROOT);
+            if("SUN".equals(kind)) {
+                float[] directionPoint=objectScene.transformPoint(light.id,0,0,-1);
+                dx=directionPoint[0]-origin[0];dy=directionPoint[1]-origin[1];dz=directionPoint[2]-origin[2];
+                weight=Math.min(4.0,light.lightPower/1000.0);
+            } else {
+                dx=origin[0]-x;dy=origin[1]-y;dz=origin[2]-z;
+                double distance=Math.sqrt(dx*dx+dy*dy+dz*dz);
+                if(distance<1e-5)continue;
+                weight=(light.lightPower/1000.0)/(1.0+.03*distance*distance);
+                if("AREA".equals(kind))weight*=1.35;
+                if("SPOT".equals(kind)) {
+                    float[] axisPoint=objectScene.transformPoint(light.id,0,0,-1);
+                    double ax=axisPoint[0]-origin[0],ay=axisPoint[1]-origin[1],az=axisPoint[2]-origin[2];
+                    double axisLength=Math.sqrt(ax*ax+ay*ay+az*az);
+                    double toX=-dx/distance,toY=-dy/distance,toZ=-dz/distance;
+                    if(axisLength<1e-6)continue;
+                    double cone=(ax*toX+ay*toY+az*toZ)/axisLength;
+                    double limit=Math.cos(Math.toRadians(Math.max(1f,light.lightAngle)*.5));
+                    if(cone<limit)continue;
+                    weight*=Math.max(.08,Math.min(1.0,(cone-limit)/Math.max(.001,1-limit)));
+                }
+                dx/=distance;dy/=distance;dz/=distance;
+            }
+            double directionLength=Math.sqrt(dx*dx+dy*dy+dz*dz);
+            if(directionLength<1e-6||weight<=0)continue;
+            dx/=directionLength;dy/=directionLength;dz/=directionLength;
+            sx+=dx*weight;sy+=dy*weight;sz+=dz*weight;total+=weight;
+            red+=((light.lightColor>>16)&255)/255.0*weight;
+            green+=((light.lightColor>>8)&255)/255.0*weight;
+            blue+=(light.lightColor&255)/255.0*weight;
+        }
+        double length=Math.sqrt(sx*sx+sy*sy+sz*sz);
+        if(length<1e-6)length=1;
+        float[] camera=cameraDirectionPoint((float)(sx/length),(float)(sy/length),(float)(sz/length));
+        return new float[]{camera[0],camera[1],camera[2],
+                (float)Math.max(.15,Math.min(1.5,red/total)),
+                (float)Math.max(.15,Math.min(1.5,green/total)),
+                (float)Math.max(.15,Math.min(1.5,blue/total))};
+    }
+
+    private int tintBySceneLight(int color,float[] light) {
+        int r=(color>>16)&255,g=(color>>8)&255,b=color&255;
+        r=Math.max(0,Math.min(255,Math.round(r*light[3])));
+        g=Math.max(0,Math.min(255,Math.round(g*light[4])));
+        b=Math.max(0,Math.min(255,Math.round(b*light[5])));
+        return (color&0xFF000000)|(r<<16)|(g<<8)|b;
     }
 
     private int shadeViewportColor(int color,float nx,float ny,float nz,float[] light){
