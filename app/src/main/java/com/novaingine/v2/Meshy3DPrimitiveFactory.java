@@ -59,15 +59,20 @@ public final class Meshy3DPrimitiveFactory {
             double a=2*Math.PI*i/segments;float x=(float)Math.cos(a)*radius,z=(float)Math.sin(a)*radius;
             v.add(new float[]{x,-1,z});
         }
-        for(int i=0;i<segments;i++){
-            double a=2*Math.PI*i/segments;float x=(float)Math.cos(a)*radius,z=(float)Math.sin(a)*radius;
-            v.add(new float[]{cone?0:x,1,cone?0:z});
+        int top;
+        if(cone){top=v.size();v.add(new float[]{0,1,0});}
+        else{
+            for(int i=0;i<segments;i++){
+                double a=2*Math.PI*i/segments;float x=(float)Math.cos(a)*radius,z=(float)Math.sin(a)*radius;
+                v.add(new float[]{x,1,z});
+            }
+            top=v.size();v.add(new float[]{0,1,0});
         }
         int bottom=v.size();v.add(new float[]{0,-1,0});
-        int top=v.size();v.add(new float[]{0,1,0});
         for(int i=0;i<segments;i++){
             int next=(i+1)%segments;
-            f.add(new int[]{i,next,segments+next,segments+i});
+            if(cone)f.add(new int[]{i,next,top});
+            else f.add(new int[]{i,next,segments+next,segments+i});
             f.add(new int[]{bottom,next,i});
             if(!cone)f.add(new int[]{top,segments+i,segments+next});
         }
