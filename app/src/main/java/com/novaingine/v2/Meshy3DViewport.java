@@ -88,6 +88,12 @@ public final class Meshy3DViewport extends View {
     public void flipSelectedNormals(){document.flipSelectedNormals();syncViewportFromCore();}
     public void pokeSelectedFaces(float amount){document.pokeSelectedFaces(amount);syncViewportFromCore();}
     public void fillSelectedBoundary(){document.fillSelectedBoundary();syncViewportFromCore();}
+    public void splitSelectedFaces(){document.splitSelectedFaces();syncViewportFromCore();}
+    public void bisectMesh(float nx,float ny,float nz,float offset){document.bisect(nx,ny,nz,offset);syncViewportFromCore();}
+    public void bridgeSelectedLoops(){document.bridgeSelectedBoundaryLoops();syncViewportFromCore();}
+    public void solidifySelected(float thickness){document.solidifySelected(thickness);syncViewportFromCore();}
+    public void spinSelectedFaces(float angle,int steps,float screwDistance){document.spinSelectedFaces(angle,steps,screwDistance);syncViewportFromCore();}
+
     public void slideSelected(float factor,boolean edgeMode){document.slideSelected(factor,edgeMode);syncViewportFromCore();}
 
     public void deleteSelectedFaces(){document.deleteSelectedFaces();syncViewportFromCore();}
