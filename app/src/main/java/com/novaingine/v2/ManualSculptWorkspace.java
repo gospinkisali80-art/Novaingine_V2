@@ -103,6 +103,11 @@ public final class ManualSculptWorkspace extends FrameLayout {
             "Shading", "Animation", "Rendering", "Compositing", "Geometry Nodes"
     };
     private final ArrayList<TextView> workspaceTabs = new ArrayList<>();
+    private final java.util.LinkedHashMap<String,TextView> outlinerObjectRows = new java.util.LinkedHashMap<>();
+    private final java.util.LinkedHashMap<String,TextView> outlinerExpandRows = new java.util.LinkedHashMap<>();
+    private final java.util.LinkedHashMap<String,String> outlinerParentIds = new java.util.LinkedHashMap<>();
+    private final java.util.LinkedHashMap<String,String> outlinerObjectNames = new java.util.LinkedHashMap<>();
+    private final java.util.HashSet<String> collapsedOutlinerObjectIds = new java.util.HashSet<>();
     private int activeWorkspaceIndex;
     private int workspaceTransitionToken;
     private boolean viewportFocusMode;
@@ -2071,9 +2076,10 @@ public final class ManualSculptWorkspace extends FrameLayout {
         scroll.addView(content, new ScrollView.LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
         if ("Modeling Tools".equals(heading) && meshyViewport != null) {
+            Meshy3DObjectScene scene=meshyViewport.getObjectScene();
             content.addView(dockHeading("COLLECTIONS"));
-            for(Meshy3DObjectScene.Collection3D collection:meshyViewport.getObjectScene().getCollections()) {
-                int depth=meshyViewport.getObjectScene().getCollectionDepth(collection.id);
+            for(Meshy3DObjectScene.Collection3D collection:scene.getCollections()) {
+                int depth=scene.getCollectionDepth(collection.id);
                 StringBuilder indent=new StringBuilder();for(int level=0;level<Math.min(8,depth);level++)indent.append("  ");
                 TextView collectionRow=dockItem(indent+(collection.visible?"▾ ":"▸ ")+collection.name,false);
                 collectionRow.setOnClickListener(v->{meshyViewport.selectCollectionObjects(collection.id,false);
@@ -2082,30 +2088,100 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 content.addView(collectionRow);
             }
             content.addView(dockHeading("SCENE OUTLINER"));
-            for(Meshy3DObjectScene.Object3D object:meshyViewport.getObjectScene().getObjects()) {
-                int depth=0;String parentId=object.parentId;int guard=0;
-                while(parentId!=null&&guard++<meshyViewport.getObjectScene().getObjectCount()){
-                    Meshy3DObjectScene.Object3D parent=meshyViewport.getObjectScene().getObject(parentId);
-                    if(parent==null)break;depth++;parentId=parent.parentId;
+            outlinerObjectRows.clear();outlinerExpandRows.clear();
+            outlinerParentIds.clear();outlinerObjectNames.clear();
+
+            EditText searchField=new EditText(activity);
+            searchField.setSingleLine(true);
+            searchField.setTextColor(Color.WHITE);
+            searchField.setHintTextColor(0xFF9AA6B4);
+            searchField.setHint("Search scene objects…");
+            searchField.setTextSize(12f);
+            searchField.setPadding(dp(8),dp(4),dp(8),dp(4));
+            searchField.setBackgroundColor(0xFF27313D);
+            content.addView(searchField,new LinearLayout.LayoutParams(
+                    LayoutParams.MATCH_PARENT,dp(38)));
+            searchField.addTextChangedListener(new android.text.TextWatcher(){
+                public void beforeTextChanged(CharSequence text,int start,int count,int after){}
+                public void onTextChanged(CharSequence text,int start,int before,int count){
+                    updateOutlinerObjectRowVisibility(text==null?"":text.toString());
                 }
+                public void afterTextChanged(android.text.Editable editable){}
+            });
+
+            for(Meshy3DObjectScene.Object3D object:scene.getObjects()) {
+                int depth=scene.getObjectHierarchyDepth(object.id);
+                boolean hasChildren=false;
+                for(Meshy3DObjectScene.Object3D candidate:scene.getObjects())
+                    if(object.id.equals(candidate.parentId)){hasChildren=true;break;}
+
                 String typeIcon="MESH".equals(object.type)?"◈ ":"CAMERA".equals(object.type)?"▣ ":"LIGHT".equals(object.type)?"☼ ":"◇ ";
                 StringBuilder indentation=new StringBuilder();
                 for(int level=0;level<Math.min(8,depth);level++)indentation.append("  ");
-                String prefix=indentation.toString();
                 String flags=(object.visible?"":"◌ ")+(object.selectable?"":"🔒 ")+(object.renderVisible?"":"R ");
-                TextView objectRow=dockItem(prefix+typeIcon+object.name+"  "+flags,object.active);
+                LinearLayout objectLine=new LinearLayout(activity);
+                objectLine.setGravity(Gravity.CENTER_VERTICAL);
+                TextView expandRow=dockItem(hasChildren?(collapsedOutlinerObjectIds.contains(object.id)?"▸":"▾"):"·",false);
+                expandRow.setGravity(Gravity.CENTER);
+                objectLine.addView(expandRow,new LinearLayout.LayoutParams(dp(22),LayoutParams.WRAP_CONTENT));
+                TextView objectRow=dockItem(indentation+typeIcon+object.name+"  "+flags,object.active);
+                objectLine.addView(objectRow,new LinearLayout.LayoutParams(0,LayoutParams.WRAP_CONTENT,1f));
+                outlinerObjectRows.put(object.id,objectRow);
+                outlinerExpandRows.put(object.id,expandRow);
+                outlinerParentIds.put(object.id,object.parentId);
+                outlinerObjectNames.put(object.id,object.name+" "+object.type);
+                if(hasChildren)expandRow.setOnClickListener(v->{
+                    if(!collapsedOutlinerObjectIds.add(object.id))collapsedOutlinerObjectIds.remove(object.id);
+                    expandRow.setText(collapsedOutlinerObjectIds.contains(object.id)?"▸":"▾");
+                    updateOutlinerObjectRowVisibility(searchField.getText().toString());
+                });
+                else expandRow.setEnabled(false);
                 objectRow.setOnClickListener(v->{
                     meshyViewport.selectSceneObject(object.id);refreshModelingOutliner();
                     status.setText("Modeling | Active object: "+object.name);
                 });
                 objectRow.setOnLongClickListener(v->{showOutlinerObjectActions(object);return true;});
-                content.addView(objectRow);
+                content.addView(objectLine);
             }
+            updateOutlinerObjectRowVisibility("");
             content.addView(dockHeading("OBJECT OPERATIONS"));
         }
         for (String item : items) content.addView(dockItem(item, false));
         dock.addView(scroll, new LinearLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT, 0, 1f));
+    }
+
+    private void updateOutlinerObjectRowVisibility(String rawFilter) {
+        String filter=rawFilter==null?"":rawFilter.trim().toLowerCase(java.util.Locale.ROOT);
+        java.util.HashSet<String> matches=new java.util.HashSet<>();
+        for(java.util.Map.Entry<String,String> entry:outlinerObjectNames.entrySet())
+            if(filter.isEmpty()||entry.getValue().toLowerCase(java.util.Locale.ROOT).contains(filter))
+                matches.add(entry.getKey());
+
+        java.util.HashSet<String> visible=new java.util.HashSet<>(matches);
+        if(!filter.isEmpty()){
+            for(String match:new java.util.ArrayList<>(matches)){
+                String parent=outlinerParentIds.get(match);int guard=0;
+                while(parent!=null&&guard++<outlinerParentIds.size()){
+                    visible.add(parent);parent=outlinerParentIds.get(parent);
+                }
+            }
+        }
+
+        for(String objectId:outlinerObjectRows.keySet()){
+            boolean show=filter.isEmpty()||visible.contains(objectId);
+            if(show&&filter.isEmpty()){
+                String parent=outlinerParentIds.get(objectId);int guard=0;
+                while(parent!=null&&guard++<outlinerParentIds.size()){
+                    if(collapsedOutlinerObjectIds.contains(parent)){show=false;break;}
+                    parent=outlinerParentIds.get(parent);
+                }
+            }
+            TextView row=outlinerObjectRows.get(objectId);
+            TextView expand=outlinerExpandRows.get(objectId);
+            if(row!=null)row.setVisibility(show?View.VISIBLE:View.GONE);
+            if(expand!=null)expand.setVisibility(show?View.VISIBLE:View.GONE);
+        }
     }
 
     private void renderWorkspaceLayout(int index) {
