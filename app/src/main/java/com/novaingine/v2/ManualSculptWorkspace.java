@@ -1070,6 +1070,35 @@ public final class ManualSculptWorkspace extends FrameLayout {
         }
     }
 
+    private void showTextureImageSaveDialog() {
+        Meshy3DCore core=meshyViewport.getDocumentCore();
+        int[] pixels=core.getTexturePixelsUnsafe();
+        int width=core.getTextureWidth(),height=core.getTextureHeight();
+        if(pixels==null||width<1||height<1){
+            Toast.makeText(activity,"There is no active texture to save.",Toast.LENGTH_SHORT).show();
+            return;
+        }
+        android.graphics.Bitmap bitmap=null;
+        try {
+            bitmap=android.graphics.Bitmap.createBitmap(pixels,width,height,android.graphics.Bitmap.Config.ARGB_8888);
+            File directory=new File(activity.getFilesDir(),"Meshy3D/Textures");
+            if(!directory.exists()&&!directory.mkdirs())throw new java.io.IOException("Cannot create texture folder");
+            File output=new File(directory,"Texture-"+System.currentTimeMillis()+".png");
+            try(java.io.FileOutputStream stream=new java.io.FileOutputStream(output)){
+                if(!bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,stream))
+                    throw new java.io.IOException("PNG encoding failed");
+                stream.flush();
+            }
+            status.setText("Texture Paint | Saved "+width+" × "+height+" PNG: "+output.getAbsolutePath());
+            Toast.makeText(activity,"Texture saved as PNG",Toast.LENGTH_SHORT).show();
+        } catch(Exception error) {
+            status.setText("Texture Paint | Save failed: "+error.getMessage());
+            Toast.makeText(activity,"Texture save failed",Toast.LENGTH_SHORT).show();
+        } finally {
+            if(bitmap!=null&&!bitmap.isRecycled())bitmap.recycle();
+        }
+    }
+
     private void showUvEditor(boolean paintMode) {
         showUvEditor(paintMode,paintMode?"Draw":"");
     }
@@ -2668,7 +2697,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
         viewportFocusMode = false;
         if (meshyViewport != null) {
             boolean sculptWorkspace = index == 2;
-            boolean editWorkspace = index == 1 && "Edit Mode".equals(activeEditorMode);
+            boolean uvWorkspace = index == 3;
+            boolean editWorkspace = (index == 1 && "Edit Mode".equals(activeEditorMode)) || uvWorkspace;
             meshyViewport.setMeshEditMode(editWorkspace);
             // Layout and Modeling must both allow selecting the starter cube and scene objects.
             meshyViewport.setObjectSelectionEnabled(!sculptWorkspace && !editWorkspace);
