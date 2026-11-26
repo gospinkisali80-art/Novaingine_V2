@@ -414,7 +414,7 @@ public final class Meshy3DCore {
             else if("Smooth".equals(n.type))smooth(n.value==0?.2f:Math.max(0,Math.min(1,n.value)),1);
             else if("Subdivide".equals(n.type)||"Subdivide Mesh".equals(n.type))subdivide();
             else if("Delete Geometry".equals(n.type))deleteSelectedFaces();
-            else if("Set Material".equals(n.type))baseColor=(int)n.value;
+            else if("Set Material".equals(n.type))baseColor=0xFF000000|((int)n.value&0xFFFFFF);
             else if("Random Value".equals(n.type)){Random random=new Random(7);for(float[] p:vertices){p[0]+=(random.nextFloat()-.5f)*n.value;p[1]+=(random.nextFloat()-.5f)*n.value;p[2]+=(random.nextFloat()-.5f)*n.value;}}
             else if("Math".equals(n.type)){for(float[] p:vertices){p[0]*=n.value;p[1]*=n.value;p[2]*=n.value;}}
             else if("Instance on Points".equals(n.type))instanceMesh(Math.max(1,Math.min(20,Math.round(n.value))),n.x,n.y,n.z);
