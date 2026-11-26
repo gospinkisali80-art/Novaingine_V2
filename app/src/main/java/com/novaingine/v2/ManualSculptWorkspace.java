@@ -514,7 +514,10 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 else if ("Select By Type".equals(item)) showObjectTypeDialog();
                 else if ("Select Hierarchy".equals(item)) showHierarchySelectionDialog();
                 else if ("Select by Name".equals(item)) showObjectPatternDialog();
-                else if ("Select Linked Data".equals(item)) {
+                else if ("Select Active Camera".equals(item)) {
+                    meshyViewport.selectActiveCameraObject(false);refreshModelingOutliner();
+                    status.setText("Modeling | Active camera selected");
+                } else if ("Select Linked Data".equals(item)) {
                     meshyViewport.selectLinkedDataObjects(false);refreshModelingOutliner();
                     status.setText("Modeling | Objects sharing the active mesh datablock selected");
                 } else if ("Hide Selected".equals(item)) {
@@ -1637,7 +1640,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         "OBJECT MODE", "Select", "Select Box", "Add Primitive", "Add Camera", "Add Light", "Add Empty", "Add Cube",
                         "Duplicate", "Duplicate Linked", "Delete Object", "Delete Selected Objects", "Join Selected Meshes",
                         "Select All Objects", "Deselect Objects", "Invert Selection", "Select Object", "Select By Type",
-                        "Select Hierarchy", "Select by Name", "Select Linked Data", "Rename Object", "Hide / Show Object",
+                        "Select Hierarchy", "Select by Name", "Select Active Camera", "Select Linked Data", "Rename Object", "Hide / Show Object",
                         "Hide Selected", "Hide Unselected", "Show All Objects", "Invert Hidden", "Toggle Local View",
                         "Lock Selection", "Unlock Selection", "Disable in Render", "Enable in Render",
                         "Apply Location", "Apply Rotation & Scale", "Apply All Transforms", "Clear Location", "Clear Rotation", "Clear Scale",
