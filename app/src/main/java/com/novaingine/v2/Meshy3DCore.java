@@ -653,6 +653,112 @@ public final class Meshy3DCore {
         double ry=p[1]*cp-rz*sp,rz2=p[1]*sp+rz*cp;double depth=5.2-rz2;
         double perspective=5.2/Math.max(2.0,depth);return new float[]{(float)(cx+rx*unit*perspective),(float)(cy-ry*unit*perspective)};
     }
+    public void selectEdgeLoops(){
+        if(selectedEdges.isEmpty())return;
+        ArrayDeque<Long> queue=new ArrayDeque<>();HashSet<Long> seen=new HashSet<>();
+        for(int i=selectedEdges.nextSetBit(0);i>=0;i=selectedEdges.nextSetBit(i+1)){Edge e=edges.get(i);long k=edgeKey(e.a,e.b);if(seen.add(k))queue.add(k);}
+        HashMap<Long,Edge> map=new HashMap<>();for(Edge e:edges)map.put(edgeKey(e.a,e.b),e);
+        while(!queue.isEmpty()){long key=queue.removeFirst();Edge e=map.get(key);if(e==null)continue;
+            for(int fi:e.faces){int[] f=faces.get(fi).vertices;if(f.length!=4)continue;
+                for(int j=0;j<4;j++)if(edgeKey(f[j],f[(j+1)%4])==key){
+                    long opposite=edgeKey(f[(j+2)%4],f[(j+3)%4]);if(seen.add(opposite))queue.add(opposite);break;
+                }
+            }
+        }
+        selectedEdges.clear();selectedVertices.clear();
+        for(int i=0;i<edges.size();i++){Edge e=edges.get(i);if(seen.contains(edgeKey(e.a,e.b))){selectedEdges.set(i);selectedVertices.set(e.a);selectedVertices.set(e.b);}}
+        revision++;
+    }
+    public void selectSimilar(){
+        if(selectMode==SelectMode.FACE){
+            int seed=selectedFaces.nextSetBit(0);if(seed<0)return;int count=faces.get(seed).vertices.length;
+            for(int i=0;i<faces.size();i++)if(faces.get(i).vertices.length==count){selectedFaces.set(i);for(int v:faces.get(i).vertices)selectedVertices.set(v);}
+        }else if(selectMode==SelectMode.VERTEX){
+            int seed=selectedVertices.nextSetBit(0);if(seed<0)return;int degree=0;
+            for(Edge e:edges)if(e.a==seed||e.b==seed)degree++;
+            for(int i=0;i<vertices.size();i++){int d=0;for(Edge e:edges)if(e.a==i||e.b==i)d++;if(d==degree)selectedVertices.set(i);}
+        }else{
+            int seed=selectedEdges.nextSetBit(0);if(seed<0)return;int count=edges.get(seed).faces.size();
+            for(int i=0;i<edges.size();i++)if(edges.get(i).faces.size()==count)selectedEdges.set(i);
+        }revision++;
+    }
+    private BitSet selectedOrAllVertices(){
+        BitSet out=(BitSet)selectedVertices.clone();if(out.isEmpty())out.set(0,vertices.size());return out;
+    }
+    private float[][] calculateNormals(){
+        float[][] normals=new float[vertices.size()][3];
+        for(Face face:faces){int[] f=face.vertices;if(f.length<3)continue;float[] a=vertices.get(f[0]);
+            for(int j=1;j<f.length-1;j++){float[] b=vertices.get(f[j]),d=vertices.get(f[j+1]);
+                float ux=b[0]-a[0],uy=b[1]-a[1],uz=b[2]-a[2],vx=d[0]-a[0],vy=d[1]-a[1],vz=d[2]-a[2];
+                float nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx;
+                for(int id:f){normals[id][0]+=nx;normals[id][1]+=ny;normals[id][2]+=nz;}
+            }
+        }
+        for(float[] n:normals){float len=(float)Math.sqrt(n[0]*n[0]+n[1]*n[1]+n[2]*n[2]);if(len>1e-8){n[0]/=len;n[1]/=len;n[2]/=len;}}
+        return normals;
+    }
+    public void mirrorSelected(int axis){
+        BitSet targets=selectedOrAllVertices();for(int i=targets.nextSetBit(0);i>=0;i=targets.nextSetBit(i+1))vertices.get(i)[Math.max(0,Math.min(2,axis))]*=-1;
+        if(targets.cardinality()==vertices.size())for(Face f:faces)reverseFace(f);
+        rebuildEdges();revision++;
+    }
+    public void shrinkFattenSelected(float amount){
+        float[][] normals=calculateNormals();BitSet targets=selectedOrAllVertices();
+        for(int i=targets.nextSetBit(0);i>=0;i=targets.nextSetBit(i+1)){float[] p=vertices.get(i),n=normals[i];p[0]+=n[0]*amount;p[1]+=n[1]*amount;p[2]+=n[2]*amount;}
+        revision++;
+    }
+    public void makePlanarSelected(){
+        BitSet targets=selectedOrAllVertices();if(targets.cardinality()<3)return;
+        float[] center=new float[3];for(int i=targets.nextSetBit(0);i>=0;i=targets.nextSetBit(i+1))for(int k=0;k<3;k++)center[k]+=vertices.get(i)[k]/targets.cardinality();
+        float[] normal={0,0,0};for(int fi=selectedFaces.nextSetBit(0);fi>=0;fi=selectedFaces.nextSetBit(fi+1)){float[] n=normal(faces.get(fi).vertices);for(int k=0;k<3;k++)normal[k]+=n[k];}
+        float len=(float)Math.sqrt(normal[0]*normal[0]+normal[1]*normal[1]+normal[2]*normal[2]);
+        if(len<1e-7){int[] ids=new int[targets.cardinality()];int p=0;for(int i=targets.nextSetBit(0);i>=0;i=targets.nextSetBit(i+1))ids[p++]=i;
+            float[] a=vertices.get(ids[0]),b=vertices.get(ids[1]),d=vertices.get(ids[2]);float ux=b[0]-a[0],uy=b[1]-a[1],uz=b[2]-a[2],vx=d[0]-a[0],vy=d[1]-a[1],vz=d[2]-a[2];
+            normal=new float[]{uy*vz-uz*vy,uz*vx-ux*vz,ux*vy-uy*vx};len=(float)Math.sqrt(normal[0]*normal[0]+normal[1]*normal[1]+normal[2]*normal[2]);}
+        if(len<1e-7)return;for(int k=0;k<3;k++)normal[k]/=len;
+        for(int i=targets.nextSetBit(0);i>=0;i=targets.nextSetBit(i+1)){float[] v=vertices.get(i);float d=(v[0]-center[0])*normal[0]+(v[1]-center[1])*normal[1]+(v[2]-center[2])*normal[2];for(int k=0;k<3;k++)v[k]-=normal[k]*d;}
+        revision++;
+    }
+    public void randomizeSelected(float amount){
+        BitSet targets=selectedOrAllVertices();for(int i=targets.nextSetBit(0);i>=0;i=targets.nextSetBit(i+1)){
+            float[] p=vertices.get(i);float a=(float)Math.sin((i+1)*12.9898+revision*78.233),b=(float)Math.sin((i+1)*39.346+revision*11.135),d=(float)Math.sin((i+1)*73.156+revision*3.17);
+            p[0]+=a*amount;p[1]+=b*amount;p[2]+=d*amount;
+        }revision++;
+    }
+    public void toSphereSelected(float factor){
+        BitSet targets=selectedOrAllVertices();if(targets.isEmpty())return;float[] center=new float[3];
+        for(int i=targets.nextSetBit(0);i>=0;i=targets.nextSetBit(i+1))for(int k=0;k<3;k++)center[k]+=vertices.get(i)[k]/targets.cardinality();
+        float radius=0;for(int i=targets.nextSetBit(0);i>=0;i=targets.nextSetBit(i+1)){float[] p=vertices.get(i);radius+=(float)Math.sqrt((p[0]-center[0])*(p[0]-center[0])+(p[1]-center[1])*(p[1]-center[1])+(p[2]-center[2])*(p[2]-center[2]))/targets.cardinality();}
+        factor=Math.max(0,Math.min(1,factor));for(int i=targets.nextSetBit(0);i>=0;i=targets.nextSetBit(i+1)){float[] p=vertices.get(i);float dx=p[0]-center[0],dy=p[1]-center[1],dz=p[2]-center[2],len=(float)Math.sqrt(dx*dx+dy*dy+dz*dz);if(len>1e-8){float t=radius/len*factor;p[0]+=dx*(t-1);p[1]+=dy*(t-1);p[2]+=dz*(t-1);}}
+        revision++;
+    }
+    public void shearSelected(float amount){
+        BitSet targets=selectedOrAllVertices();for(int i=targets.nextSetBit(0);i>=0;i=targets.nextSetBit(i+1)){float[] p=vertices.get(i);p[0]+=p[1]*amount;}revision++;
+    }
+    public void flipSelectedNormals(){
+        if(selectedFaces.isEmpty()){for(Face f:faces)reverseFace(f);}else for(int i=selectedFaces.nextSetBit(0);i>=0;i=selectedFaces.nextSetBit(i+1))reverseFace(faces.get(i));
+        rebuildEdges();revision++;
+    }
+    public void pokeSelectedFaces(float offset){
+        if(selectedFaces.isEmpty())return;ArrayList<Face> out=new ArrayList<>();
+        for(int i=0;i<faces.size();i++){Face f=faces.get(i);if(!selectedFaces.get(i)){out.add(f);continue;}
+            float[] center=new float[3],n=normal(f.vertices);float len=(float)Math.sqrt(n[0]*n[0]+n[1]*n[1]+n[2]*n[2]);if(len>1e-8){n[0]/=len;n[1]/=len;n[2]/=len;}
+            for(int id:f.vertices)for(int k=0;k<3;k++)center[k]+=vertices.get(id)[k]/f.vertices.length;
+            int centerId=vertices.size();vertices.add(new float[]{center[0]+n[0]*offset,center[1]+n[1]*offset,center[2]+n[2]*offset});
+            for(int j=0;j<f.vertices.length;j++)out.add(new Face(f.vertices[j],f.vertices[(j+1)%f.vertices.length],centerId));
+        }
+        faces.clear();faces.addAll(out);clearSelection();rebuildEdges();revision++;
+    }
+    public void fillSelectedBoundary(){
+        ArrayList<Integer> loop=new ArrayList<>();HashMap<Integer,ArrayList<Integer>> adjacency=new HashMap<>();
+        for(int i=selectedEdges.nextSetBit(0);i>=0;i=selectedEdges.nextSetBit(i+1)){Edge e=edges.get(i);if(e.faces.size()!=1)continue;
+            adjacency.computeIfAbsent(e.a,k->new ArrayList<>()).add(e.b);adjacency.computeIfAbsent(e.b,k->new ArrayList<>()).add(e.a);}
+        if(adjacency.size()<3)return;for(ArrayList<Integer> links:adjacency.values())if(links.size()!=2)return;
+        int start=adjacency.keySet().iterator().next(),previous=-1,current=start;
+        do{loop.add(current);ArrayList<Integer> links=adjacency.get(current);int next=links.get(0)==previous?links.get(1):links.get(0);previous=current;current=next;if(loop.size()>adjacency.size()+1)return;}while(current!=start);
+        if(loop.size()!=adjacency.size())return;int[] ids=new int[loop.size()];for(int i=0;i<ids.length;i++)ids[i]=loop.get(i);
+        faces.add(new Face(ids));clearSelection();rebuildEdges();revision++;
+    }
     public void loopCutSelected(float factor){
         if(selectedEdges.isEmpty())return;
         HashMap<Long,Edge> edgeMap=new HashMap<>();for(Edge e:edges)edgeMap.put(edgeKey(e.a,e.b),e);
