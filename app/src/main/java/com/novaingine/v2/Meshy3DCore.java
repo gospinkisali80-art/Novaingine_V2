@@ -529,6 +529,28 @@ public final class Meshy3DCore {
         }
         faces.clear();faces.addAll(out);clearSelection();rebuildEdges();revision++;
     }
+    public void extrudeSelectedAlongNormals(float distance,boolean individual){
+        if(selectedFaces.isEmpty())return;
+        ArrayList<Face> out=new ArrayList<>(faces);
+        if(individual){
+            for(int fi=selectedFaces.nextSetBit(0);fi>=0;fi=selectedFaces.nextSetBit(fi+1)){
+                Face face=faces.get(fi);float[] n=normal(face.vertices);float len=(float)Math.sqrt(n[0]*n[0]+n[1]*n[1]+n[2]*n[2]);if(len<1e-8)continue;
+                for(int k=0;k<3;k++)n[k]/=len;HashMap<Integer,Integer> dup=new HashMap<>();
+                for(int id:face.vertices){float[] p=vertices.get(id);int next=vertices.size();vertices.add(new float[]{p[0]+n[0]*distance,p[1]+n[1]*distance,p[2]+n[2]*distance});dup.put(id,next);}
+                int[] top=new int[face.vertices.length];for(int j=0;j<top.length;j++)top[j]=dup.get(face.vertices[j]);out.add(new Face(top));
+                for(int j=0;j<face.vertices.length;j++){int a=face.vertices[j],b=face.vertices[(j+1)%face.vertices.length];out.add(new Face(a,b,dup.get(b),dup.get(a)));}
+            }
+        }else{
+            float[][] normals=calculateNormals();BitSet selected=(BitSet)selectedVertices.clone();
+            if(selected.isEmpty())for(int fi=selectedFaces.nextSetBit(0);fi>=0;fi=selectedFaces.nextSetBit(fi+1))for(int id:faces.get(fi).vertices)selected.set(id);
+            HashMap<Integer,Integer> dup=new HashMap<>();
+            for(int id=selected.nextSetBit(0);id>=0;id=selected.nextSetBit(id+1)){float[] p=vertices.get(id),n=normals[id];int next=vertices.size();vertices.add(new float[]{p[0]+n[0]*distance,p[1]+n[1]*distance,p[2]+n[2]*distance});dup.put(id,next);}
+            HashSet<Integer> selectedIds=new HashSet<>();for(int fi=selectedFaces.nextSetBit(0);fi>=0;fi=selectedFaces.nextSetBit(fi+1))selectedIds.add(fi);
+            for(int fi:selectedIds){int[] f=faces.get(fi).vertices;int[] top=new int[f.length];for(int j=0;j<f.length;j++)top[j]=dup.get(f[j]);out.add(new Face(top));}
+            for(Edge edge:edges){int count=0;for(int fi:edge.faces)if(selectedIds.contains(fi))count++;if(count==1)out.add(new Face(edge.a,edge.b,dup.get(edge.b),dup.get(edge.a)));}
+        }
+        faces.clear();faces.addAll(out);clearSelection();rebuildEdges();revision++;
+    }
     public void dissolveSelectedEdges(){
         if(selectedEdges.isEmpty())return;
         HashSet<Long> targets=new HashSet<>();
