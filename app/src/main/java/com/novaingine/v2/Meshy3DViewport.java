@@ -95,6 +95,29 @@ public final class Meshy3DViewport extends View {
     public void spinSelectedFaces(float angle,int steps,float screwDistance){document.spinSelectedFaces(angle,steps,screwDistance);syncViewportFromCore();}
 
     public void slideSelected(float factor,boolean edgeMode){document.slideSelected(factor,edgeMode);syncViewportFromCore();}
+    public void decimatePlanar(float angle,int targetFaces){document.decimatePlanar(angle,targetFaces);syncViewportFromCore();}
+    public void startPolyBuild(){polyBuildPoints.clear();polyBuildMode=true;knifeMode=false;meshEditMode=true;invalidate();}
+    public void startKnifeCut(){knifeMode=true;polyBuildMode=false;meshEditMode=true;invalidate();}
+    private float[] worldPointFromScreen(float x,float y){
+        float cx=getWidth()*.5f,cy=getHeight()*.49f,unit=Math.max(1,Math.min(getWidth(),getHeight())*.235f*zoom);
+        return cameraVectorToWorld((x-cx)/unit,(cy-y)/unit,0);
+    }
+    private void addPolyBuildPoint(float x,float y){
+        if(polyBuildPoints.size()>=3){
+            int first=polyBuildPoints.get(0);float[] p=vertices[first],screen=project(p[0],p[1],p[2],getWidth()*.5f,getHeight()*.49f,Math.min(getWidth(),getHeight())*.235f*zoom);
+            float d=(screen[0]-x)*(screen[0]-x)+(screen[1]-y)*(screen[1]-y);
+            if(d<400f){int[] ids=new int[polyBuildPoints.size()];for(int i=0;i<ids.length;i++)ids[i]=polyBuildPoints.get(i);
+                document.addFaceFromVertices(ids);polyBuildPoints.clear();polyBuildMode=false;syncViewportFromCore();return;}
+        }
+        float[] p=worldPointFromScreen(x,y);polyBuildPoints.add(document.addVertex(p[0],p[1],p[2]));
+        vertices=document.copyVertices();faces=document.copyFaces();vertexMask=document.getSculptMask();invalidate();
+    }
+    private void finishKnifeCut(float x,float y){
+        float dx=x-knifeStartX,dy=y-knifeStartY;if(Math.hypot(dx,dy)<8f)return;
+        float[] normal=cameraVectorToWorld(dy,dx,0),point=worldPointFromScreen(knifeStartX,knifeStartY);
+        float offset=normal[0]*point[0]+normal[1]*point[1]+normal[2]*point[2];
+        document.bisect(normal[0],normal[1],normal[2],offset);syncViewportFromCore();
+    }
 
     public void deleteSelectedFaces(){document.deleteSelectedFaces();syncViewportFromCore();}
     public void deleteSelectedVertices(){document.deleteSelectedVertices();syncViewportFromCore();}
@@ -188,6 +211,9 @@ public final class Meshy3DViewport extends View {
     private float currentStrokePressure=1f;
     private boolean moved;
     private float downX, downY;
+    private boolean polyBuildMode,knifeMode;
+    private float knifeStartX,knifeStartY,knifeEndX,knifeEndY;
+    private final java.util.ArrayList<Integer> polyBuildPoints=new java.util.ArrayList<>();
 
     private static final int[] FACE_COLORS = {
         0xFF9DAAB7,0xFF66798C,0xFF7D8FA1,
@@ -320,6 +346,12 @@ public final class Meshy3DViewport extends View {
             }
         }
         paint.setStyle(Paint.Style.FILL);
+        if(polyBuildMode&&!polyBuildPoints.isEmpty()){
+            paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(2f*getResources().getDisplayMetrics().density);paint.setColor(0xFFFFC04A);
+            for(int i=1;i<polyBuildPoints.size();i++){float[] a=p[polyBuildPoints.get(i-1)],b=p[polyBuildPoints.get(i)];canvas.drawLine(a[0],a[1],b[0],b[1],paint);}
+            paint.setStyle(Paint.Style.FILL);
+        }
+        if(knifeMode){paint.setStyle(Paint.Style.STROKE);paint.setColor(0xFFFF5555);paint.setStrokeWidth(2f);canvas.drawLine(knifeStartX,knifeStartY,knifeEndX,knifeEndY,paint);paint.setStyle(Paint.Style.FILL);}
         if(sculpting&&sculptCursorVisible){
             float d=getResources().getDisplayMetrics().density;
             float radius=Math.max(4f,Math.min(width,height)*sculptRadius*.55f);
@@ -685,6 +717,7 @@ public final class Meshy3DViewport extends View {
             case MotionEvent.ACTION_DOWN:
                 downX=lastX=event.getX(); downY=lastY=event.getY();
                 moved=false; lastPinchDistance=0;
+                if(knifeMode){knifeStartX=knifeEndX=event.getX();knifeStartY=knifeEndY=event.getY();moved=false;return true;}
                 if(sculpting){
                     strokeActive=true;
                     strokeX=previousStrokeX=event.getX();
@@ -696,6 +729,7 @@ public final class Meshy3DViewport extends View {
             case MotionEvent.ACTION_POINTER_DOWN:
                 lastPinchDistance=pointerDistance(event); moved=true; return true;
             case MotionEvent.ACTION_MOVE:
+                if(knifeMode){knifeEndX=event.getX();knifeEndY=event.getY();moved=true;invalidate();return true;}
                 if(sculpting && strokeActive && event.getPointerCount()==1){
                     float sx=event.getX(), sy=event.getY();
                     applySculptSegment(sx,sy,sx-previousStrokeX,sy-previousStrokeY,event.getPressure());
@@ -727,6 +761,8 @@ public final class Meshy3DViewport extends View {
                 return true;
             case MotionEvent.ACTION_UP:
                 strokeActive=false;
+                if(knifeMode){finishKnifeCut(event.getX(),event.getY());knifeMode=false;invalidate();performClick();return true;}
+                if(polyBuildMode){if(!moved)addPolyBuildPoint(event.getX(),event.getY());performClick();return true;}
                 if(sculpting){syncCoreFromViewport();}
                 if(!moved && !sculpting){
                     float gx=getWidth()-190*d, gy=150*d, radius=35*d;
