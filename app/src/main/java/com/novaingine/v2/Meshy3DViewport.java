@@ -15,11 +15,12 @@ public final class Meshy3DViewport extends View {
     private final Runnable onViewportTap;
     private float yaw = -0.62f;
     private float pitch = 0.42f;
+    private float viewRoll;
     private float lastX, lastY, lastPinchDistance;
     private float zoom = 1.0f;
     private float viewTargetX,viewTargetY,viewTargetZ;
     private boolean cameraViewActive;
-    private float savedViewYaw,savedViewPitch,savedViewZoom,savedTargetX,savedTargetY,savedTargetZ;
+    private float savedViewYaw,savedViewPitch,savedViewRoll,savedViewZoom,savedTargetX,savedTargetY,savedTargetZ;
     // Each cube side is subdivided into a 24 x 24 quad grid.
     // Six independent side grids give 3,750 editable vertices and 3,456 quads.
     // Matching border vertices receive the same screen-space brush dabs.
@@ -921,7 +922,10 @@ public final class Meshy3DViewport extends View {
         double rz=x*sy+z*cy;
         double ry=y*cp-rz*sp;
         double rz2=y*sp+rz*cp;
-        return new float[]{(float)rx,(float)ry,(float)rz2};
+        double cr=Math.cos(viewRoll),sr=Math.sin(viewRoll);
+        double rolledX=rx*cr+ry*sr;
+        double rolledY=-rx*sr+ry*cr;
+        return new float[]{(float)rolledX,(float)rolledY,(float)rz2};
     }
 
     private float[] project(float x, float y, float z, float cx, float cy, float unit) {
@@ -937,7 +941,7 @@ public final class Meshy3DViewport extends View {
     public boolean isCameraViewActive(){return cameraViewActive;}
     public void toggleActiveCameraView() {
         if(cameraViewActive) {
-            yaw=savedViewYaw;pitch=savedViewPitch;zoom=savedViewZoom;
+            yaw=savedViewYaw;pitch=savedViewPitch;viewRoll=savedViewRoll;zoom=savedViewZoom;
             viewTargetX=savedTargetX;viewTargetY=savedTargetY;viewTargetZ=savedTargetZ;
             cameraViewActive=false;invalidate();return;
         }
@@ -945,14 +949,25 @@ public final class Meshy3DViewport extends View {
         if(camera==null)throw new IllegalStateException("Create or set an active Camera object first");
         float[] position=objectScene.transformPoint(camera.id,0,0,0);
         float[] forwardPoint=objectScene.transformPoint(camera.id,0,0,-1);
+        float[] upPoint=objectScene.transformPoint(camera.id,0,1,0);
         float fx=forwardPoint[0]-position[0],fy=forwardPoint[1]-position[1],fz=forwardPoint[2]-position[2];
+        float ux=upPoint[0]-position[0],uy=upPoint[1]-position[1],uz=upPoint[2]-position[2];
         float length=(float)Math.sqrt(fx*fx+fy*fy+fz*fz);
         if(length<1e-6f)throw new IllegalStateException("Camera orientation is invalid");
         fx/=length;fy/=length;fz/=length;
-        savedViewYaw=yaw;savedViewPitch=pitch;savedViewZoom=zoom;
+        savedViewYaw=yaw;savedViewPitch=pitch;savedViewRoll=viewRoll;savedViewZoom=zoom;
         savedTargetX=viewTargetX;savedTargetY=viewTargetY;savedTargetZ=viewTargetZ;
         pitch=(float)Math.asin(Math.max(-1f,Math.min(1f,-fy)));
         yaw=(float)Math.atan2(-fx,-fz);
+        viewRoll=0f;
+        float upDot=ux*fx+uy*fy+uz*fz;
+        ux-=upDot*fx;uy-=upDot*fy;uz-=upDot*fz;
+        float upLength=(float)Math.sqrt(ux*ux+uy*uy+uz*uz);
+        if(upLength>1e-6f){
+            ux/=upLength;uy/=upLength;uz/=upLength;
+            float[] cameraUp=cameraDirectionPoint(ux,uy,uz);
+            viewRoll=(float)Math.atan2(-cameraUp[0],cameraUp[1]);
+        }
         viewTargetX=position[0]+fx*5.2f;
         viewTargetY=position[1]+fy*5.2f;
         viewTargetZ=position[2]+fz*5.2f;
@@ -1837,7 +1852,7 @@ public final class Meshy3DViewport extends View {
             }
             state.put("vertices", vertexArray);
             state.put("mask", maskArray);
-            state.put("yaw", yaw); state.put("pitch", pitch); state.put("zoom", zoom);
+            state.put("yaw", yaw); state.put("pitch", pitch); state.put("roll",viewRoll);state.put("zoom", zoom);
             state.put("viewTargetX",viewTargetX);state.put("viewTargetY",viewTargetY);state.put("viewTargetZ",viewTargetZ);
             state.put("meshTint", meshTint); state.put("metallic", metallic); state.put("roughness", roughness);
             state.put("meshVisible", meshVisible); state.put("showFloorGrid", showFloorGrid);
@@ -1904,6 +1919,7 @@ public final class Meshy3DViewport extends View {
             }
             yaw = (float) state.optDouble("yaw", yaw);
             pitch = Math.max(-1.35f, Math.min(1.35f, (float) state.optDouble("pitch", pitch)));
+            viewRoll=(float)state.optDouble("roll",viewRoll);
             zoom = Math.max(0.35f, Math.min(3.4f, (float) state.optDouble("zoom", zoom)));
             viewTargetX=(float)state.optDouble("viewTargetX",viewTargetX);
             viewTargetY=(float)state.optDouble("viewTargetY",viewTargetY);
