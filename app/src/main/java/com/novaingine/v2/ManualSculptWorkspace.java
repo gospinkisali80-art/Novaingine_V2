@@ -1373,7 +1373,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
     }
 
     private void showCollectionActions(Meshy3DObjectScene.Collection3D collection) {
-        String[] actions={"Select Objects","Toggle Viewport Visibility","Toggle Render Visibility","Rename","Delete"};
+        String[] actions={"Select Objects","Create Child Collection","Move Under Collection",
+                "Toggle Viewport Visibility","Toggle Render Visibility","Rename","Delete"};
         new android.app.AlertDialog.Builder(activity).setTitle(collection.name)
                 .setItems(actions,(d,which)->{
                     Meshy3DObjectScene scene=meshyViewport.getObjectScene();
@@ -1382,14 +1383,23 @@ public final class ManualSculptWorkspace extends FrameLayout {
                             meshyViewport.selectCollectionObjects(collection.id,false);refreshModelingOutliner();
                             status.setText("Modeling | Objects in "+collection.name+" selected");
                         }else if(which==1){
+                            EditText input=new EditText(activity);input.setSingleLine(true);input.setHint("Child collection name");
+                            new android.app.AlertDialog.Builder(activity).setTitle("Create Child Collection").setView(input)
+                                    .setPositiveButton("Create",(dialog,button)->{
+                                        String name=input.getText().toString().trim();
+                                        scene.createCollection(name.isEmpty()?"Collection":name,collection.id);
+                                        refreshModelingOutliner();status.setText("Modeling | Child collection created");
+                                    }).setNegativeButton("Cancel",null).show();
+                        }else if(which==2)showMoveCollectionParentDialog(collection);
+                        else if(which==3){
                             boolean visible=!collection.visible;
                             meshyViewport.setCollectionViewportVisibility(collection.id,visible);refreshModelingOutliner();
                             status.setText("Modeling | "+collection.name+" viewport visibility: "+visible);
-                        }else if(which==2){
+                        }else if(which==4){
                             boolean visible=!collection.renderVisible;
                             meshyViewport.setCollectionRenderVisibility(collection.id,visible);
                             status.setText("Modeling | "+collection.name+" render visibility: "+visible);
-                        }else if(which==3){
+                        }else if(which==5){
                             EditText input=new EditText(activity);input.setSingleLine(true);input.setText(collection.name);
                             new android.app.AlertDialog.Builder(activity).setTitle("Rename Collection").setView(input)
                                     .setPositiveButton("Save",(dialog,button)->{
@@ -1399,13 +1409,28 @@ public final class ManualSculptWorkspace extends FrameLayout {
                                     }).setNegativeButton("Cancel",null).show();
                         }else{
                             new android.app.AlertDialog.Builder(activity).setTitle("Delete Collection")
-                                    .setMessage("Remove "+collection.name+"? Objects will be moved to another collection when needed.")
+                                    .setMessage("Remove "+collection.name+"? Child collections will move to its parent.")
                                     .setPositiveButton("Delete",(dialog,button)->{
                                         try{meshyViewport.deleteSceneCollection(collection.id);refreshModelingOutliner();
                                             status.setText("Modeling | Collection deleted");}
                                         catch(Exception error){showObjectOperationError(error);}
                                     }).setNegativeButton("Cancel",null).show();
                         }
+                    }catch(Exception error){showObjectOperationError(error);}
+                }).setNegativeButton("Cancel",null).show();
+    }
+
+    private void showMoveCollectionParentDialog(Meshy3DObjectScene.Collection3D collection) {
+        java.util.ArrayList<Meshy3DObjectScene.Collection3D> choices=
+                new java.util.ArrayList<>(meshyViewport.getObjectScene().getCollections());
+        choices.removeIf(item->item.id.equals(collection.id));
+        String[] names=new String[choices.size()+1];names[0]="Scene Root (No Parent)";
+        for(int i=0;i<choices.size();i++)names[i]=choices.get(i).name;
+        new android.app.AlertDialog.Builder(activity).setTitle("Move Collection Under")
+                .setItems(names,(d,which)->{
+                    try{
+                        meshyViewport.getObjectScene().setCollectionParent(collection.id,which==0?null:choices.get(which-1).id);
+                        refreshModelingOutliner();status.setText("Modeling | Collection hierarchy updated");
                     }catch(Exception error){showObjectOperationError(error);}
                 }).setNegativeButton("Cancel",null).show();
     }
@@ -1522,7 +1547,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
         if ("Modeling Tools".equals(heading) && meshyViewport != null) {
             content.addView(dockHeading("COLLECTIONS"));
             for(Meshy3DObjectScene.Collection3D collection:meshyViewport.getObjectScene().getCollections()) {
-                TextView collectionRow=dockItem((collection.visible?"▾ ":"▸ ")+collection.name,false);
+                int depth=meshyViewport.getObjectScene().getCollectionDepth(collection.id);
+                StringBuilder indent=new StringBuilder();for(int level=0;level<Math.min(8,depth);level++)indent.append("  ");
+                TextView collectionRow=dockItem(indent+(collection.visible?"▾ ":"▸ ")+collection.name,false);
                 collectionRow.setOnClickListener(v->{meshyViewport.selectCollectionObjects(collection.id,false);
                     refreshModelingOutliner();status.setText("Modeling | Collection: "+collection.name);});
                 collectionRow.setOnLongClickListener(v->{showCollectionActions(collection);return true;});
