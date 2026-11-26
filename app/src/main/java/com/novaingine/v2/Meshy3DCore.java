@@ -752,7 +752,7 @@ public final class Meshy3DCore {
             for(int i=0;i<vs.length();i++){JSONArray p=vs.getJSONArray(i);if(p.length()!=3)return false;float[] v={(float)p.getDouble(0),(float)p.getDouble(1),(float)p.getDouble(2)};for(float q:v)if(Float.isNaN(q)||Float.isInfinite(q)||Math.abs(q)>100000)return false;nv.add(v);}
             ArrayList<Face> nf=new ArrayList<>();
             for(int i=0;i<fs.length();i++){JSONArray f=fs.getJSONArray(i);if(f.length()<3)return false;int[] ids=new int[f.length()];for(int j=0;j<ids.length;j++){ids[j]=f.getInt(j);if(ids[j]<0||ids[j]>=nv.size())return false;}nf.add(new Face(ids));}
-            vertices.clear();vertices.addAll(nv);faces.clear();faces.addAll(nf);seams.clear();
+            vertices.clear();vertices.addAll(nv);faces.clear();faces.addAll(nf);texturePixels=null;textureWidth=textureHeight=0;seams.clear();
             JSONArray sm=o.optJSONArray("seams");if(sm!=null)for(int i=0;i<sm.length();i++)seams.add(Long.parseLong(sm.getString(i)));
             pins.clear();JSONArray pn=o.optJSONArray("pins");if(pn!=null)for(int i=0;i<pn.length();i++)pins.add(Long.parseLong(pn.getString(i)));
             textureColor=o.optInt("textureColor",textureColor);brushRadius=(float)o.optDouble("brushRadius",brushRadius);brushOpacity=(float)o.optDouble("brushOpacity",brushOpacity);
