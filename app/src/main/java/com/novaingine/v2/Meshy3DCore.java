@@ -647,11 +647,66 @@ public final class Meshy3DCore {
     }
     public float[][] copyVertices(){float[][] out=new float[vertices.size()][3];for(int i=0;i<out.length;i++)System.arraycopy(vertices.get(i),0,out[i],0,3);return out;}
     public int[][] copyFaces(){int[][] out=new int[faces.size()][];for(int i=0;i<out.length;i++)out[i]=faces.get(i).vertices.clone();return out;}
-    public void replaceGeometry(float[][] v,int[][] f){
+    public void setFaceUvs(float[][][] uvs){
+        if(uvs==null){faceUvs=null;islands.clear();selectedUvIsland=-1;revision++;return;}
+        if(uvs.length!=faces.size())throw new IllegalArgumentException("UV face count must match mesh face count");
+        float[][][] copy=new float[uvs.length][][];
+        for(int fi=0;fi<uvs.length;fi++){
+            if(uvs[fi]==null||uvs[fi].length!=faces.get(fi).vertices.length)
+                throw new IllegalArgumentException("UV corner count must match face "+fi);
+            copy[fi]=new float[uvs[fi].length][2];
+            for(int corner=0;corner<uvs[fi].length;corner++){
+                if(uvs[fi][corner]==null||uvs[fi][corner].length<2
+                        ||!Float.isFinite(uvs[fi][corner][0])||!Float.isFinite(uvs[fi][corner][1]))
+                    throw new IllegalArgumentException("UV coordinates must be finite");
+                copy[fi][corner][0]=uvs[fi][corner][0];copy[fi][corner][1]=uvs[fi][corner][1];
+            }
+        }
+        faceUvs=copy;rebuildIslands();selectedUvIsland=-1;revision++;
+    }
+    public void replaceGeometry(float[][] v,int[][] f){replaceGeometry(v,f,null,false);}
+    public void replaceGeometry(float[][] v,int[][] f,float[][][] uvs){replaceGeometry(v,f,uvs,true);}
+    private void replaceGeometry(float[][] v,int[][] f,float[][][] uvs,boolean replaceUvs){
+        if(v==null||f==null)throw new IllegalArgumentException("Mesh vertices and faces are required");
         boolean sameTopology=v.length==vertices.size()&&f.length==faces.size();
-        vertices.clear();for(float[] p:v)vertices.add(p.clone());faces.clear();
-        for(int[] ids:f)faces.add(new Face(ids.clone()));
-        if(!sameTopology)clearSelection();rebuildEdges();revision++;
+        if(sameTopology)for(int fi=0;fi<f.length;fi++)
+            if(!java.util.Arrays.equals(f[fi],faces.get(fi).vertices)){sameTopology=false;break;}
+        vertices.clear();for(float[] p:v){
+            if(p==null||p.length<3||!Float.isFinite(p[0])||!Float.isFinite(p[1])||!Float.isFinite(p[2]))
+                throw new IllegalArgumentException("Mesh vertices must contain finite XYZ coordinates");
+            vertices.add(new float[]{p[0],p[1],p[2]});
+        }
+        faces.clear();for(int[] ids:f){
+            if(ids==null||ids.length<3)throw new IllegalArgumentException("Mesh faces need at least three vertices");
+            int[] copy=ids.clone();for(int id:copy)if(id<0||id>=vertices.size())throw new IllegalArgumentException("Mesh face index is out of range");
+            faces.add(new Face(copy));
+        }
+        if(!sameTopology)clearSelection();
+        if(replaceUvs){
+            if(uvs==null){faceUvs=null;islands.clear();}
+            else{
+                if(uvs.length!=faces.size())throw new IllegalArgumentException("UV face count must match mesh face count");
+                float[][][] copy=new float[uvs.length][][];
+                for(int fi=0;fi<uvs.length;fi++){
+                    if(uvs[fi]==null||uvs[fi].length!=faces.get(fi).vertices.length)
+                        throw new IllegalArgumentException("UV corner count must match face "+fi);
+                    copy[fi]=new float[uvs[fi].length][2];
+                    for(int ci=0;ci<uvs[fi].length;ci++){
+                        if(uvs[fi][ci]==null||uvs[fi][ci].length<2
+                                ||!Float.isFinite(uvs[fi][ci][0])||!Float.isFinite(uvs[fi][ci][1]))
+                            throw new IllegalArgumentException("UV coordinates must be finite");
+                        copy[fi][ci][0]=uvs[fi][ci][0];copy[fi][ci][1]=uvs[fi][ci][1];
+                    }
+                }
+                faceUvs=copy;
+            }
+        }else if(!sameTopology){faceUvs=null;islands.clear();}
+        rebuildEdges();if(faceUvs!=null)rebuildIslands();revision++;
+    }
+    public Meshy3DCore copy(){
+        Meshy3DCore duplicate=new Meshy3DCore();
+        if(!duplicate.importState(exportState()))throw new IllegalStateException("Could not copy mesh datablock");
+        return duplicate;
     }
     public void selectNearestVertex(float x,float y,float cx,float cy,float unit,float yaw,float pitch,boolean additive){
         int best=-1;float bestD=Float.MAX_VALUE;
@@ -977,6 +1032,10 @@ public final class Meshy3DCore {
             o.put("textureColor",textureColor);o.put("brushRadius",brushRadius);o.put("brushOpacity",brushOpacity);
             JSONArray masks=new JSONArray();for(float value:sculptMask)masks.put(value);o.put("sculptMask",masks);
             o.put("baseColor",baseColor);o.put("metallic",metallic);o.put("roughness",roughness);
+            if(texturePixels!=null&&textureWidth>0&&textureHeight>0&&texturePixels.length==textureWidth*textureHeight){
+                o.put("textureWidth",textureWidth);o.put("textureHeight",textureHeight);
+                o.put("texturePixelsDeflate",exportCompressedTexture());
+            }
             if(faceUvs!=null){JSONArray uvFaces=new JSONArray();for(float[][] face:faceUvs){JSONArray corners=new JSONArray();for(float[] uv:face){JSONArray pair=new JSONArray();pair.put(uv[0]);pair.put(uv[1]);corners.put(pair);}uvFaces.put(corners);}o.put("faceUvs",uvFaces);}
             o.put("geometryNodes",writeNodes(geometryNodes));o.put("shaderNodes",writeNodes(shaderNodes));o.put("compositorNodes",writeNodes(compositorNodes));
             o.put("geometryLinks",writeLinks(geometryLinks));o.put("shaderLinks",writeLinks(shaderLinks));o.put("compositorLinks",writeLinks(compositorLinks));
@@ -987,6 +1046,32 @@ public final class Meshy3DCore {
             }o.put("animation",channels);
         }catch(JSONException e){throw new IllegalStateException(e);}return o;
     }
+    private String exportCompressedTexture() {
+        try{
+            java.io.ByteArrayOutputStream bytes=new java.io.ByteArrayOutputStream();
+            java.util.zip.Deflater deflater=new java.util.zip.Deflater(java.util.zip.Deflater.BEST_SPEED);
+            try(java.util.zip.DeflaterOutputStream compressed=new java.util.zip.DeflaterOutputStream(bytes,deflater);
+                java.io.DataOutputStream data=new java.io.DataOutputStream(compressed)){
+                for(int pixel:texturePixels)data.writeInt(pixel);
+            }finally{deflater.end();}
+            return java.util.Base64.getEncoder().encodeToString(bytes.toByteArray());
+        }catch(Exception error){throw new IllegalStateException("Could not serialize mesh texture",error);}
+    }
+
+    private static int[] importCompressedTexture(String encoded,int count) {
+        if(encoded==null||encoded.length()>96*1024*1024)return null;
+        try{
+            byte[] compressed=java.util.Base64.getDecoder().decode(encoded);
+            int[] pixels=new int[count];
+            try(java.io.DataInputStream data=new java.io.DataInputStream(
+                    new java.util.zip.InflaterInputStream(new java.io.ByteArrayInputStream(compressed)))){
+                for(int i=0;i<count;i++)pixels[i]=data.readInt();
+                if(data.read()!=-1)return null;
+            }
+            return pixels;
+        }catch(Exception error){return null;}
+    }
+
     private JSONArray writeNodes(ArrayList<Node> list)throws JSONException{
         JSONArray array=new JSONArray();for(Node n:list){JSONObject o=new JSONObject();o.put("type",n.type);o.put("x",n.x);o.put("y",n.y);o.put("z",n.z);o.put("value",n.value);array.put(o);}return array;
     }
@@ -1007,6 +1092,15 @@ public final class Meshy3DCore {
             ArrayList<Face> nf=new ArrayList<>();
             for(int i=0;i<fs.length();i++){JSONArray f=fs.getJSONArray(i);if(f.length()<3)return false;int[] ids=new int[f.length()];for(int j=0;j<ids.length;j++){ids[j]=f.getInt(j);if(ids[j]<0||ids[j]>=nv.size())return false;}nf.add(new Face(ids));}
             vertices.clear();vertices.addAll(nv);faces.clear();faces.addAll(nf);texturePixels=null;textureWidth=textureHeight=0;seams.clear();
+            String textureData=o.optString("texturePixelsDeflate","");
+            if(!textureData.isEmpty()){
+                int width=o.optInt("textureWidth",0),height=o.optInt("textureHeight",0);
+                if(width<1||height<1||width>4096||height>4096
+                        ||(long)width*height>16777216L)return false;
+                int[] pixels=importCompressedTexture(textureData,width*height);
+                if(pixels==null)return false;
+                textureWidth=width;textureHeight=height;texturePixels=pixels;
+            }
             JSONArray sm=o.optJSONArray("seams");if(sm!=null)for(int i=0;i<sm.length();i++)seams.add(Long.parseLong(sm.getString(i)));
             pins.clear();JSONArray pn=o.optJSONArray("pins");if(pn!=null)for(int i=0;i<pn.length();i++)pins.add(Long.parseLong(pn.getString(i)));
             textureColor=o.optInt("textureColor",textureColor);brushRadius=(float)o.optDouble("brushRadius",brushRadius);brushOpacity=(float)o.optDouble("brushOpacity",brushOpacity);
