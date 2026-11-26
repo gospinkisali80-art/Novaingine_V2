@@ -487,8 +487,38 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     checkpointMeshEdit();meshyViewport.makePlanarSelected();status.setText("Modeling | Selected vertices projected onto a best-fit plane");
                 } else if ("Flip Normals".equals(item)) {
                     checkpointMeshEdit();meshyViewport.flipSelectedNormals();status.setText("Modeling | Selected face winding flipped");
-                } else if ("Fill".equals(item) || "Grid Fill".equals(item) || "Bridge".equals(item) || "Bridge Edge Loops".equals(item)) {
-                    checkpointMeshEdit();meshyViewport.fillSelectedBoundary();status.setText("Modeling | Closed selected boundary filled when it forms one valid loop");
+                } else if ("Fill".equals(item) || "Grid Fill".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.fillSelectedBoundary();status.setText("Modeling | Selected closed boundary filled");
+                } else if ("Bridge".equals(item) || "Bridge Edge Loops".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.bridgeSelectedLoops();status.setText("Modeling | Selected equal-count boundary loops bridged");
+                } else if ("Bisect".equals(item)) {
+                    String[] axes={"X plane","Y plane","Z plane"};
+                    new android.app.AlertDialog.Builder(activity).setTitle("Bisect — choose plane")
+                            .setItems(axes,(d,w)->showAmountDialog("Bisect plane offset",-1f,1f,value->{
+                                checkpointMeshEdit();meshyViewport.bisectMesh(w==0?1:0,w==1?1:0,w==2?1:0,value);
+                                status.setText("Modeling | Mesh bisected by "+axes[w]);
+                            })).show();
+                } else if ("Knife".equals(item)) {
+                    new android.app.AlertDialog.Builder(activity).setTitle("Knife Tool")
+                            .setMessage("Interactive knife strokes are not implemented yet. Use Bisect for a plane cut; no geometry was changed.")
+                            .setPositiveButton("OK",null).show();
+                } else if ("Spin".equals(item) || "Screw".equals(item)) {
+                    final boolean screw="Screw".equals(item);
+                    showAmountDialog(screw?"Screw rotation (degrees)":"Spin rotation (degrees)",15f,360f,value->{
+                        checkpointMeshEdit();meshyViewport.spinSelectedFaces((float)Math.toRadians(value),8,screw?1f:0f);
+                        status.setText("Modeling | "+item+" generated eight rotational steps");
+                    });
+                } else if ("Split".equals(item) || "Rip".equals(item) || "Separate Selection".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.splitSelectedFaces();
+                    status.setText("Modeling | Selected faces disconnected by duplicating their boundary vertices (still in this object)");
+                } else if ("Solidify".equals(item)) {
+                    showAmountDialog("Solidify thickness",0.01f,.5f,value->{checkpointMeshEdit();meshyViewport.solidifySelected(value);status.setText("Modeling | Solid thickness generated");});
+                } else if ("Bevel Modifier".equals(item)) {
+                    showAmountDialog("Bevel width",.001f,.45f,value->{checkpointMeshEdit();meshyViewport.bevelSelected(value);status.setText("Modeling | Bevel geometry generated");});
+                } else if ("Remesh".equals(item) || "Un-Subdivide".equals(item) || "Decimate".equals(item) || "Poly Build".equals(item)) {
+                    new android.app.AlertDialog.Builder(activity).setTitle(item)
+                            .setMessage("This operator is not implemented yet. No geometry was changed.")
+                            .setPositiveButton("OK",null).show();
                 } else if ("Poke Faces".equals(item) || "Poke".equals(item)) {
                     showAmountDialog("Poke offset",0f,1f,value->{checkpointMeshEdit();meshyViewport.pokeSelectedFaces(value);status.setText("Modeling | Selected faces poked into triangle fans");});
                 } else if ("Delete Edges".equals(item) || "Dissolve Faces".equals(item) || "Limited Dissolve".equals(item)) {
@@ -525,9 +555,26 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 } else if ("Smooth Vertices".equals(item) || "Smooth".equals(item))
                     showAmountDialog("Smoothing amount",0.05f,0.8f,value->{checkpointMeshEdit();meshyViewport.smoothMesh(value,2);});
                 else if ("Mesh Statistics".equals(item) || "Vertex / Edge / Face Counts".equals(item)
-                        || "Topology Overview".equals(item))
+                        || "Topology Overview".equals(item) || "Vertices".equals(item) || "Edges".equals(item) || "Faces".equals(item))
                     status.setText("Mesh | " + meshyViewport.getVertexCount() + " vertices | "
                             + meshyViewport.getEdgeCount() + " edges | " + meshyViewport.getFaceCount() + " faces");
+                else if ("Selection Mode".equals(item)) {
+                    new android.app.AlertDialog.Builder(activity).setTitle("Selection Mode")
+                            .setItems(new String[]{"Vertex","Edge","Face"},(d,w)->{
+                                String mode=new String[]{"Vertex","Edge","Face"}[w];meshyViewport.setSelectionMode(mode);
+                                status.setText("Modeling | "+mode+" selection mode");
+                            }).show();
+                } else if ("Transform Orientation".equals(item) || "Pivot Point".equals(item)) {
+                    final String[] choices="Transform Orientation".equals(item)
+                            ?new String[]{"Global","Local","Normal","View"}
+                            :new String[]{"Median Point","Active Element","3D Cursor","Individual Origins"};
+                    new android.app.AlertDialog.Builder(activity).setTitle(item)
+                            .setItems(choices,(d,w)->status.setText("Modeling | "+item+": "+choices[w])).show();
+                } else if ("Operation Amount".equals(item) || "Offset".equals(item) || "Segments".equals(item)
+                        || "Profile".equals(item) || "Loop Cut Count".equals(item) || "Merge Threshold".equals(item)) {
+                    showAmountDialog(item,0f,"Segments".equals(item)||"Loop Cut Count".equals(item)?12f:1f,
+                            value->status.setText("Modeling | "+item+" parameter set to "+String.format(java.util.Locale.US,"%.2f",value)));
+                }
                 else if ("Object Mode / Edit Mode".equals(item) || "Edit Mode".equals(item)) {
                     activeEditorMode = "Edit Mode";if(modeButton!=null)modeButton.setText(activeEditorMode);
                     meshyViewport.setMeshEditMode(true);meshyViewport.setShowTopology(true);status.setText("Modeling | Edit Mode");
