@@ -1001,7 +1001,7 @@ public final class Meshy3DCore {
     }
     public boolean importState(JSONObject o){
         try{
-            JSONArray vs=o.getJSONArray("vertices"),fs=o.getJSONArray("faces");if(vs.length()<4||fs.length()<4)return false;
+            JSONArray vs=o.getJSONArray("vertices"),fs=o.getJSONArray("faces");if(vs.length()<3||fs.length()<1)return false;
             ArrayList<float[]> nv=new ArrayList<>();
             for(int i=0;i<vs.length();i++){JSONArray p=vs.getJSONArray(i);if(p.length()!=3)return false;float[] v={(float)p.getDouble(0),(float)p.getDouble(1),(float)p.getDouble(2)};for(float q:v)if(Float.isNaN(q)||Float.isInfinite(q)||Math.abs(q)>100000)return false;nv.add(v);}
             ArrayList<Face> nf=new ArrayList<>();
