@@ -2593,6 +2593,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private void renderWorkspaceLayout(int index) {
         if (workspaceLayoutLayer == null) return;
         workspaceLayoutLayer.removeAllViews();
+        workspaceLeftDock = null;
+        workspaceRightDock = null;
+        workspaceBottomDock = null;
         viewportFocusMode = false;
         if (meshyViewport != null) {
             boolean sculptWorkspace = index == 2;
@@ -2798,6 +2801,110 @@ public final class ManualSculptWorkspace extends FrameLayout {
         }
         if (index == 0 && workspaceBottomDock != null) workspaceBottomDock.setVisibility(View.GONE);
         status.setText("Meshy3D  |  " + WORKSPACE_NAMES[index] + " Workspace");
+    }
+
+    private void toggleWorkspacePanels() {
+        workspacePanelsOpen = !workspacePanelsOpen;
+        int visibility = workspacePanelsOpen ? View.VISIBLE : View.GONE;
+        if (workspaceLeftDock != null) workspaceLeftDock.setVisibility(visibility);
+        if (workspaceRightDock != null) workspaceRightDock.setVisibility(visibility);
+        if (workspaceBottomDock != null) workspaceBottomDock.setVisibility(visibility);
+        if (activeWorkspaceIndex == 2 && !sculptEnabled) {
+            if (workspaceLeftDock != null) workspaceLeftDock.setVisibility(View.GONE);
+            if (workspaceRightDock != null) workspaceRightDock.setVisibility(View.GONE);
+        }
+        if (viewportChrome != null) viewportChrome.setNavigationVisible(!workspacePanelsOpen);
+        if (status != null) status.setText("Meshy3D | " +
+                (workspacePanelsOpen ? "Workspace panels shown" : "Expanded viewport"));
+    }
+
+    private void showViewportViewMenu() {
+        String[] options={"Orbit Mode","Pan Mode","Zoom In","Zoom Out","Frame Selected",
+                "Frame All","Reset View","Front View","Back View","Right View","Left View",
+                "Top View","Bottom View","Camera View"};
+        new android.app.AlertDialog.Builder(activity).setTitle("Viewport View")
+                .setItems(options,(dialog,which)->{
+                    switch(which) {
+                        case 0: meshyViewport.setViewportNavigationMode(0); break;
+                        case 1: meshyViewport.setViewportNavigationMode(1); break;
+                        case 2: meshyViewport.zoomBy(1.22f); break;
+                        case 3: meshyViewport.zoomBy(.82f); break;
+                        case 4: meshyViewport.frameSelectedObjects(); break;
+                        case 5: meshyViewport.frameAllObjects(); break;
+                        case 6: meshyViewport.resetView(); break;
+                        case 7: meshyViewport.setViewPreset(0); break;
+                        case 8: meshyViewport.setViewPreset(1); break;
+                        case 9: meshyViewport.setViewPreset(2); break;
+                        case 10: meshyViewport.setViewPreset(3); break;
+                        case 11: meshyViewport.setViewPreset(4); break;
+                        case 12: meshyViewport.setViewPreset(5); break;
+                        case 13:
+                            try { meshyViewport.toggleActiveCameraView(); }
+                            catch(Exception error){showObjectOperationError(error);}
+                            break;
+                    }
+                    status.setText("Meshy3D | "+options[which]);
+                }).setNegativeButton("Close",null).show();
+    }
+
+    private void showViewportSelectMenu() {
+        String[] options={"Select All Objects","Deselect All Objects","Invert Selection",
+                "Box Select","Vertex Selection","Edge Selection","Face Selection"};
+        new android.app.AlertDialog.Builder(activity).setTitle("Select")
+                .setItems(options,(dialog,which)->{
+                    switch(which) {
+                        case 0: meshyViewport.selectAllSceneObjects();refreshModelingOutliner();break;
+                        case 1: meshyViewport.deselectAllSceneObjects();refreshModelingOutliner();break;
+                        case 2: meshyViewport.invertSceneSelection();refreshModelingOutliner();break;
+                        case 3:
+                            meshyViewport.setMeshEditMode(false);
+                            meshyViewport.setObjectSelectionEnabled(true);
+                            meshyViewport.setObjectBoxSelectEnabled(true);
+                            break;
+                        case 4: case 5: case 6:
+                            meshyViewport.setMeshEditMode(true);
+                            meshyViewport.setObjectSelectionEnabled(false);
+                            meshyViewport.setSelectionMode(which==4?"Vertex":which==5?"Edge":"Face");
+                            activeEditorMode="Edit Mode";
+                            if(modeButton!=null)modeButton.setText(activeEditorMode);
+                            break;
+                    }
+                    status.setText("Meshy3D | "+options[which]);
+                }).setNegativeButton("Close",null).show();
+    }
+
+    private void showViewportObjectMenu() {
+        Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
+        if(active==null) {
+            Toast.makeText(activity,"Select an object first.",Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String[] options={"Rename Object","Duplicate","Delete Object","Object Properties",
+                "Modifiers","Constraints","Apply Location","Apply Rotation & Scale",
+                "Set Origin to Geometry","Set Origin to 3D Cursor","Camera Settings","Light Settings"};
+        new android.app.AlertDialog.Builder(activity).setTitle("Object | "+active.name)
+                .setItems(options,(dialog,which)->{
+                    switch(which) {
+                        case 0: showObjectRenameDialog();break;
+                        case 1:
+                            checkpointMeshEdit();meshyViewport.duplicateActiveObject(false);
+                            refreshModelingOutliner();break;
+                        case 2:
+                            checkpointMeshEdit();meshyViewport.deleteActiveObject();
+                            refreshModelingOutliner();break;
+                        case 3: showObjectPropertiesDialog();break;
+                        case 4: showObjectModifiersDialog();break;
+                        case 5: showObjectConstraintsDialog();break;
+                        case 6: checkpointMeshEdit();meshyViewport.applyActiveObjectLocation();break;
+                        case 7: checkpointMeshEdit();meshyViewport.applyActiveObjectRotationAndScale();break;
+                        case 8: checkpointMeshEdit();meshyViewport.setActiveObjectOriginToGeometry();break;
+                        case 9: checkpointMeshEdit();meshyViewport.setActiveObjectOriginToCursor();break;
+                        case 10: showCameraSettingsDialog();break;
+                        case 11: showLightSettingsDialog();break;
+                    }
+                    meshyViewport.invalidate();
+                    status.setText("Meshy3D | "+options[which]);
+                }).setNegativeButton("Close",null).show();
     }
 
     private void toggleViewportFocus() {
