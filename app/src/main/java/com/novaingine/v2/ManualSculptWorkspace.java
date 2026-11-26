@@ -755,13 +755,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
                                 String mode=new String[]{"Vertex","Edge","Face"}[w];meshyViewport.setSelectionMode(mode);
                                 status.setText("Modeling | "+mode+" selection mode");
                             }).show();
-                } else if ("Transform Orientation".equals(item) || "Pivot Point".equals(item)) {
-                    final String[] choices="Transform Orientation".equals(item)
-                            ?new String[]{"Global","Local","Normal","View"}
-                            :new String[]{"Median Point","Active Element","3D Cursor","Individual Origins"};
-                    new android.app.AlertDialog.Builder(activity).setTitle(item)
-                            .setItems(choices,(d,w)->status.setText("Modeling | "+item+": "+choices[w])).show();
-                } else if ("Operation Amount".equals(item) || "Offset".equals(item) || "Segments".equals(item)
+                } else if ("Transform Orientation".equals(item)) showTransformOrientationDialog();
+                else if ("Pivot Point".equals(item)) showPivotPointDialog();
+                else if ("Operation Amount".equals(item) || "Offset".equals(item) || "Segments".equals(item)
                         || "Profile".equals(item) || "Loop Cut Count".equals(item) || "Merge Threshold".equals(item)) {
                     showAmountDialog(item,0f,"Segments".equals(item)||"Loop Cut Count".equals(item)?12f:1f,
                             value->status.setText("Modeling | "+item+" parameter set to "+String.format(java.util.Locale.US,"%.2f",value)));
@@ -1242,6 +1238,24 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         checkpointMeshEdit();meshyViewport.alignSelectedObjectsToActive(w);
                         refreshModelingOutliner();status.setText("Modeling | Selected objects aligned on "+axes[w]);
                     }catch(Exception error){showObjectOperationError(error);}
+                }).setNegativeButton("Cancel",null).show();
+    }
+
+    private void showTransformOrientationDialog() {
+        String[] choices={"Global","Local"};
+        new android.app.AlertDialog.Builder(activity).setTitle("Transform Orientation")
+                .setItems(choices,(d,w)->{
+                    meshyViewport.setObjectTransformLocalOrientation(w==1);
+                    status.setText("Modeling | Transform orientation: "+choices[w]);
+                }).setNegativeButton("Cancel",null).show();
+    }
+
+    private void showPivotPointDialog() {
+        String[] choices={"Median Point","Active Object","3D Cursor"};
+        new android.app.AlertDialog.Builder(activity).setTitle("Pivot Point")
+                .setItems(choices,(d,w)->{
+                    meshyViewport.setObjectPivotMode(w);
+                    status.setText("Modeling | Pivot point: "+choices[w]);
                 }).setNegativeButton("Cancel",null).show();
     }
 
