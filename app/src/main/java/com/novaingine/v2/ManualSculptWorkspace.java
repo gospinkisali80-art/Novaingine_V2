@@ -475,6 +475,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 } else if ("Delete Faces".equals(item)) {
                     checkpointMeshEdit();meshyViewport.deleteSelectedFaces();
                     status.setText("Modeling | Selected faces deleted");
+                } else if ("Delete Vertices".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.deleteSelectedVertices();
+                    status.setText("Modeling | Selected vertices and connected faces deleted");
                 } else if ("Recalculate Normals".equals(item)) {
                     checkpointMeshEdit();meshyViewport.recalculateNormals();
                     status.setText("Modeling | Face winding and outward normals recalculated");
