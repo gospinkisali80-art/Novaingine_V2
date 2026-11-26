@@ -321,6 +321,13 @@ public final class Meshy3DObjectScene {
         revision++;
     }
 
+    public void selectActiveCamera(boolean extend) {
+        Object3D camera=getActiveCamera();if(camera==null||!camera.selectable)return;
+        ArrayList<Object3D> targets=new ArrayList<>();if(extend)targets.addAll(getSelectedObjects());
+        if(!targets.contains(camera))targets.add(camera);
+        replaceSelection(targets);
+    }
+
     public void selectByType(String type,boolean extend) {
         String requested=type==null?"":type.trim().toUpperCase(java.util.Locale.ROOT);
         ArrayList<Object3D> targets=new ArrayList<>();
