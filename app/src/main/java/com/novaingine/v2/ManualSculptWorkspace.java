@@ -507,9 +507,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     checkpointMeshEdit();meshyViewport.unwrapMesh();
                     status.setText("UV Editing | LSCM conformal unwrap | " + meshyViewport.getUvIslandCount() + " UV islands");
                 } else if ("Mark Seam".equals(item)) {
-                    checkpointMeshEdit();meshyViewport.markSeams(false);status.setText("UV Editing | Seams marked on selected edges");
+                    checkpointMeshEdit();meshyViewport.markSeams(false);meshyViewport.unwrapMesh();status.setText("UV Editing | Seams marked and LSCM islands regenerated");
                 } else if ("Clear Seam".equals(item)) {
-                    checkpointMeshEdit();meshyViewport.markSeams(true);status.setText("UV Editing | Selected seams cleared");
+                    checkpointMeshEdit();meshyViewport.markSeams(true);meshyViewport.unwrapMesh();status.setText("UV Editing | Selected seams cleared and UVs regenerated");
                 } else if ("Pin".equals(item) || "Unpin".equals(item)) {
                     checkpointMeshEdit();meshyViewport.pinSelectedUvs("Pin".equals(item));
                     status.setText("UV Editing | Selected UV coordinates "+("Pin".equals(item)?"pinned":"unpinned"));
