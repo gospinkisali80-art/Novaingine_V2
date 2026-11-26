@@ -1009,6 +1009,114 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 }).setNegativeButton("Cancel",null).show();
     }
 
+    private void showObjectTypeDialog() {
+        String[] labels={"Meshes","Cameras","Lights","Empties"};
+        String[] types={"MESH","CAMERA","LIGHT","EMPTY"};
+        new android.app.AlertDialog.Builder(activity).setTitle("Select Objects by Type")
+                .setItems(labels,(d,w)->{
+                    meshyViewport.selectObjectsByType(types[w],false);refreshModelingOutliner();
+                    status.setText("Modeling | Selected "+labels[w].toLowerCase(java.util.Locale.ROOT));
+                }).setNegativeButton("Cancel",null).show();
+    }
+
+    private void showHierarchySelectionDialog() {
+        String[] actions={"Parent","Children","All Descendants","Siblings","Same Collection"};
+        new android.app.AlertDialog.Builder(activity).setTitle("Select Hierarchy")
+                .setItems(actions,(d,w)->{
+                    if(w==0)meshyViewport.selectParent(false);
+                    else if(w==1)meshyViewport.selectChildren(false,false);
+                    else if(w==2)meshyViewport.selectChildren(true,false);
+                    else if(w==3)meshyViewport.selectSiblings(false);
+                    else meshyViewport.selectSameCollection(false);
+                    refreshModelingOutliner();status.setText("Modeling | Hierarchy selection: "+actions[w]);
+                }).setNegativeButton("Cancel",null).show();
+    }
+
+    private void showObjectPatternDialog() {
+        EditText input=new EditText(activity);input.setSingleLine(true);input.setHint("Example: Cube* or Light?");
+        new android.app.AlertDialog.Builder(activity).setTitle("Select by Object Name")
+                .setMessage("Use * for any number of characters and ? for one character.")
+                .setView(input).setPositiveButton("Select",(d,w)->{
+                    meshyViewport.selectObjectPattern(input.getText().toString(),false,false);
+                    refreshModelingOutliner();status.setText("Modeling | Object name selection updated");
+                }).setNegativeButton("Cancel",null).show();
+    }
+
+    private void showCameraSettingsDialog() {
+        Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
+        if(active==null||!"CAMERA".equals(active.type)){
+            Toast.makeText(activity,"Select a Camera object first.",Toast.LENGTH_SHORT).show();return;
+        }
+        LinearLayout panel=new LinearLayout(activity);panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(16),dp(8),dp(16),dp(8));
+        String[] labels={"Lens (mm)","Clip Start","Clip End"};
+        float[] values={active.cameraLens,active.cameraClipStart,active.cameraClipEnd};
+        EditText[] fields=new EditText[3];
+        for(int i=0;i<3;i++){
+            TextView label=new TextView(activity);label.setText(labels[i]);
+            fields[i]=new EditText(activity);fields[i].setSingleLine(true);
+            fields[i].setInputType(android.text.InputType.TYPE_CLASS_NUMBER
+                    |android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
+            fields[i].setText(fmt(values[i]));panel.addView(label);panel.addView(fields[i]);
+        }
+        new android.app.AlertDialog.Builder(activity).setTitle("Camera Settings").setView(panel)
+                .setPositiveButton("Apply",(d,w)->{
+                    try{
+                        float lens=Float.parseFloat(fields[0].getText().toString());
+                        float start=Float.parseFloat(fields[1].getText().toString());
+                        float end=Float.parseFloat(fields[2].getText().toString());
+                        checkpointMeshEdit();meshyViewport.setActiveCameraSettings(lens,start,end);
+                        status.setText("Modeling | Camera optics updated");
+                    }catch(Exception error){showObjectOperationError(error);}
+                }).setNegativeButton("Cancel",null).show();
+    }
+
+    private void showLightSettingsDialog() {
+        Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
+        if(active==null||!"LIGHT".equals(active.type)){
+            Toast.makeText(activity,"Select a Light object first.",Toast.LENGTH_SHORT).show();return;
+        }
+        String[] types={"POINT","SUN","SPOT","AREA"};
+        String[] labels={"Point","Sun","Spot","Area"};
+        LinearLayout panel=new LinearLayout(activity);panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(16),dp(8),dp(16),dp(8));
+        TextView typeLabel=new TextView(activity);typeLabel.setText("Light Type: "+active.lightType);
+        panel.addView(typeLabel);
+        android.widget.Spinner typeSpinner=new android.widget.Spinner(activity);
+        android.widget.ArrayAdapter<String> adapter=new android.widget.ArrayAdapter<>(activity,
+                android.R.layout.simple_spinner_item,labels);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        typeSpinner.setAdapter(adapter);
+        int selected=0;for(int i=0;i<types.length;i++)if(types[i].equals(active.lightType))selected=i;
+        typeSpinner.setSelection(selected);panel.addView(typeSpinner);
+        TextView powerLabel=new TextView(activity);powerLabel.setText("Power: "+fmt(active.lightPower));
+        SeekBar power=new SeekBar(activity);power.setMax(1000);
+        power.setProgress((int)Math.max(0,Math.min(1000,active.lightPower/10000f*1000f)));
+        power.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
+            public void onProgressChanged(SeekBar s,int p,boolean user){powerLabel.setText("Power: "+fmt(p*10f));}
+            public void onStartTrackingTouch(SeekBar s){}
+            public void onStopTrackingTouch(SeekBar s){}
+        });
+        TextView angleLabel=new TextView(activity);angleLabel.setText("Spot / Area Angle: "+fmt(active.lightAngle));
+        SeekBar angle=new SeekBar(activity);angle.setMax(180);angle.setProgress((int)active.lightAngle);
+        angle.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
+            public void onProgressChanged(SeekBar s,int p,boolean user){angleLabel.setText("Spot / Area Angle: "+p);}
+            public void onStartTrackingTouch(SeekBar s){}
+            public void onStopTrackingTouch(SeekBar s){}
+        });
+        panel.addView(powerLabel);panel.addView(power);panel.addView(angleLabel);panel.addView(angle);
+        new android.app.AlertDialog.Builder(activity).setTitle("Light Settings").setView(panel)
+                .setPositiveButton("Apply",(d,w)->{
+                    try{
+                        int color=active.lightColor;
+                        checkpointMeshEdit();
+                        meshyViewport.setActiveLightSettings(types[typeSpinner.getSelectedItemPosition()],
+                                power.getProgress()*10f,angle.getProgress(),color);
+                        refreshModelingOutliner();status.setText("Modeling | Light settings updated");
+                    }catch(Exception error){showObjectOperationError(error);}
+                }).setNegativeButton("Cancel",null).show();
+    }
+
     private void showObjectTransformDialog(String operation) {
         Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
         if(active==null)return;
@@ -1286,13 +1394,17 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         "Bisect", "Bridge", "Fill", "Subdivide", "Merge", "Dissolve", "Separate"};
                 leftTitle = "Modeling Tools";
                 leftItems = new String[]{
-                        "OBJECT MODE", "Add Primitive", "Add Cube", "Duplicate", "Duplicate Linked", "Delete Object",
-                        "Delete Selected Objects", "Select All Objects", "Deselect Objects", "Invert Selection",
-                        "Rename Object", "Select Object", "Hide / Show Object", "Apply Location", "Apply Rotation & Scale",
-                        "Apply All Transforms", "Clear Location", "Clear Rotation", "Clear Scale",
-                        "Set Origin to Geometry", "Set Origin to 3D Cursor",
-                        "Parent To", "Clear Parent", "Add Collection", "Move To Collection",
-                        "Object Statistics", "EDIT MODE", "Vertex Select", "Edge Select", "Face Select",
+                        "OBJECT MODE", "Add Primitive", "Add Camera", "Add Light", "Add Empty", "Add Cube",
+                        "Duplicate", "Duplicate Linked", "Delete Object", "Delete Selected Objects", "Join Selected Meshes",
+                        "Select All Objects", "Deselect Objects", "Invert Selection", "Select Object", "Select By Type",
+                        "Select Hierarchy", "Select by Name", "Select Linked Data", "Rename Object", "Hide / Show Object",
+                        "Hide Selected", "Hide Unselected", "Show All Objects", "Invert Hidden", "Toggle Local View",
+                        "Lock Selection", "Unlock Selection", "Disable in Render", "Enable in Render",
+                        "Apply Location", "Apply Rotation & Scale", "Apply All Transforms", "Clear Location", "Clear Rotation", "Clear Scale",
+                        "Set Origin to Geometry", "Set Origin to 3D Cursor", "Parent To", "Parent Selected to Active", "Clear Parent",
+                        "Add Collection", "Move To Collection", "Link To Collection", "Make Single User",
+                        "Set Active Camera", "Camera Settings", "Light Settings", "Object Statistics",
+                        "EDIT MODE", "Vertex Select", "Edge Select", "Face Select",
                         "Select All", "Select Linked", "Select Loops", "Select Similar", "TRANSFORM",
                         "Move", "Rotate", "Scale", "Mirror", "Shrink / Fatten", "Shear", "Bend",
                         "To Sphere", "Edge Slide", "Vertex Slide", "MESH EDIT", "Extrude Region",
@@ -1308,9 +1420,11 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         "Remesh", "Weld", "Triangulate", "Wireframe"
                 };
                 rightTitle = "Tool Properties";
-                rightItems = new String[]{"Object Properties", "Active Tool", "Selection Mode", "Operation Amount", "Offset",
-                        "Segments", "Profile", "Loop Cut Count", "Merge Threshold", "Mesh Statistics",
-                        "Vertices", "Edges", "Faces", "Normals", "Transform Orientation", "Pivot Point"};
+                rightItems = new String[]{"Object Properties", "Object Transform", "Dimensions", "Parent", "Collections",
+                        "Visibility", "Selectable", "Render Visibility", "Active Camera", "Camera Settings", "Light Settings",
+                        "Active Tool", "Selection Mode", "Operation Amount", "Offset", "Segments", "Profile",
+                        "Loop Cut Count", "Merge Threshold", "Mesh Statistics", "Vertices", "Edges", "Faces",
+                        "Normals", "Transform Orientation", "Pivot Point"};
                 bottomTitle = "Mesh Information";
                 bottomItems = new String[]{"Object Mode / Edit Mode", "Selected Mesh", "Topology Overview",
                         "Vertex / Edge / Face Counts"};
