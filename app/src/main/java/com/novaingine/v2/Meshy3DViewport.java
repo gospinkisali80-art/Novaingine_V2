@@ -1539,7 +1539,6 @@ public final class Meshy3DViewport extends View {
             case MotionEvent.ACTION_DOWN:
                 downX=lastX=event.getX(); downY=lastY=event.getY();
                 moved=false; lastPinchDistance=0;
-                if(cameraViewActive&&(Math.abs(event.getX()-lastX)>2||Math.abs(event.getY()-lastY)>2))cameraViewActive=false;
                 if(!sculpting&&!meshEditMode&&objectSelectionEnabled&&objectBoxSelectEnabled){
                     objectBoxSelecting=true;objectBoxEndX=downX;objectBoxEndY=downY;invalidate();return true;
                 }
@@ -1556,6 +1555,7 @@ public final class Meshy3DViewport extends View {
             case MotionEvent.ACTION_POINTER_DOWN:
                 lastPinchDistance=pointerDistance(event); moved=true; return true;
             case MotionEvent.ACTION_MOVE:
+                if(cameraViewActive&&(Math.abs(event.getX()-downX)+Math.abs(event.getY()-downY)>4*d))cameraViewActive=false;
                 if(objectBoxSelecting&&event.getPointerCount()==1){
                     objectBoxEndX=event.getX();objectBoxEndY=event.getY();
                     if(Math.abs(objectBoxEndX-downX)+Math.abs(objectBoxEndY-downY)>4*d)moved=true;
