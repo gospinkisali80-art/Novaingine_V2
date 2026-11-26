@@ -526,6 +526,44 @@ public final class Meshy3DCore {
             }
         }return new ArrayList<>();
     }
+    public void recalculateNormals(){
+        int count=faces.size();ArrayList<int[]>[] adjacency=new ArrayList[count];
+        for(int i=0;i<count;i++)adjacency[i]=new ArrayList<>();
+        boolean closed=true;
+        for(Edge edge:edges){
+            if(edge.faces.size()!=2){closed=false;continue;}
+            int a=edge.faces.get(0),b=edge.faces.get(1);
+            boolean da=hasDirectedEdge(faces.get(a).vertices,edge.a,edge.b);
+            boolean db=hasDirectedEdge(faces.get(b).vertices,edge.a,edge.b);
+            int relation=da==db?1:0;
+            adjacency[a].add(new int[]{b,relation});adjacency[b].add(new int[]{a,relation});
+        }
+        boolean[] visited=new boolean[count],flip=new boolean[count];
+        for(int start=0;start<count;start++)if(!visited[start]){
+            ArrayDeque<Integer> queue=new ArrayDeque<>();queue.add(start);visited[start]=true;
+            while(!queue.isEmpty()){int current=queue.removeFirst();for(int[] link:adjacency[current]){
+                int next=link[0];boolean required=flip[current]^(link[1]==1);
+                if(!visited[next]){visited[next]=true;flip[next]=required;queue.add(next);}
+            }}
+        }
+        for(int i=0;i<count;i++)if(flip[i])reverseFace(faces.get(i));
+        if(closed){
+            double volume=0;for(Face face:faces){int[] f=face.vertices;float[] p0=vertices.get(f[0]);
+                for(int i=1;i<f.length-1;i++){float[] p1=vertices.get(f[i]),p2=vertices.get(f[i+1]);
+                    volume+=((double)p0[0]*(p1[1]*p2[2]-p1[2]*p2[1])
+                            +(double)p0[1]*(p1[2]*p2[0]-p1[0]*p2[2])
+                            +(double)p0[2]*(p1[0]*p2[1]-p1[1]*p2[0]))/6.0;
+                }}
+            if(volume<0)for(Face face:faces)reverseFace(face);
+        }
+        clearSelection();rebuildEdges();revision++;
+    }
+    private boolean hasDirectedEdge(int[] face,int a,int b){
+        for(int i=0;i<face.length;i++)if(face[i]==a&&face[(i+1)%face.length]==b)return true;return false;
+    }
+    private void reverseFace(Face face){
+        for(int i=0,j=face.vertices.length-1;i<j;i++,j--){int t=face.vertices[i];face.vertices[i]=face.vertices[j];face.vertices[j]=t;}
+    }
     public void triangulateSelectedFaces(){
         ArrayList<Face> out=new ArrayList<>();
         for(int i=0;i<faces.size();i++){Face f=faces.get(i);if(!selectedFaces.isEmpty()&&!selectedFaces.get(i)){out.add(f);continue;}
