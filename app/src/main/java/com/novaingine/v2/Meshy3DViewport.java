@@ -96,6 +96,7 @@ public final class Meshy3DViewport extends View {
 
     public void slideSelected(float factor,boolean edgeMode){document.slideSelected(factor,edgeMode);syncViewportFromCore();}
     public void decimatePlanar(float angle,int targetFaces){document.decimatePlanar(angle,targetFaces);syncViewportFromCore();}
+    public void unSubdividePlanar(){document.decimatePlanar(.5f,4);syncViewportFromCore();}
     public void startPolyBuild(){polyBuildPoints.clear();polyBuildMode=true;knifeMode=false;meshEditMode=true;invalidate();}
     public void startKnifeCut(){knifeMode=true;polyBuildMode=false;meshEditMode=true;invalidate();}
     private float[] worldPointFromScreen(float x,float y){
