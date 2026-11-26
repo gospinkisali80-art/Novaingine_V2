@@ -676,9 +676,11 @@ public final class MainActivity extends Activity
     private static final int REQUEST_SAVE_MESHY_RENDER = 7417;
     private static final int REQUEST_EXPORT_MESHY_DOCUMENT = 7418;
     private static final int REQUEST_IMPORT_MESHY_DOCUMENT = 7419;
+    private static final int REQUEST_SAVE_MESHY_SYSTEM_INFO = 7420;
 
     private android.graphics.Bitmap pendingMeshyImage;
     private String pendingMeshyExportJson;
+    private String pendingMeshySystemInfo;
     private boolean meshyStatusBarVisible = true;
 
     public void showMeshyFileMenu(View anchor) {
@@ -945,6 +947,8 @@ public final class MainActivity extends Activity
     public void showMeshyHelpMenu(View anchor) {
         android.widget.PopupMenu popup = new android.widget.PopupMenu(this, anchor);
         String[] topics = {
+                "Meshy3D Manual", "Support", "User Communities", "Get Involved",
+                "Release Notes", "Report a Bug", "Save System Info",
                 "Welcome to Meshy3D", "Getting Started", "Viewport Guide", "Modeling Guide",
                 "Sculpting Guide", "Materials & Textures Guide", "Lighting Guide",
                 "Animation Guide", "AI Modeling Guide", "Keyboard Shortcuts",
@@ -960,7 +964,96 @@ public final class MainActivity extends Activity
         popup.show();
     }
 
+    private void openMeshyHelpUrl(String url) {
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+        } catch (Exception error) {
+            android.widget.Toast.makeText(this, "Could not open help link: " + error.getMessage(), android.widget.Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private String buildMeshySystemInfo() {
+        String version = "unknown";
+        try {
+            android.content.pm.PackageInfo info = getPackageManager().getPackageInfo(getPackageName(), 0);
+            version = info.versionName == null ? "unknown" : info.versionName;
+        } catch (Exception ignored) {}
+        android.util.DisplayMetrics display = getResources().getDisplayMetrics();
+        android.app.ActivityManager.MemoryInfo memory = new android.app.ActivityManager.MemoryInfo();
+        android.app.ActivityManager manager = (android.app.ActivityManager) getSystemService(ACTIVITY_SERVICE);
+        if (manager != null) manager.getMemoryInfo(memory);
+        String workspace = manualSculptWorkspace == null ? "Closed"
+                : MESHY_WORKSPACE_NAMES[Math.max(0, Math.min(MESHY_WORKSPACE_NAMES.length - 1,
+                        manualSculptWorkspace.getActiveWorkspaceIndex()))];
+        return "MESHY3D SYSTEM INFORMATION\n"
+                + "App: Novaingine / Meshy3D " + version + "\n"
+                + "Package: " + getPackageName() + "\n"
+                + "Device: " + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL + "\n"
+                + "Android: " + android.os.Build.VERSION.RELEASE + " (API " + android.os.Build.VERSION.SDK_INT + ")\n"
+                + "ABI: " + android.os.Build.SUPPORTED_ABIS[0] + "\n"
+                + "Display: " + display.widthPixels + " × " + display.heightPixels
+                + " px @ " + display.densityDpi + " dpi\n"
+                + "Available RAM: " + (memory.availMem / (1024L * 1024L)) + " MiB\n"
+                + "Workspace: " + workspace + "\n"
+                + "Active document: " + (activeMeshyDocument == null ? "None" : activeMeshyDocument.getName()) + "\n"
+                + "Timestamp: " + new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss z", java.util.Locale.US).format(new java.util.Date());
+    }
+
+    private void saveMeshySystemInfo() {
+        String info = buildMeshySystemInfo();
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("text/plain");
+        intent.putExtra(Intent.EXTRA_TITLE, "Meshy3D-System-Info.txt");
+        pendingMeshySystemInfo = info;
+        startActivityForResult(intent, REQUEST_SAVE_MESHY_SYSTEM_INFO);
+    }
+
+    private void sendMeshyFeedback() {
+        Intent send = new Intent(Intent.ACTION_SEND);
+        send.setType("text/plain");
+        send.putExtra(Intent.EXTRA_SUBJECT, "Meshy3D feedback");
+        send.putExtra(Intent.EXTRA_TEXT, "Meshy3D feedback\n\n" + buildMeshySystemInfo()
+                + "\n\nDescribe what happened, what you expected, and the steps to reproduce it.");
+        try {
+            startActivity(Intent.createChooser(send, "Send Meshy3D feedback"));
+        } catch (Exception error) {
+            android.widget.Toast.makeText(this, "No app is available to share feedback.", android.widget.Toast.LENGTH_SHORT).show();
+        }
+    }
+
     private void showMeshyDocumentation(String topic) {
+        switch (topic) {
+            case "Meshy3D Manual":
+                openMeshyHelpUrl("https://github.com/gospinkisali80-art/Novaingine_V2/blob/main/README.md");
+                return;
+            case "Support":
+                openMeshyHelpUrl("https://github.com/gospinkisali80-art/Novaingine_V2/issues");
+                return;
+            case "User Communities":
+                openMeshyHelpUrl("https://github.com/gospinkisali80-art/Novaingine_V2/discussions");
+                return;
+            case "Get Involved":
+                openMeshyHelpUrl("https://github.com/gospinkisali80-art/Novaingine_V2");
+                return;
+            case "Release Notes":
+            case "What's New":
+            case "Check for Updates":
+                openMeshyHelpUrl("https://github.com/gospinkisali80-art/Novaingine_V2/releases");
+                return;
+            case "Report a Bug":
+                openMeshyHelpUrl("https://github.com/gospinkisali80-art/Novaingine_V2/issues/new");
+                return;
+            case "Save System Info":
+            case "System Information":
+                saveMeshySystemInfo();
+                return;
+            case "Send Feedback":
+                sendMeshyFeedback();
+                return;
+            default:
+                break;
+        }
         String[] titles = {
                 "Welcome to Meshy3D", "Getting Started", "Viewport Guide", "Modeling Guide",
                 "Sculpting Guide", "Materials & Textures Guide", "Lighting Guide",
@@ -1543,6 +1636,20 @@ public final class MainActivity extends Activity
         super.onActivityResult(requestCode, resultCode, data);
         if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
         Uri uri = data.getData();
+        if (requestCode == REQUEST_SAVE_MESHY_SYSTEM_INFO) {
+            String info = pendingMeshySystemInfo;
+            pendingMeshySystemInfo = null;
+            if (info == null) return;
+            try (java.io.OutputStream output = getContentResolver().openOutputStream(uri)) {
+                if (output == null) throw new IllegalStateException("Could not open the selected save location.");
+                output.write(info.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                output.flush();
+                android.widget.Toast.makeText(this, "Meshy3D system information saved.", android.widget.Toast.LENGTH_LONG).show();
+            } catch (Exception error) {
+                android.widget.Toast.makeText(this, "System information save failed: " + error.getMessage(), android.widget.Toast.LENGTH_LONG).show();
+            }
+            return;
+        }
         if (requestCode == REQUEST_SAVE_MESHY_RENDER) {
             android.graphics.Bitmap bitmap = pendingMeshyImage;
             pendingMeshyImage = null;
