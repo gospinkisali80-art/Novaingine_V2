@@ -2660,8 +2660,16 @@ public final class ManualSculptWorkspace extends FrameLayout {
 
     private interface AmountAction { void apply(float amount); }
     private void showAmountDialog(String title, float min, float max, AmountAction action) {
-        SeekBar bar = new SeekBar(activity); bar.setMax(1000); bar.setProgress(250);
-        TextView value = new TextView(activity); value.setText("0.25");
+        showAmountDialog(title,min,max,min+(max-min)*.25f,action);
+    }
+
+    private void showAmountDialog(String title, float min, float max, float initial, AmountAction action) {
+        SeekBar bar = new SeekBar(activity);
+        bar.setMax(1000);
+        float safeInitial=Math.max(min,Math.min(max,initial));
+        bar.setProgress(Math.round((safeInitial-min)/(max-min)*1000f));
+        TextView value = new TextView(activity);
+        value.setText(String.format(java.util.Locale.US, "%.3f", safeInitial));
         bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar b, int p, boolean from) {
                 value.setText(String.format(java.util.Locale.US, "%.3f", min+(max-min)*p/1000f));
