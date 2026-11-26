@@ -116,10 +116,23 @@ final class Meshy3DPhoneControls extends LinearLayout {
         value.setSelectAllOnFocus(true);
         value.setBackgroundColor(0xFF303945);
         numeric.addView(value, new LayoutParams(88*dp, 38*dp));
-        add(numeric, button("Set X", () -> applyNumeric(value, 0)));
-        add(numeric, button("Set Y", () -> applyNumeric(value, 1)));
-        add(numeric, button("Set Z", () -> applyNumeric(value, 2)));
+        add(numeric, button("Apply", () -> applyNumeric(value, -1)));
+        add(numeric, button("Clear Axis", () -> {
+            viewport.setKeyboardAxisConstraint(-1);
+            Toast.makeText(getContext(), "Axis constraint cleared", Toast.LENGTH_SHORT).show();
+        }));
         body.addView(numeric);
+        addLetterRow(value, "QWERTYU");
+        addLetterRow(value, "IOPASDF");
+        addLetterRow(value, "GHJKLZX");
+        LinearLayout finalKeys = row();
+        add(finalKeys, button("CVBNM", () -> value.append("cvbnm")));
+        add(finalKeys, button("Space", () -> value.append(" ")));
+        add(finalKeys, button("⌫", () -> {
+            int end = value.getSelectionStart();
+            if (end > 0) value.getText().delete(end-1, end);
+        }));
+        body.addView(finalKeys);
     }
 
     private void setMouseMode(int mode) {
@@ -138,10 +151,19 @@ final class Meshy3DPhoneControls extends LinearLayout {
             case "Esc": viewport.setObjectTransformTool(-1); break;
             case "Ctrl+Z": actions.undo(); break;
             case "Ctrl+Shift+Z": actions.redo(); break;
-            case "X": case "Y": case "Z":
-                Toast.makeText(getContext(), key + " axis: use the matching colored gizmo handle or numeric field.", Toast.LENGTH_SHORT).show();
-                break;
+            case "X": viewport.setKeyboardAxisConstraint(0); modeLabel.setText("Virtual keyboard: X axis locked"); break;
+            case "Y": viewport.setKeyboardAxisConstraint(1); modeLabel.setText("Virtual keyboard: Y axis locked"); break;
+            case "Z": viewport.setKeyboardAxisConstraint(2); modeLabel.setText("Virtual keyboard: Z axis locked"); break;
         }
+    }
+
+    private void addLetterRow(EditText target, String letters) {
+        LinearLayout keys = row();
+        for (int i = 0; i < letters.length(); i++) {
+            final String letter = String.valueOf(letters.charAt(i));
+            add(keys, button(letter, () -> target.append(letter.toLowerCase())));
+        }
+        body.addView(keys);
     }
 
     private void applyNumeric(EditText field, int axis) {
