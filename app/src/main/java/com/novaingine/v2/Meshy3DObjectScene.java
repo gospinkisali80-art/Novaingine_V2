@@ -165,6 +165,107 @@ public final class Meshy3DObjectScene {
         for(Object3D object:targets)setWorldLocation(object.id,cursorX,cursorY,cursorZ);
         return targets.size();
     }
+
+    public int snapSelectedToActiveGeometry(int mode){
+        if(mode<0||mode>2)throw new IllegalArgumentException("Snap mode must be Vertex, Edge or Face.");
+        Object3D target=getActiveObject();
+        if(target==null||!"MESH".equals(target.type)||target.mesh==null)
+            throw new IllegalStateException("Make a mesh object active to use it as the snap target.");
+        Meshy3DCore targetMesh=target.modifiers.isEmpty()?target.mesh:
+                Meshy3DModifierEvaluator.evaluate(target);
+        float[][] vertices=targetMesh.copyVertices();
+        int[][] faces=targetMesh.copyFaces();
+        if(vertices.length==0||faces.length==0)
+            throw new IllegalStateException("The active snap target has no surface geometry.");
+
+        ArrayList<Object3D> sources=new ArrayList<>(getSelectedObjects());
+        sources.removeIf(object->object.id.equals(target.id));
+        if(sources.isEmpty())
+            throw new IllegalStateException("Select at least one other object and keep the snap target active.");
+        for(Object3D source:sources){
+            float[] origin=worldLocation(source.id);
+            float[] nearest=null;float nearestDistance=Float.MAX_VALUE;
+            if(mode==0){
+                for(float[] vertex:vertices){
+                    float[] world=transformPoint(target.id,vertex[0],vertex[1],vertex[2]);
+                    float distance=distanceSquared(origin,world);
+                    if(distance<nearestDistance){nearestDistance=distance;nearest=world;}
+                }
+            }else if(mode==1){
+                java.util.HashSet<Long> checkedEdges=new java.util.HashSet<>();
+                for(int[] face:faces)for(int corner=0;corner<face.length;corner++){
+                    int a=face[corner],b=face[(corner+1)%face.length];
+                    long key=edgeKey(a,b);if(!checkedEdges.add(key))continue;
+                    float[] start=transformPoint(target.id,vertices[a][0],vertices[a][1],vertices[a][2]);
+                    float[] end=transformPoint(target.id,vertices[b][0],vertices[b][1],vertices[b][2]);
+                    float[] closest=closestPointOnSegment(origin,start,end);
+                    float distance=distanceSquared(origin,closest);
+                    if(distance<nearestDistance){nearestDistance=distance;nearest=closest;}
+                }
+            }else{
+                for(int[] face:faces){
+                    if(face.length<3)continue;
+                    float[] a=transformPoint(target.id,vertices[face[0]][0],vertices[face[0]][1],vertices[face[0]][2]);
+                    for(int corner=1;corner<face.length-1;corner++){
+                        float[] b=transformPoint(target.id,vertices[face[corner]][0],vertices[face[corner]][1],vertices[face[corner]][2]);
+                        float[] c=transformPoint(target.id,vertices[face[corner+1]][0],vertices[face[corner+1]][1],vertices[face[corner+1]][2]);
+                        float[] closest=closestPointOnTriangle(origin,a,b,c);
+                        float distance=distanceSquared(origin,closest);
+                        if(distance<nearestDistance){nearestDistance=distance;nearest=closest;}
+                    }
+                }
+            }
+            if(nearest==null)throw new IllegalStateException("The active snap target has no usable vertices, edges or faces.");
+            setWorldLocation(source.id,nearest[0],nearest[1],nearest[2]);
+        }
+        return sources.size();
+    }
+
+    private static float distanceSquared(float[] a,float[] b){
+        float x=a[0]-b[0],y=a[1]-b[1],z=a[2]-b[2];
+        return x*x+y*y+z*z;
+    }
+
+    private static float[] closestPointOnSegment(float[] point,float[] a,float[] b){
+        float abx=b[0]-a[0],aby=b[1]-a[1],abz=b[2]-a[2];
+        float denominator=abx*abx+aby*aby+abz*abz;
+        float t=denominator<1e-12f?0f:((point[0]-a[0])*abx+(point[1]-a[1])*aby
+                +(point[2]-a[2])*abz)/denominator;
+        t=Math.max(0f,Math.min(1f,t));
+        return new float[]{a[0]+abx*t,a[1]+aby*t,a[2]+abz*t};
+    }
+
+    /** Closest point on a triangle, using the Voronoi-region tests from Real-Time Collision Detection. */
+    private static float[] closestPointOnTriangle(float[] p,float[] a,float[] b,float[] c){
+        float abx=b[0]-a[0],aby=b[1]-a[1],abz=b[2]-a[2];
+        float acx=c[0]-a[0],acy=c[1]-a[1],acz=c[2]-a[2];
+        float apx=p[0]-a[0],apy=p[1]-a[1],apz=p[2]-a[2];
+        float d1=abx*apx+aby*apy+abz*apz,d2=acx*apx+acy*apy+acz*apz;
+        if(d1<=0f&&d2<=0f)return a.clone();
+        float bpx=p[0]-b[0],bpy=p[1]-b[1],bpz=p[2]-b[2];
+        float d3=abx*bpx+aby*bpy+abz*bpz,d4=acx*bpx+acy*bpy+acz*bpz;
+        if(d3>=0f&&d4<=d3)return b.clone();
+        float vc=d1*d4-d3*d2;
+        if(vc<=0f&&d1>=0f&&d3<=0f){
+            float v=d1/(d1-d3);
+            return new float[]{a[0]+abx*v,a[1]+aby*v,a[2]+abz*v};
+        }
+        float cpx=p[0]-c[0],cpy=p[1]-c[1],cpz=p[2]-c[2];
+        float d5=abx*cpx+aby*cpy+abz*cpz,d6=acx*cpx+acy*cpy+acz*cpz;
+        if(d6>=0f&&d5<=d6)return c.clone();
+        float vb=d5*d2-d1*d6;
+        if(vb<=0f&&d2>=0f&&d6<=0f){
+            float w=d2/(d2-d6);
+            return new float[]{a[0]+acx*w,a[1]+acy*w,a[2]+acz*w};
+        }
+        float va=d3*d6-d5*d4;
+        if(va<=0f&&(d4-d3)>=0f&&(d5-d6)>=0f){
+            float w=(d4-d3)/((d4-d3)+(d5-d6));
+            return new float[]{b[0]+(c[0]-b[0])*w,b[1]+(c[1]-b[1])*w,b[2]+(c[2]-b[2])*w};
+        }
+        float denominator=1f/(va+vb+vc),v=vb*denominator,w=vc*denominator;
+        return new float[]{a[0]+abx*v+acx*w,a[1]+aby*v+acy*w,a[2]+abz*v+acz*w};
+    }
     public void setActiveCamera(String objectId){
         Object3D camera=requireObject(objectId);
         if(!"CAMERA".equals(camera.type))throw new IllegalArgumentException("Active camera must be a Camera object");
