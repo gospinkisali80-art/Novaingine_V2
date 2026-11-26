@@ -16,7 +16,7 @@ public final class Meshy3DViewport extends View {
     private float yaw = -0.62f;
     private float pitch = 0.42f;
     private float viewRoll;
-    private float lastX, lastY, lastPinchDistance;
+    private float lastX, lastY, lastPinchDistance, lastPinchCenterX, lastPinchCenterY;
     private float zoom = 1.0f;
     private float viewTargetX,viewTargetY,viewTargetZ;
     private boolean cameraViewActive;
@@ -1989,7 +1989,12 @@ public final class Meshy3DViewport extends View {
                 }
                 return true;
             case MotionEvent.ACTION_POINTER_DOWN:
-                lastPinchDistance=pointerDistance(event); moved=true; return true;
+                lastPinchDistance=pointerDistance(event);
+                if(event.getPointerCount()>=2){
+                    lastPinchCenterX=(event.getX(0)+event.getX(1))*.5f;
+                    lastPinchCenterY=(event.getY(0)+event.getY(1))*.5f;
+                }
+                moved=true; return true;
             case MotionEvent.ACTION_MOVE:
                 if(cameraViewActive&&(Math.abs(event.getX()-downX)+Math.abs(event.getY()-downY)>4*d))cameraViewActive=false;
                 if(objectBoxSelecting&&event.getPointerCount()==1){
@@ -2009,11 +2014,15 @@ public final class Meshy3DViewport extends View {
                 }
                 if(event.getPointerCount()>=2){
                     float distance=pointerDistance(event);
+                    float centerX=(event.getX(0)+event.getX(1))*.5f;
+                    float centerY=(event.getY(0)+event.getY(1))*.5f;
                     if(lastPinchDistance>0 && distance>0){
-                        zoom=Math.max(0.38f,Math.min(3.4f,zoom*distance/lastPinchDistance));
+                        zoom=Math.max(0.25f,Math.min(5.0f,zoom*distance/lastPinchDistance));
+                        panByPixels(centerX-lastPinchCenterX,centerY-lastPinchCenterY);
                         invalidate();
                     }
                     lastPinchDistance=distance;
+                    lastPinchCenterX=centerX;lastPinchCenterY=centerY;
                 } else {
                     float dx=event.getX()-lastX, dy=event.getY()-lastY;
                     if(Math.abs(event.getX()-downX)+Math.abs(event.getY()-downY)>4*d) moved=true;
