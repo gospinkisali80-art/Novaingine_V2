@@ -297,6 +297,45 @@ public final class Meshy3DViewport extends View {
     public void alignSelectedObjectsToActive(int axis){
         objectScene.alignSelectedLocationsToActive(axis);invalidate();
     }
+
+    public void mirrorSelectedObjects(int axis,boolean localOrientation) {
+        if(axis<0||axis>2)throw new IllegalArgumentException("Mirror axis must be X, Y or Z");
+        java.util.ArrayList<Meshy3DObjectScene.Object3D> targets=
+                new java.util.ArrayList<>(objectScene.getSelectedObjects());
+        if(targets.isEmpty()&&objectSceneActiveId!=null)targets.add(objectScene.getObject(objectSceneActiveId));
+        if(targets.isEmpty())throw new IllegalStateException("Select at least one object to mirror");
+        if(localOrientation) {
+            targets.sort((a,b)->Integer.compare(objectScene.getObjectHierarchyDepth(a.id),objectScene.getObjectHierarchyDepth(b.id)));
+            for(Meshy3DObjectScene.Object3D object:targets) {
+                Meshy3DObjectScene.Transform transform=object.transform.copy();
+                if(axis==0)transform.scaleX=-transform.scaleX;
+                else if(axis==1)transform.scaleY=-transform.scaleY;
+                else transform.scaleZ=-transform.scaleZ;
+                objectScene.setTransform(object.id,transform);
+            }
+        } else {
+            float[] median=getObjectTransformPivot();
+            double[] mirror=identityMatrix4();
+            mirror[axis*4+axis]=-1.0;
+            mirror[axis*4+3]=2.0*median[axis];
+            java.util.ArrayList<double[]> initialMatrices=new java.util.ArrayList<>();
+            for(Meshy3DObjectScene.Object3D object:targets)
+                initialMatrices.add(objectScene.getWorldMatrixCopy(object.id));
+            targets.sort((a,b)->Integer.compare(objectScene.getObjectHierarchyDepth(a.id),objectScene.getObjectHierarchyDepth(b.id)));
+            java.util.HashMap<String,double[]> matrices=new java.util.HashMap<>();
+            for(int i=0;i<targets.size();i++) {
+                Meshy3DObjectScene.Object3D object=targets.get(i);
+                double[] initial=objectScene.getWorldMatrixCopy(object.id);
+                // The initial matrices are captured before the first hierarchy transform.
+                matrices.put(object.id,initial);
+            }
+            for(Meshy3DObjectScene.Object3D object:targets) {
+                double[] original=matrices.get(object.id);
+                objectScene.setWorldMatrix(object.id,multiplyMatrix4(mirror,original));
+            }
+        }
+        invalidate();
+    }
     public void clearSelectedParents(){
         objectScene.clearSelectedParents();invalidate();
     }
