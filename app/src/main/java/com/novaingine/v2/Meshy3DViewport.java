@@ -50,6 +50,8 @@ public final class Meshy3DViewport extends View {
     private Runnable onObjectSelectionChanged;
     private Runnable onObjectTransformStart;
     private int objectTransformTool=-1;
+    private int objectPivotMode=0;
+    private boolean objectTransformLocalOrientation;
     private boolean objectGizmoDragging;
     private boolean objectGizmoRotationRing;
     private boolean objectBoxSelectEnabled;
@@ -60,6 +62,7 @@ public final class Meshy3DViewport extends View {
     private final java.util.ArrayList<String> gizmoObjectIds=new java.util.ArrayList<>();
     private final java.util.ArrayList<Meshy3DObjectScene.Transform> gizmoInitialTransforms=new java.util.ArrayList<>();
     private final java.util.ArrayList<float[]> gizmoInitialWorldLocations=new java.util.ArrayList<>();
+    private final java.util.ArrayList<double[]> gizmoInitialWorldMatrices=new java.util.ArrayList<>();
 
     private static final class RenderData {
         float[][] vertices;
@@ -91,6 +94,68 @@ public final class Meshy3DViewport extends View {
         objectGizmoDragging=false;objectGizmoAxis=-1;invalidate();
     }
     public int getObjectTransformTool(){return objectTransformTool;}
+    public void setObjectPivotMode(int mode){objectPivotMode=Math.max(0,Math.min(2,mode));invalidate();}
+    public int getObjectPivotMode(){return objectPivotMode;}
+    public void setObjectTransformLocalOrientation(boolean local){objectTransformLocalOrientation=local;invalidate();}
+    public boolean isObjectTransformLocalOrientation(){return objectTransformLocalOrientation;}
+
+    private float[] gizmoAxisDirection(Meshy3DObjectScene.Object3D active,int axis) {
+        float[][] axes={{1,0,0},{0,1,0},{0,0,1}};
+        if(!objectTransformLocalOrientation)return axes[axis].clone();
+        float[] origin=objectScene.transformPoint(active.id,0,0,0);
+        float[] endpoint=objectScene.transformPoint(active.id,axes[axis][0],axes[axis][1],axes[axis][2]);
+        float dx=endpoint[0]-origin[0],dy=endpoint[1]-origin[1],dz=endpoint[2]-origin[2];
+        float length=(float)Math.sqrt(dx*dx+dy*dy+dz*dz);
+        if(length<1e-6f)return axes[axis].clone();
+        return new float[]{dx/length,dy/length,dz/length};
+    }
+
+    private float[] getObjectTransformPivot() {
+        if(objectPivotMode==2)return objectScene.getCursorLocation();
+        Meshy3DObjectScene.Object3D active=objectScene.getActiveObject();
+        if(objectPivotMode==1&&active!=null)return objectScene.worldLocation(active.id);
+        java.util.List<Meshy3DObjectScene.Object3D> selected=objectScene.getSelectedObjects();
+        if(selected.isEmpty()&&active!=null)return objectScene.worldLocation(active.id);
+        float x=0,y=0,z=0;int count=0;
+        for(Meshy3DObjectScene.Object3D object:selected){
+            float[] p=objectScene.worldLocation(object.id);x+=p[0];y+=p[1];z+=p[2];count++;
+        }
+        if(count==0)return new float[]{0,0,0};
+        return new float[]{x/count,y/count,z/count};
+    }
+
+    private static double[] identityMatrix4() {
+        return new double[]{1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+    }
+    private static double[] multiplyMatrix4(double[] a,double[] b) {
+        double[] out=new double[16];
+        for(int row=0;row<4;row++)for(int col=0;col<4;col++)
+            for(int k=0;k<4;k++)out[row*4+col]+=a[row*4+k]*b[k*4+col];
+        return out;
+    }
+    private static double[] translationMatrix4(double x,double y,double z) {
+        double[] m=identityMatrix4();m[3]=x;m[7]=y;m[11]=z;return m;
+    }
+    private static double[] rotationAroundAxisMatrix(float[] axis,double radians) {
+        double x=axis[0],y=axis[1],z=axis[2],c=Math.cos(radians),s=Math.sin(radians),t=1-c;
+        double[] m=identityMatrix4();
+        m[0]=t*x*x+c;m[1]=t*x*y-s*z;m[2]=t*x*z+s*y;
+        m[4]=t*x*y+s*z;m[5]=t*y*y+c;m[6]=t*y*z-s*x;
+        m[8]=t*x*z-s*y;m[9]=t*y*z+s*x;m[10]=t*z*z+c;
+        return m;
+    }
+    private static double[] scaleAlongAxisMatrix(float[] axis,double factor) {
+        double[] m=identityMatrix4();double f=factor-1.0;
+        for(int row=0;row<3;row++)for(int col=0;col<3;col++)m[row*4+col]+=
+                f*axis[row]*axis[col];
+        return m;
+    }
+    private double[] pivotedWorldDelta(double[] delta) {
+        float[] p=getObjectTransformPivot();
+        return multiplyMatrix4(translationMatrix4(p[0],p[1],p[2]),
+                multiplyMatrix4(delta,translationMatrix4(-p[0],-p[1],-p[2])));
+    }
+
     public void setObjectBoxSelectEnabled(boolean enabled){
         objectBoxSelectEnabled=enabled;objectBoxSelecting=false;
         if(enabled)objectTransformTool=-1;invalidate();
