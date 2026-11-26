@@ -363,10 +363,10 @@ public final class Meshy3DViewport extends View {
 
     public String exportUvCsv(){
         float[][][] uv=document.copyFaceUvs();if(uv==null){document.unwrapPlanar();uv=document.copyFaceUvs();}
-        StringBuilder out=new StringBuilder("face,corner,vertex,u,v\\n");
+        StringBuilder out=new StringBuilder("face,corner,vertex,u,v\n");
         for(int fi=0;fi<uv.length;fi++){int[] ids=document.getFaceVertices(fi);
             for(int j=0;j<uv[fi].length;j++)out.append(fi).append(',').append(j).append(',')
-                    .append(ids[j]).append(',').append(uv[fi][j][0]).append(',').append(uv[fi][j][1]).append('\\n');
+                    .append(ids[j]).append(',').append(uv[fi][j][0]).append(',').append(uv[fi][j][1]).append('\n');
         }return out.toString();
     }
 
