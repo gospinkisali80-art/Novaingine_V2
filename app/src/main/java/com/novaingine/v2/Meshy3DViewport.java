@@ -42,6 +42,7 @@ public final class Meshy3DViewport extends View {
     private boolean objectSelectionEnabled;
     private boolean localViewActive;
     private final java.util.HashSet<String> localViewObjectIds=new java.util.HashSet<>();
+    private Runnable onObjectSelectionChanged;
 
     private static final class RenderData {
         float[][] vertices;
@@ -51,6 +52,7 @@ public final class Meshy3DViewport extends View {
 
     public Meshy3DObjectScene getObjectScene(){return objectScene;}
     public Meshy3DCore getDocumentCore(){return document;}
+    public void setObjectSelectionListener(Runnable listener){onObjectSelectionChanged=listener;}
 
     private Meshy3DCore copyMeshCore(Meshy3DCore source) {
         Meshy3DCore copy=new Meshy3DCore();
@@ -205,19 +207,52 @@ public final class Meshy3DViewport extends View {
     public void setObjectSelectionEnabled(boolean enabled){objectSelectionEnabled=enabled;}
     private void selectObjectAt(float x,float y,boolean additive) {
         float cx=getWidth()*.5f,cy=getHeight()*.49f,unit=Math.min(getWidth(),getHeight())*.235f*zoom;
-        Meshy3DObjectScene.Object3D best=null;float bestDistance=Float.MAX_VALUE;
+        Meshy3DObjectScene.Object3D best=null;
+        float bestDepth=Float.MAX_VALUE,bestMarkerDistance=Float.MAX_VALUE;
         for(Meshy3DObjectScene.Object3D object:objectScene.getObjects()) {
             if(!objectScene.isVisibleInViewport(object)||!object.renderVisible||!object.selectable
                     ||(localViewActive&&!localViewObjectIds.contains(object.id)))continue;
-            float[] center=objectScene.transformPoint(object.id,0,0,0);
-            float[] screen=project(center[0],center[1],center[2],cx,cy,unit);
-            float maxScale=Math.max(Math.abs(object.transform.scaleX),
-                    Math.max(Math.abs(object.transform.scaleY),Math.abs(object.transform.scaleZ)));
-            float radius=Math.max(16f,Math.min(getWidth(),getHeight())*.235f*zoom*maxScale*1.65f);
-            float distance=(screen[0]-x)*(screen[0]-x)+(screen[1]-y)*(screen[1]-y);
-            if(distance<=radius*radius&&distance<bestDistance){best=object;bestDistance=distance;}
+            if(object.mesh==null){
+                float[] center=objectScene.transformPoint(object.id,0,0,0);
+                float[] screen=project(center[0],center[1],center[2],cx,cy,unit);
+                float radius=Math.max(20f,object.displaySize*15f*getResources().getDisplayMetrics().density);
+                float distance=(screen[0]-x)*(screen[0]-x)+(screen[1]-y)*(screen[1]-y);
+                if(distance<=radius*radius&&distance<bestMarkerDistance){best=object;bestMarkerDistance=distance;}
+                continue;
+            }
+            float[][] meshVertices=object.mesh==document?vertices:object.mesh.copyVertices();
+            int[][] meshFaces=object.mesh==document?faces:object.mesh.copyFaces();
+            float[][] screenVertices=new float[meshVertices.length][3];
+            for(int i=0;i<meshVertices.length;i++){
+                float[] world=objectScene.transformPoint(object.id,meshVertices[i][0],meshVertices[i][1],meshVertices[i][2]);
+                screenVertices[i]=project(world[0],world[1],world[2],cx,cy,unit);
+            }
+            for(int[] face:meshFaces){
+                if(face.length<3)continue;
+                float[] polyX=new float[face.length],polyY=new float[face.length];
+                float worldX=0,worldY=0,worldZ=0;
+                for(int i=0;i<face.length;i++){
+                    int id=face[i];float[] p=screenVertices[id];polyX[i]=p[0];polyY[i]=p[1];
+                    float[] source=meshVertices[id];float[] world=objectScene.transformPoint(object.id,source[0],source[1],source[2]);
+                    worldX+=world[0]/face.length;worldY+=world[1]/face.length;worldZ+=world[2]/face.length;
+                }
+                if(pointInsidePolygon(x,y,polyX,polyY)){
+                    float depth=5.2f-cameraPoint(worldX,worldY,worldZ)[2];
+                    if(depth<bestDepth){best=object;bestDepth=depth;}
+                }
+            }
         }
-        if(best!=null)activateSceneObject(best.id,!additive);
+        if(best==null&&bestMarkerDistance==Float.MAX_VALUE)return;
+        if(best!=null){activateSceneObject(best.id,!additive);if(onObjectSelectionChanged!=null)onObjectSelectionChanged.run();}
+    }
+
+    private static boolean pointInsidePolygon(float x,float y,float[] px,float[] py){
+        boolean inside=false;
+        for(int i=0,j=px.length-1;i<px.length;j=i++){
+            boolean crosses=(py[i]>y)!=(py[j]>y);
+            if(crosses&&x<(px[j]-px[i])*(y-py[i])/(py[j]-py[i]+1e-8f)+px[i])inside=!inside;
+        }
+        return inside;
     }
 
     public void selectAllSceneObjects() {
@@ -1150,7 +1185,8 @@ public final class Meshy3DViewport extends View {
                         snapToNearestAxis(dx,dy);
                     } else if(meshEditMode){selectAt(event.getX(),event.getY(),(event.getMetaState()&android.view.KeyEvent.META_SHIFT_ON)!=0);}
                     else if(objectSelectionEnabled)selectObjectAt(event.getX(),event.getY(),
-                            (event.getMetaState()&android.view.KeyEvent.META_SHIFT_ON)!=0);
+                            (event.getMetaState()&android.view.KeyEvent.META_SHIFT_ON)!=0
+                                    ||event.getEventTime()-event.getDownTime()>=450);
                     else if(onViewportTap!=null) onViewportTap.run();
                 }
                 lastPinchDistance=0; performClick(); return true;
