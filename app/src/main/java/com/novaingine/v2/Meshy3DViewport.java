@@ -412,11 +412,21 @@ public final class Meshy3DViewport extends View {
     }
     public void setActiveObjectOriginToGeometry() {
         if(objectSceneActiveId==null)return;
-        syncCoreFromViewport();objectScene.setOriginToGeometry(objectSceneActiveId);syncViewportFromCore();invalidate();
+        syncCoreFromViewport();
+        java.util.ArrayList<Meshy3DObjectScene.Object3D> targets=new java.util.ArrayList<>(objectScene.getSelectedObjects());
+        if(targets.isEmpty())targets.add(objectScene.getObject(objectSceneActiveId));
+        for(Meshy3DObjectScene.Object3D target:targets)
+            if(target!=null&&target.mesh!=null)objectScene.setOriginToGeometry(target.id);
+        syncViewportFromCore();invalidate();
     }
     public void setActiveObjectOriginToCursor() {
         if(objectSceneActiveId==null)return;
-        syncCoreFromViewport();objectScene.setOriginToCursor(objectSceneActiveId);syncViewportFromCore();invalidate();
+        syncCoreFromViewport();
+        java.util.ArrayList<Meshy3DObjectScene.Object3D> targets=new java.util.ArrayList<>(objectScene.getSelectedObjects());
+        if(targets.isEmpty())targets.add(objectScene.getObject(objectSceneActiveId));
+        for(Meshy3DObjectScene.Object3D target:targets)
+            if(target!=null&&target.mesh!=null)objectScene.setOriginToCursor(target.id);
+        syncViewportFromCore();invalidate();
     }
     public void clearActiveObjectTransform(int component) {
         if(objectSceneActiveId==null)return;
