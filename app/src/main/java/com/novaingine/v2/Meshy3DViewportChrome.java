@@ -19,6 +19,7 @@ final class Meshy3DViewportChrome extends FrameLayout {
     interface Actions {
         void select();
         void cursor();
+        void transform(int mode);
         void sculpt();
         void measure();
         void add();
@@ -60,7 +61,7 @@ final class Meshy3DViewportChrome extends FrameLayout {
         leftTools = new LinearLayout(context);
         leftTools.setOrientation(LinearLayout.VERTICAL);
         leftTools.setPadding(dp(3), dp(3), dp(3), dp(3));
-        leftTools.setBackground(panelBackground(0xE81A2028, dp(8)));
+        leftTools.setBackground(panelBackground(0xE81A2028, 8f));
         leftScroll.addView(leftTools);
         addTool(leftTools, "▣", "Select", 0, () -> actions.select());
         addTool(leftTools, "⊕", "3D Cursor", 1, () -> actions.cursor());
@@ -79,7 +80,7 @@ final class Meshy3DViewportChrome extends FrameLayout {
         transformTools = new LinearLayout(context);
         transformTools.setOrientation(LinearLayout.VERTICAL);
         transformTools.setPadding(dp(5), dp(3), dp(5), dp(4));
-        transformTools.setBackground(panelBackground(0xE91A2028, dp(8)));
+        transformTools.setBackground(panelBackground(0xE91A2028, 8f));
         TextView transformTitle = label("TRANSFORM TOOLS", true);
         transformTools.addView(transformTitle, new LinearLayout.LayoutParams(
                 LayoutParams.WRAP_CONTENT, dp(17)));
@@ -99,7 +100,7 @@ final class Meshy3DViewportChrome extends FrameLayout {
         navigationPanel = new LinearLayout(context);
         navigationPanel.setOrientation(LinearLayout.VERTICAL);
         navigationPanel.setPadding(dp(6), dp(5), dp(6), dp(5));
-        navigationPanel.setBackground(panelBackground(0xEC171D25, dp(9)));
+        navigationPanel.setBackground(panelBackground(0xEC171D25, 9f));
         navigationScroll = new ScrollView(context);
         navigationScroll.setFillViewport(false);
         navigationScroll.setVerticalScrollBarEnabled(false);
@@ -138,7 +139,7 @@ final class Meshy3DViewportChrome extends FrameLayout {
         HorizontalScrollView bottomScroll = new HorizontalScrollView(context);
         bottomScroll.setHorizontalScrollBarEnabled(false);
         bottomScroll.setFillViewport(false);
-        bottomScroll.setBackground(panelBackground(0xF0161C24, dp(6)));
+        bottomScroll.setBackground(panelBackground(0xF0161C24, 6f));
         bottomTools = row(context);
         bottomTools.setPadding(dp(4), dp(3), dp(4), dp(3));
         addBottom("▣  Select", actions::select, true);
@@ -197,7 +198,7 @@ final class Meshy3DViewportChrome extends FrameLayout {
         TextView b = label(glyph, true);
         b.setTextSize(19f * scale);
         b.setGravity(Gravity.CENTER);
-        b.setBackground(panelBackground(id == activeTool ? 0xFF245D9B : 0xFF29323D, dp(5)));
+        b.setBackground(panelBackground(id == activeTool ? 0xFF245D9B : 0xFF29323D, 5f));
         b.setContentDescription(name);
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT, dp(34));
@@ -225,7 +226,7 @@ final class Meshy3DViewportChrome extends FrameLayout {
         b.setTextSize(9f * scale);
         b.setGravity(Gravity.CENTER);
         b.setPadding(dp(6), dp(3), dp(6), dp(3));
-        b.setBackground(panelBackground(selected ? 0xFF245D9B : 0xFF303945, dp(5)));
+        b.setBackground(panelBackground(selected ? 0xFF245D9B : 0xFF303945, 5f));
         b.setContentDescription(description);
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
                 LayoutParams.WRAP_CONTENT, dp(30));
@@ -238,7 +239,7 @@ final class Meshy3DViewportChrome extends FrameLayout {
         TextView b = label(title, false);
         b.setTextSize(9f * scale);
         b.setPadding(dp(5), dp(3), dp(5), dp(3));
-        b.setBackground(panelBackground(0xFF28313B, dp(4)));
+        b.setBackground(panelBackground(0xFF28313B, 4f));
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT, dp(23));
         p.bottomMargin = dp(2);
@@ -251,7 +252,7 @@ final class Meshy3DViewportChrome extends FrameLayout {
         b.setTextSize(9f * scale);
         b.setGravity(Gravity.CENTER);
         b.setPadding(dp(7), 0, dp(7), 0);
-        b.setBackground(panelBackground(selected ? 0xFF245D9B : 0xFF29323D, dp(4)));
+        b.setBackground(panelBackground(selected ? 0xFF245D9B : 0xFF29323D, 4f));
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
                 LayoutParams.WRAP_CONTENT, dp(29));
         p.rightMargin = dp(3);
@@ -260,9 +261,7 @@ final class Meshy3DViewportChrome extends FrameLayout {
     }
 
     private void setTransform(int mode) {
-        viewport.setObjectSelectionEnabled(true);
-        viewport.setObjectBoxSelectEnabled(false);
-        viewport.setObjectTransformTool(mode);
+        actions.transform(mode);
         activeTool = mode == 0 ? 2 : mode == 1 ? 3 : 4;
     }
 
