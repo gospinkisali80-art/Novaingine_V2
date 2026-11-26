@@ -238,6 +238,11 @@ public final class Meshy3DObjectScene {
         object.modifiers.add(modifier);revision++;return modifier;
     }
 
+    public void clearModifiers(String objectId){
+        Object3D object=requireObject(objectId);
+        if(!object.modifiers.isEmpty()){object.modifiers.clear();revision++;}
+    }
+
     public void removeModifier(String objectId,String modifierId){
         Object3D object=requireObject(objectId);
         if(!object.modifiers.removeIf(m->m.id.equals(modifierId)))
