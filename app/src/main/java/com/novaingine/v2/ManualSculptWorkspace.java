@@ -414,9 +414,10 @@ public final class ManualSculptWorkspace extends FrameLayout {
 
     private void handleWorkspaceItem(String item) {
         if (meshyViewport == null) return;
-        if ("Cube".equalsIgnoreCase(item) || "Selected Mesh".equalsIgnoreCase(item)
-                || "Active Tool".equalsIgnoreCase(item)) {
-            status.setText(WORKSPACE_NAMES[activeWorkspaceIndex] + " | Active object: Cube");
+        if ("Selected Mesh".equalsIgnoreCase(item) || "Active Tool".equalsIgnoreCase(item)) {
+            Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
+            status.setText(WORKSPACE_NAMES[activeWorkspaceIndex] + " | Active object: "
+                    +(active==null?"None":active.name));
             return;
         }
         switch (activeWorkspaceIndex) {
@@ -435,7 +436,37 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 else showWorkspaceActionInfo(item);
                 break;
             case 1:
-                if ("Vertex".equalsIgnoreCase(item) || "Vertex Select".equalsIgnoreCase(item)) {
+                if ("Add Cube".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.addCubeObject();
+                    activeEditorMode="Object Mode";if(modeButton!=null)modeButton.setText(activeEditorMode);
+                    meshyViewport.setMeshEditMode(false);
+                    status.setText("Modeling | New independent Cube object added");
+                } else if ("Duplicate".equals(item) || "Duplicate Linked".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.duplicateActiveObject("Duplicate Linked".equals(item));
+                    status.setText("Modeling | "+item+" created");
+                } else if ("Delete Object".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.deleteActiveObject();
+                    status.setText("Modeling | Active object deleted");
+                } else if ("Rename Object".equals(item)) showObjectRenameDialog();
+                else if ("Select Object".equals(item)) showObjectPickerDialog(false);
+                else if ("Hide / Show Object".equals(item)) {
+                    Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
+                    if(active!=null){meshyViewport.setActiveObjectVisible(!active.visible);status.setText("Modeling | "+active.name+(active.visible?" hidden":" visible"));}
+                } else if ("Apply Rotation & Scale".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.applyActiveObjectRotationAndScale();
+                    status.setText("Modeling | Active object rotation and scale applied");
+                } else if ("Parent To".equals(item)) showObjectPickerDialog(true);
+                else if ("Clear Parent".equals(item)) {
+                    meshyViewport.setActiveObjectParent(null);status.setText("Modeling | Parent relationship cleared");
+                } else if ("Add Collection".equals(item)) showCreateCollectionDialog();
+                else if ("Move To Collection".equals(item)) showCollectionPickerDialog();
+                else if ("Object Statistics".equals(item)) {
+                    Meshy3DObjectScene scene=meshyViewport.getObjectScene();
+                    status.setText("Scene | "+scene.getObjectCount()+" objects | "+scene.getCollectionCount()+" collections");
+                } else if (("Move".equals(item)||"Rotate".equals(item)||"Scale".equals(item))
+                        && !"Edit Mode".equals(activeEditorMode)) {
+                    showObjectTransformDialog(item);
+                } else if ("Vertex".equalsIgnoreCase(item) || "Vertex Select".equalsIgnoreCase(item)) {
                     meshyViewport.setMeshEditMode(true);meshyViewport.setSelectionMode("Vertex");
                     status.setText("Modeling | Vertex selection | Tap vertices to select");
                 } else if ("Edge".equalsIgnoreCase(item) || "Edge Select".equalsIgnoreCase(item)) {
@@ -454,8 +485,10 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     meshyViewport.selectSimilar();status.setText("Modeling | Similar mesh elements selected");
                 } else if ("Move".equals(item) || "Rotate".equals(item) || "Scale".equals(item)
                         || "Transform".equals(item)) {
-                    meshyViewport.setMeshEditMode(true);
-                    showTransformDialog(item.equals("Transform") ? "Move" : item);
+                    if ("Edit Mode".equals(activeEditorMode)) {
+                        meshyViewport.setMeshEditMode(true);
+                        showTransformDialog(item.equals("Transform") ? "Move" : item);
+                    } else showObjectTransformDialog(item.equals("Transform") ? "Move" : item);
                 } else if ("Extrude Region".equals(item) || "Extrude Along Normals".equals(item)
                         || "Extrude Individual Faces".equals(item) || "Extrude".equals(item)) {
                     final boolean individual="Extrude Individual Faces".equals(item);
@@ -872,6 +905,93 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 }).setNegativeButton("Cancel", null).show();
     }
 
+    private void showObjectTransformDialog(String operation) {
+        Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
+        if(active==null)return;
+        LinearLayout panel=new LinearLayout(activity);panel.setPadding(dp(18),dp(8),dp(18),dp(8));
+        panel.setOrientation(LinearLayout.VERTICAL);
+        EditText[] fields=new EditText[3];String[] axes={"X","Y","Z"};
+        float[] values=operation.equals("Move")
+                ?new float[]{active.transform.x,active.transform.y,active.transform.z}
+                :operation.equals("Rotate")
+                ?new float[]{active.transform.rotationX,active.transform.rotationY,active.transform.rotationZ}
+                :new float[]{active.transform.scaleX,active.transform.scaleY,active.transform.scaleZ};
+        for(int i=0;i<3;i++){
+            TextView label=new TextView(activity);label.setText(axes[i]);fields[i]=new EditText(activity);
+            fields[i].setSingleLine(true);
+            fields[i].setInputType(android.text.InputType.TYPE_CLASS_NUMBER
+                    |android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+                    |android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+            fields[i].setText(String.format(java.util.Locale.US,"%.3f",values[i]));panel.addView(label);panel.addView(fields[i]);
+        }
+        new android.app.AlertDialog.Builder(activity).setTitle(operation+" Object").setView(panel)
+                .setPositiveButton("Apply",(d,w)->{
+                    try{
+                        float x=Float.parseFloat(fields[0].getText().toString());
+                        float y=Float.parseFloat(fields[1].getText().toString());
+                        float z=Float.parseFloat(fields[2].getText().toString());
+                        checkpointMeshEdit();
+                        if(operation.equals("Move"))meshyViewport.transformActiveObject(0,x-active.transform.x,y-active.transform.y,z-active.transform.z);
+                        else if(operation.equals("Rotate"))meshyViewport.transformActiveObject(1,x-active.transform.rotationX,y-active.transform.rotationY,z-active.transform.rotationZ);
+                        else meshyViewport.transformActiveObject(2,x/active.transform.scaleX,y/active.transform.scaleY,z/active.transform.scaleZ);
+                        status.setText("Modeling | Object "+operation.toLowerCase(java.util.Locale.ROOT)+" updated");
+                    }catch(Exception error){Toast.makeText(activity,"Enter valid X, Y and Z values.",Toast.LENGTH_SHORT).show();}
+                }).setNegativeButton("Cancel",null).show();
+    }
+
+    private void showObjectRenameDialog() {
+        Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();if(active==null)return;
+        EditText input=new EditText(activity);input.setSingleLine(true);input.setText(active.name);
+        new android.app.AlertDialog.Builder(activity).setTitle("Rename Object").setView(input)
+                .setPositiveButton("Rename",(d,w)->{
+                    try{meshyViewport.renameActiveObject(input.getText().toString());status.setText("Modeling | Object renamed");}
+                    catch(Exception e){Toast.makeText(activity,"Enter a valid object name.",Toast.LENGTH_SHORT).show();}
+                }).setNegativeButton("Cancel",null).show();
+    }
+
+    private void showObjectPickerDialog(boolean parentMode) {
+        Meshy3DObjectScene scene=meshyViewport.getObjectScene();
+        java.util.ArrayList<Meshy3DObjectScene.Object3D> objects=new java.util.ArrayList<>(scene.getObjects());
+        java.util.ArrayList<String> names=new java.util.ArrayList<>();
+        for(Meshy3DObjectScene.Object3D o:objects)names.add(o.name+(o.id.equals(scene.getActiveObjectId())?"  (Active)":""));
+        if(names.isEmpty())return;
+        new android.app.AlertDialog.Builder(activity).setTitle(parentMode?"Choose Parent":"Select Object")
+                .setItems(names.toArray(new String[0]),(d,w)->{
+                    Meshy3DObjectScene.Object3D target=objects.get(w);
+                    try{
+                        if(parentMode){if(!target.id.equals(scene.getActiveObjectId()))meshyViewport.setActiveObjectParent(target.id);
+                            status.setText("Modeling | Parent set to "+target.name);}
+                        else {meshyViewport.selectSceneObject(target.id);status.setText("Modeling | Active object: "+target.name);}
+                    }catch(Exception error){new android.app.AlertDialog.Builder(activity).setTitle("Object Relationship")
+                            .setMessage(error.getMessage()).setPositiveButton("OK",null).show();}
+                }).setNegativeButton("Cancel",null).show();
+    }
+
+    private void showCreateCollectionDialog() {
+        EditText input=new EditText(activity);input.setSingleLine(true);input.setHint("Collection name");
+        new android.app.AlertDialog.Builder(activity).setTitle("New Collection").setView(input)
+                .setPositiveButton("Create",(d,w)->{
+                    String name=input.getText().toString().trim();if(name.isEmpty())name="Collection";
+                    Meshy3DObjectScene.Collection3D collection=meshyViewport.getObjectScene().createCollection(name);
+                    Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
+                    if(active!=null)meshyViewport.getObjectScene().moveToCollection(active.id,collection.id);
+                    status.setText("Modeling | Collection created: "+collection.name);
+                }).setNegativeButton("Cancel",null).show();
+    }
+
+    private void showCollectionPickerDialog() {
+        Meshy3DObjectScene scene=meshyViewport.getObjectScene();
+        java.util.ArrayList<Meshy3DObjectScene.Collection3D> collections=new java.util.ArrayList<>(scene.getCollections());
+        String[] names=new String[collections.size()];for(int i=0;i<names.length;i++)names[i]=collections.get(i).name;
+        if(names.length==0)return;
+        new android.app.AlertDialog.Builder(activity).setTitle("Move Object To Collection")
+                .setItems(names,(d,w)->{
+                    Meshy3DObjectScene.Object3D active=scene.getActiveObject();
+                    if(active!=null){scene.moveToCollection(active.id,collections.get(w).id);
+                        status.setText("Modeling | "+active.name+" added to "+collections.get(w).name);}
+                }).setNegativeButton("Cancel",null).show();
+    }
+
     private interface AmountAction { void apply(float amount); }
     private void showAmountDialog(String title, float min, float max, AmountAction action) {
         SeekBar bar = new SeekBar(activity); bar.setMax(1000); bar.setProgress(250);
@@ -977,7 +1097,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
         if (workspaceLayoutLayer == null) return;
         workspaceLayoutLayer.removeAllViews();
         viewportFocusMode = false;
-        if (meshyViewport != null) meshyViewport.setMeshEditMode(index == 1);
+        if (meshyViewport != null) meshyViewport.setMeshEditMode(index == 1 && "Edit Mode".equals(activeEditorMode));
         workspaceToolbar = new LinearLayout(activity);
         workspaceToolbar.setGravity(Gravity.CENTER_VERTICAL);
         workspaceToolbar.setBackgroundColor(0xE02B333D);
@@ -1013,21 +1133,25 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         "End Frame: 250", "Keyframes"};
                 break;
             case 1:
-                tools = new String[]{"Vertex", "Edge", "Face", "Move", "Rotate", "Scale", "Extrude", "Inset",
-                        "Bevel", "Loop Cut", "Plane Cut", "Bisect", "Bridge", "Fill", "Subdivide",
-                        "Merge", "Dissolve", "Separate", "Spin", "Screw", "Shear", "Bend"};
+                tools = new String[]{"Select", "Move", "Rotate", "Scale", "Add Cube", "Duplicate",
+                        "Duplicate Linked", "Delete Object", "Rename Object", "Apply Rotation & Scale",
+                        "Vertex", "Edge", "Face", "Extrude", "Inset", "Bevel", "Loop Cut", "Plane Cut",
+                        "Bisect", "Bridge", "Fill", "Subdivide", "Merge", "Dissolve", "Separate"};
                 leftTitle = "Modeling Tools";
                 leftItems = new String[]{
-                        "SELECTION", "Vertex Select", "Edge Select", "Face Select", "Select All", "Select Linked",
-                        "Select Loops", "Select Similar", "TRANSFORM", "Move", "Rotate", "Scale", "Mirror",
-                        "Shrink / Fatten", "Shear", "Bend", "To Sphere", "Edge Slide", "Vertex Slide",
-                        "MESH EDIT", "Extrude Region", "Extrude Along Normals", "Extrude Individual Faces",
-                        "Inset Faces", "Bevel Edges", "Loop Cut", "Plane Cut", "Bisect", "Poly Build",
-                        "Bridge Edge Loops", "Spin", "Screw", "Fill", "Grid Fill", "Bridge",
-                        "TOPOLOGY", "Subdivide", "Un-Subdivide", "Merge by Distance", "Dissolve Edges",
-                        "Dissolve Faces", "Limited Dissolve", "Delete Vertices", "Delete Edges",
-                        "Delete Faces", "Separate Selection", "Split", "Rip", "Decimate",
-                        "MESH CLEANUP", "Recalculate Normals", "Flip Normals", "Merge by Distance",
+                        "OBJECT MODE", "Add Cube", "Duplicate", "Duplicate Linked", "Delete Object",
+                        "Rename Object", "Select Object", "Hide / Show Object", "Apply Rotation & Scale",
+                        "Parent To", "Clear Parent", "Add Collection", "Move To Collection",
+                        "Object Statistics", "EDIT MODE", "Vertex Select", "Edge Select", "Face Select",
+                        "Select All", "Select Linked", "Select Loops", "Select Similar", "TRANSFORM",
+                        "Move", "Rotate", "Scale", "Mirror", "Shrink / Fatten", "Shear", "Bend",
+                        "To Sphere", "Edge Slide", "Vertex Slide", "MESH EDIT", "Extrude Region",
+                        "Extrude Along Normals", "Extrude Individual Faces", "Inset Faces", "Bevel Edges",
+                        "Loop Cut", "Plane Cut", "Bisect", "Poly Build", "Bridge Edge Loops", "Spin",
+                        "Screw", "Fill", "Grid Fill", "Bridge", "TOPOLOGY", "Subdivide", "Un-Subdivide",
+                        "Merge by Distance", "Dissolve Edges", "Dissolve Faces", "Limited Dissolve",
+                        "Delete Vertices", "Delete Edges", "Delete Faces", "Separate Selection", "Split",
+                        "Rip", "Decimate", "MESH CLEANUP", "Recalculate Normals", "Flip Normals",
                         "Degenerate Dissolve", "Make Planar", "Smooth Vertices", "Randomize",
                         "SYMMETRY & MODIFIERS", "Symmetrize", "Bisect", "Mirror Modifier",
                         "Subdivision Surface", "Solidify", "Bevel Modifier", "Weighted Normal",
