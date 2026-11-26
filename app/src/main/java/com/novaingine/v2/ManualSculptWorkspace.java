@@ -466,6 +466,15 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 } else if ("Subdivide".equals(item)) {
                     checkpointMeshEdit();meshyViewport.subdivideSelected();
                     status.setText("Modeling | Mesh subdivided");
+                } else if ("Dissolve Edges".equals(item) || "Dissolve Edge".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.dissolveSelectedEdges();
+                    status.setText("Modeling | Selected shared edge dissolved");
+                } else if ("Triangulate Faces".equals(item) || "Triangulate".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.triangulateSelectedFaces();
+                    status.setText("Modeling | Selected faces triangulated");
+                } else if ("Delete Faces".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.deleteSelectedFaces();
+                    status.setText("Modeling | Selected faces deleted");
                 } else if ("Merge by Distance".equals(item) || "Merge".equals(item)) {
                     showAmountDialog("Merge distance",0.001f,0.25f,value->{
                         checkpointMeshEdit();meshyViewport.mergeSelected(value);
