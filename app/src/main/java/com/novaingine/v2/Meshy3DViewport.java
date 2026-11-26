@@ -280,10 +280,11 @@ public final class Meshy3DViewport extends View {
             }
         }
         if(meshEditMode){
-            paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(2.2f);
-            for(int i=0;i<document.getEdges().size();i++)if(document.isEdgeSelected(i)){
+            paint.setStyle(Paint.Style.STROKE);
+            for(int i=0;i<document.getEdges().size();i++)if(document.isEdgeSelected(i)||document.isSeam(i)){
                 Meshy3DCore.Edge e=document.getEdges().get(i);float[] a=p[e.a],b=p[e.b];
-                paint.setColor(0xFFFFA52B);canvas.drawLine(a[0],a[1],b[0],b[1],paint);
+                boolean selected=document.isEdgeSelected(i);paint.setStrokeWidth(selected?2.4f:1.5f);
+                paint.setColor(selected?0xFFFFA52B:0xFFE05252);canvas.drawLine(a[0],a[1],b[0],b[1],paint);
             }
             if(selectionMode==Meshy3DCore.SelectMode.VERTEX){
                 paint.setStyle(Paint.Style.FILL);float density=getResources().getDisplayMetrics().density;
