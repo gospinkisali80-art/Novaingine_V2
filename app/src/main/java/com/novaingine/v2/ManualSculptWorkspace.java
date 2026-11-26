@@ -331,7 +331,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     case 3: showGridSnapDialog(); break;
                     case 4:
                         meshyViewport.toggleFloorGrid();
-                        status.setText("Meshy3D | Floor grid "+(meshyViewport.isFloorGridVisible()?"shown":"hidden"));
+                        Toast.makeText(activity, "Floor grid "+(meshyViewport.isFloorGridVisible()?"shown":"hidden"),
+                                Toast.LENGTH_SHORT).show();
                         break;
                     default: toggleWorkspacePanels();
                 }
