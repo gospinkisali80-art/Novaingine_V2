@@ -577,6 +577,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 } else if ("Clear Parent".equals(item)) {
                     meshyViewport.clearSelectedParents();refreshModelingOutliner();status.setText("Modeling | Selected parent relationships cleared");
                 } else if ("Add Collection".equals(item)) showCreateCollectionDialog();
+                else if ("Manage Collections".equals(item)) showCollectionManagerPicker();
                 else if ("Move To Collection".equals(item)) showCollectionPickerDialog(false);
                 else if ("Link To Collection".equals(item)) showCollectionPickerDialog(true);
                 else if ("Object Statistics".equals(item)) {
@@ -1298,10 +1299,62 @@ public final class ManualSculptWorkspace extends FrameLayout {
         new android.app.AlertDialog.Builder(activity).setTitle("New Collection").setView(input)
                 .setPositiveButton("Create",(d,w)->{
                     String name=input.getText().toString().trim();if(name.isEmpty())name="Collection";
-                    Meshy3DObjectScene.Collection3D collection=meshyViewport.getObjectScene().createCollection(name);
-                    Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
-                    if(active!=null)meshyViewport.getObjectScene().moveToCollection(active.id,collection.id);
-                    status.setText("Modeling | Collection created: "+collection.name);
+                    Meshy3DObjectScene scene=meshyViewport.getObjectScene();
+                    Meshy3DObjectScene.Collection3D collection=scene.createCollection(name);
+                    if(scene.getSelectedObjects().isEmpty()){
+                        Meshy3DObjectScene.Object3D active=scene.getActiveObject();
+                        if(active!=null)scene.moveToCollection(active.id,collection.id);
+                    }else meshyViewport.moveSelectedToCollection(collection.id);
+                    refreshModelingOutliner();status.setText("Modeling | Collection created: "+collection.name);
+                }).setNegativeButton("Cancel",null).show();
+    }
+
+    private void showCollectionManagerPicker() {
+        Meshy3DObjectScene scene=meshyViewport.getObjectScene();
+        java.util.ArrayList<Meshy3DObjectScene.Collection3D> collections=new java.util.ArrayList<>(scene.getCollections());
+        if(collections.isEmpty())return;
+        String[] names=new String[collections.size()];
+        for(int i=0;i<names.length;i++)names[i]=collections.get(i).name;
+        new android.app.AlertDialog.Builder(activity).setTitle("Manage Collections")
+                .setItems(names,(d,index)->showCollectionActions(collections.get(index)))
+                .setNegativeButton("Cancel",null).show();
+    }
+
+    private void showCollectionActions(Meshy3DObjectScene.Collection3D collection) {
+        String[] actions={"Select Objects","Toggle Viewport Visibility","Toggle Render Visibility","Rename","Delete"};
+        new android.app.AlertDialog.Builder(activity).setTitle(collection.name)
+                .setItems(actions,(d,which)->{
+                    Meshy3DObjectScene scene=meshyViewport.getObjectScene();
+                    try{
+                        if(which==0){
+                            meshyViewport.selectCollectionObjects(collection.id,false);refreshModelingOutliner();
+                            status.setText("Modeling | Objects in "+collection.name+" selected");
+                        }else if(which==1){
+                            boolean visible=!collection.visible;
+                            meshyViewport.setCollectionViewportVisibility(collection.id,visible);refreshModelingOutliner();
+                            status.setText("Modeling | "+collection.name+" viewport visibility: "+visible);
+                        }else if(which==2){
+                            boolean visible=!collection.renderVisible;
+                            meshyViewport.setCollectionRenderVisibility(collection.id,visible);
+                            status.setText("Modeling | "+collection.name+" render visibility: "+visible);
+                        }else if(which==3){
+                            EditText input=new EditText(activity);input.setSingleLine(true);input.setText(collection.name);
+                            new android.app.AlertDialog.Builder(activity).setTitle("Rename Collection").setView(input)
+                                    .setPositiveButton("Save",(dialog,button)->{
+                                        try{scene.renameCollection(collection.id,input.getText().toString());
+                                            refreshModelingOutliner();status.setText("Modeling | Collection renamed");}
+                                        catch(Exception error){showObjectOperationError(error);}
+                                    }).setNegativeButton("Cancel",null).show();
+                        }else{
+                            new android.app.AlertDialog.Builder(activity).setTitle("Delete Collection")
+                                    .setMessage("Remove "+collection.name+"? Objects will be moved to another collection when needed.")
+                                    .setPositiveButton("Delete",(dialog,button)->{
+                                        try{meshyViewport.deleteSceneCollection(collection.id);refreshModelingOutliner();
+                                            status.setText("Modeling | Collection deleted");}
+                                        catch(Exception error){showObjectOperationError(error);}
+                                    }).setNegativeButton("Cancel",null).show();
+                        }
+                    }catch(Exception error){showObjectOperationError(error);}
                 }).setNegativeButton("Cancel",null).show();
     }
 
@@ -1415,6 +1468,14 @@ public final class ManualSculptWorkspace extends FrameLayout {
         scroll.addView(content, new ScrollView.LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
         if ("Modeling Tools".equals(heading) && meshyViewport != null) {
+            content.addView(dockHeading("COLLECTIONS"));
+            for(Meshy3DObjectScene.Collection3D collection:meshyViewport.getObjectScene().getCollections()) {
+                TextView collectionRow=dockItem((collection.visible?"▾ ":"▸ ")+collection.name,false);
+                collectionRow.setOnClickListener(v->{meshyViewport.selectCollectionObjects(collection.id,false);
+                    refreshModelingOutliner();status.setText("Modeling | Collection: "+collection.name);});
+                collectionRow.setOnLongClickListener(v->{showCollectionActions(collection);return true;});
+                content.addView(collectionRow);
+            }
             content.addView(dockHeading("SCENE OUTLINER"));
             for(Meshy3DObjectScene.Object3D object:meshyViewport.getObjectScene().getObjects()) {
                 TextView objectRow=dockItem(object.name,object.active);
@@ -1488,7 +1549,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         "Lock Selection", "Unlock Selection", "Disable in Render", "Enable in Render",
                         "Apply Location", "Apply Rotation & Scale", "Apply All Transforms", "Clear Location", "Clear Rotation", "Clear Scale",
                         "Set Origin to Geometry", "Set Origin to 3D Cursor", "Parent To", "Parent Selected to Active", "Clear Parent",
-                        "Add Collection", "Move To Collection", "Link To Collection", "Make Single User",
+                        "Add Collection", "Manage Collections", "Move To Collection", "Link To Collection", "Make Single User",
                         "Set Active Camera", "Camera Settings", "Light Settings", "Object Statistics",
                         "EDIT MODE", "Vertex Select", "Edge Select", "Face Select",
                         "Select All", "Select Linked", "Select Loops", "Select Similar", "TRANSFORM",
@@ -1508,7 +1569,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 rightTitle = "Tool Properties";
                 rightItems = new String[]{"Object Properties", "Object Transform", "Numeric Transform", "Dimensions",
                         "Set 3D Cursor", "Snap to Grid", "Snap to 3D Cursor", "Frame Selected", "Frame All",
-                        "Parent", "Collections",
+                        "Parent", "Collections", "Manage Collections",
                         "Visibility", "Selectable", "Render Visibility", "Active Camera", "Camera Settings", "Light Settings",
                         "Active Tool", "Selection Mode", "Operation Amount", "Offset", "Segments", "Profile",
                         "Loop Cut Count", "Merge Threshold", "Mesh Statistics", "Vertices", "Edges", "Faces",
