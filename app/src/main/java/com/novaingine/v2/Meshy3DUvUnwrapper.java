@@ -14,13 +14,13 @@ public final class Meshy3DUvUnwrapper {
             LinkedHashMap<Integer,Integer> local=new LinkedHashMap<>();
             for(int fi:faceIds)for(int id:faces[fi])if(!local.containsKey(id))local.put(id,local.size());
             int count=local.size();if(count<3)continue;
+            Integer[] ids=local.keySet().toArray(new Integer[0]);
             ArrayList<Row> equations=new ArrayList<>();
             for(int fi:faceIds){int[] f=faces[fi];for(int k=1;k<f.length-1;k++){
                 int a=local.get(f[0]),b=local.get(f[k]),c=local.get(f[k+1]);
-                addTriangleEquations(vertices,local.keySet().toArray(new Integer[0]),a,b,c,equations);
+                addTriangleEquations(vertices,ids,a,b,c,equations);
             }}
             int pinA=0,pinB=1;double farthest=-1;
-            Integer[] ids=local.keySet().toArray(new Integer[0]);
             for(int i=0;i<count;i++)for(int j=i+1;j<count;j++){
                 float[] a=vertices[ids[i]],b=vertices[ids[j]];
                 double d=sq(a[0]-b[0])+sq(a[1]-b[1])+sq(a[2]-b[2]);
