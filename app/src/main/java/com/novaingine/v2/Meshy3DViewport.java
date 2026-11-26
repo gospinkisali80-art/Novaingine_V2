@@ -49,6 +49,7 @@ public final class Meshy3DViewport extends View {
     private boolean localViewActive;
     private final java.util.HashSet<String> localViewObjectIds=new java.util.HashSet<>();
     private Runnable onObjectSelectionChanged;
+    private String modifierEvaluationWarning;
     private Runnable onObjectTransformStart;
     private int objectTransformTool=-1;
     private int objectPivotMode=0;
@@ -660,11 +661,20 @@ public final class Meshy3DViewport extends View {
         java.util.ArrayList<float[]> allVertices=new java.util.ArrayList<>();
         java.util.ArrayList<int[]> allFaces=new java.util.ArrayList<>();
         java.util.ArrayList<Boolean> active=new java.util.ArrayList<>();
+        modifierEvaluationWarning=null;
         for(Meshy3DObjectScene.Object3D object:objectScene.getObjects()) {
             if(!objectScene.isVisibleInViewport(object)||!object.renderVisible
                     ||(localViewActive&&!localViewObjectIds.contains(object.id))||object.mesh==null)continue;
-            float[][] meshVertices=object.mesh==document?vertices:object.mesh.copyVertices();
-            int[][] meshFaces=object.mesh==document?faces:object.mesh.copyFaces();
+            Meshy3DCore renderMesh=object.mesh;
+            if(!object.modifiers.isEmpty()){
+                try{renderMesh=Meshy3DModifierEvaluator.evaluate(object);}
+                catch(RuntimeException error){
+                    modifierEvaluationWarning=object.name+": "+(error.getMessage()==null?"Modifier evaluation failed.":error.getMessage());
+                    renderMesh=object.mesh;
+                }
+            }
+            float[][] meshVertices=renderMesh==document?vertices:renderMesh.copyVertices();
+            int[][] meshFaces=renderMesh==document?faces:renderMesh.copyFaces();
             int offset=allVertices.size();
             for(float[] source:meshVertices) {
                 allVertices.add(objectScene.transformPoint(object.id,source[0],source[1],source[2]));
@@ -753,6 +763,33 @@ public final class Meshy3DViewport extends View {
         data.faceUvs=faceUvList.toArray(new float[0][][]);
         return data;
     }
+
+    public String validateActiveObjectModifiers(){
+        Meshy3DObjectScene.Object3D active=objectScene.getActiveObject();
+        if(active==null||active.mesh==null)return "Select a mesh object first.";
+        try{Meshy3DModifierEvaluator.evaluate(active);modifierEvaluationWarning=null;invalidate();return null;}
+        catch(RuntimeException error){
+            modifierEvaluationWarning=active.name+": "+(error.getMessage()==null?"Modifier evaluation failed.":error.getMessage());
+            invalidate();return modifierEvaluationWarning;
+        }
+    }
+
+    public void applyActiveObjectModifiersThrough(int modifierIndex){
+        Meshy3DObjectScene.Object3D active=objectScene.getActiveObject();
+        if(active==null||active.mesh==null)throw new IllegalStateException("Select a mesh object first.");
+        if(modifierIndex<0||modifierIndex>=active.modifiers.size())
+            throw new IllegalArgumentException("Modifier index is outside the stack.");
+        Meshy3DCore evaluated=Meshy3DModifierEvaluator.evaluateThrough(active,modifierIndex);
+        active.mesh=evaluated;
+        objectScene.removeModifiersThrough(active.id,modifierIndex);
+        modifierEvaluationWarning=null;
+        if(active.id.equals(objectSceneActiveId)){
+            document=evaluated;syncViewportFromCore();
+        }
+        invalidate();
+    }
+
+    public String getModifierEvaluationWarning(){return modifierEvaluationWarning;}
 
     public android.graphics.Bitmap renderFinalImage(int width,int height){
         syncCoreFromViewport();
@@ -1192,6 +1229,13 @@ public final class Meshy3DViewport extends View {
             canvas.drawRect(Math.min(downX,objectBoxEndX),Math.min(downY,objectBoxEndY),
                     Math.max(downX,objectBoxEndX),Math.max(downY,objectBoxEndY),paint);
             paint.setStyle(Paint.Style.FILL);
+        }
+        if(modifierEvaluationWarning!=null){
+            float d=getResources().getDisplayMetrics().density;
+            paint.setColor(0xFFFFB06A);paint.setTextSize(10f*d);paint.setStyle(Paint.Style.FILL);
+            String warning="Modifier: "+modifierEvaluationWarning;
+            while(paint.measureText(warning)>width-24f*d&&warning.length()>12)warning=warning.substring(0,warning.length()-4)+"…";
+            canvas.drawText(warning,12f*d,height-12f*d,paint);
         }
         if(!meshEditMode&&objectSelectionEnabled&&objectTransformTool>=0)drawObjectTransformGizmo(canvas,cx,cy,unit);
         drawNavigationGizmo(canvas, width, 18f*getResources().getDisplayMetrics().density);
