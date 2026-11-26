@@ -6,7 +6,7 @@ import java.util.*;
 public final class Meshy3DUvUnwrapper {
     private Meshy3DUvUnwrapper(){}
     private static final class Row {final int[] ids;final double[] c;Row(int[] i,double[] v){ids=i;c=v;}}
-    public static float[][][] unwrap(float[][] vertices,int[][] faces,List<Meshy3DCore.UvIsland> islands){
+    public static float[][][] unwrap(float[][] vertices,int[][] faces,List<Meshy3DCore.UvIsland> islands,Set<Long> pins,float[][][] previousUvs){
         float[][][] result=new float[faces.length][][];
         int cols=Math.max(1,(int)Math.ceil(Math.sqrt(islands.size()))),rows=(int)Math.ceil(islands.size()/(float)cols);
         for(int islandIndex=0;islandIndex<islands.size();islandIndex++){
@@ -26,11 +26,18 @@ public final class Meshy3DUvUnwrapper {
                 double d=sq(a[0]-b[0])+sq(a[1]-b[1])+sq(a[2]-b[2]);
                 if(d>farthest){farthest=d;pinA=i;pinB=j;}
             }
+            ArrayList<Integer> pinned=new ArrayList<>();for(int i=0;i<count;i++)if(pins.contains((long)ids[i]))pinned.add(i);
+            if(pinned.size()>=2){pinA=pinned.get(0);pinB=pinned.get(1);}
+            else if(pinned.size()==1)pinA=pinned.get(0);
             double[] target=new double[count*2],penalty=new double[count*2];
-            target[pinA*2]=0;target[pinA*2+1]=0;target[pinB*2]=1;target[pinB*2+1]=0;
+            float[] oldA=findOldUv(previousUvs,faceIds,ids[pinA]);
+            float[] oldB=findOldUv(previousUvs,faceIds,ids[pinB]);
+            target[pinA*2]=oldA==null?0:oldA[0];target[pinA*2+1]=oldA==null?0:oldA[1];
+            target[pinB*2]=oldB==null?target[pinA*2]+1:oldB[0];target[pinB*2+1]=oldB==null?target[pinA*2+1]:oldB[1];
             double lambda=100000.0;
             penalty[pinA*2]=lambda;penalty[pinA*2+1]=lambda;penalty[pinB*2]=lambda;penalty[pinB*2+1]=lambda;
-            double[] rhs=new double[count*2];rhs[pinB*2]=lambda;
+            double[] rhs=new double[count*2];rhs[pinA*2]=lambda*target[pinA*2];rhs[pinA*2+1]=lambda*target[pinA*2+1];
+            rhs[pinB*2]=lambda*target[pinB*2];rhs[pinB*2+1]=lambda*target[pinB*2+1];
             double[] x=solve(equations,penalty,rhs,count*2);
             double minU=Double.POSITIVE_INFINITY,minV=Double.POSITIVE_INFINITY,maxU=Double.NEGATIVE_INFINITY,maxV=Double.NEGATIVE_INFINITY;
             for(int i=0;i<count;i++){minU=Math.min(minU,x[2*i]);maxU=Math.max(maxU,x[2*i]);minV=Math.min(minV,x[2*i+1]);maxV=Math.max(maxV,x[2*i+1]);}
@@ -50,6 +57,11 @@ public final class Meshy3DUvUnwrapper {
             for(int fi:faceIds){int[] f=faces[fi];result[fi]=new float[f.length][2];for(int j=0;j<f.length;j++)result[fi][j]=uvByVertex.get(f[j]).clone();}
         }
         return result;
+    }
+    private static float[] findOldUv(float[][][] old,List<Integer> faceIds,int vertex){
+        if(old==null)return null;for(int fi:faceIds)if(fi<old.length&&old[fi]!=null)
+            for(int j=0;j<old[fi].length;j++)if(old[fi][j]!=null)return old[fi][j].clone();
+        return null;
     }
     private static void addTriangleEquations(float[][] vertices,Integer[] ids,int a,int b,int c,List<Row> rows){
         float[] p0=vertices[ids[a]],p1=vertices[ids[b]],p2=vertices[ids[c]];
