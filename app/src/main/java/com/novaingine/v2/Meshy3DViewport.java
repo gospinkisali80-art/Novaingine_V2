@@ -212,6 +212,18 @@ public final class Meshy3DViewport extends View {
         for(Meshy3DObjectScene.Object3D o:objectScene.getSelectedObjects())objectScene.linkToCollection(o.id,collectionId);
         invalidate();
     }
+    public void selectCollectionObjects(String collectionId,boolean extend){
+        objectScene.selectCollection(collectionId,extend);activateCurrentObjectWithoutClearing();
+    }
+    public void setCollectionViewportVisibility(String collectionId,boolean visible){
+        objectScene.setCollectionVisibility(collectionId,visible);invalidate();
+    }
+    public void setCollectionRenderVisibility(String collectionId,boolean visible){
+        objectScene.setCollectionRenderVisibility(collectionId,visible);invalidate();
+    }
+    public void deleteSceneCollection(String collectionId){
+        objectScene.deleteCollection(collectionId);invalidate();
+    }
     public void makeActiveObjectSingleUser(){
         Meshy3DObjectScene.Object3D active=objectScene.getObject(objectSceneActiveId);
         if(active==null||active.mesh==null)return;
