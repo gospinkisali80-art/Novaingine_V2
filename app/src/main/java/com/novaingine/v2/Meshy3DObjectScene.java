@@ -351,9 +351,18 @@ public final class Meshy3DObjectScene {
     private static double[] applyConstraint(double[] sourceMatrix,double[] targetMatrix,Constraint3D constraint){
         float weight=Math.max(0f,Math.min(1f,constraint.influence));
         if(weight<=0f)return sourceMatrix;
+        // A location-only constraint must not decompose/rebuild the rotation and
+        // scale basis: that would lose shear produced by rotated non-uniform parents.
+        if("COPY_LOCATION".equals(constraint.type)){
+            double[] result=sourceMatrix.clone();
+            result[3]+=(targetMatrix[3]-result[3])*weight;
+            result[7]+=(targetMatrix[7]-result[7])*weight;
+            result[11]+=(targetMatrix[11]-result[11])*weight;
+            return result;
+        }
         Transform source=new Transform(),target=new Transform();
         decompose(sourceMatrix,source);decompose(targetMatrix,target);
-        if("COPY_LOCATION".equals(constraint.type)||"COPY_TRANSFORMS".equals(constraint.type)){
+        if("COPY_TRANSFORMS".equals(constraint.type)){
             source.x+=(target.x-source.x)*weight;
             source.y+=(target.y-source.y)*weight;
             source.z+=(target.z-source.z)*weight;
@@ -922,7 +931,12 @@ public final class Meshy3DObjectScene {
     public float[] dimensions(String objectId) {
         Object3D object=requireObject(objectId);
         if(object.mesh==null)return new float[]{object.displaySize,object.displaySize,object.displaySize};
-        float[][] vertices=object.mesh.copyVertices();
+        Meshy3DCore dimensionMesh=object.mesh;
+        if(!object.modifiers.isEmpty()){
+            try{dimensionMesh=Meshy3DModifierEvaluator.evaluate(object);}
+            catch(RuntimeException ignored){dimensionMesh=object.mesh;}
+        }
+        float[][] vertices=dimensionMesh.copyVertices();
         if(vertices.length==0)return new float[]{0f,0f,0f};
         float[] min={Float.MAX_VALUE,Float.MAX_VALUE,Float.MAX_VALUE},max={-Float.MAX_VALUE,-Float.MAX_VALUE,-Float.MAX_VALUE};
         for(float[] p:vertices){
