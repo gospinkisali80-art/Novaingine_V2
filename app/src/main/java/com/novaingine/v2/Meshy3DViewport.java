@@ -48,6 +48,8 @@ public final class Meshy3DViewport extends View {
     private final int[][] originalFaces = document.copyFaces();
     private float[][] uvCoordinates;
     private final java.util.HashMap<Integer, float[][]> meshKeyframes = new java.util.HashMap<>();
+    private final java.util.TreeMap<Integer, java.util.HashMap<String, Meshy3DObjectScene.Transform>>
+            sceneTransformKeyframes = new java.util.TreeMap<>();
 
 
     private String objectSceneActiveId;
@@ -1820,29 +1822,72 @@ public final class Meshy3DViewport extends View {
         }return out.toString();
     }
 
+    /** Store both active-mesh shape data and every scene object's transform. */
     public void storeMeshKeyframe(int frame){
+        int key=Math.max(0,frame);
         float[][] snapshot=new float[vertices.length][3];
         for(int i=0;i<vertices.length;i++)System.arraycopy(vertices[i],0,snapshot[i],0,3);
-        meshKeyframes.put(Math.max(0,frame),snapshot);
+        meshKeyframes.put(key,snapshot);
+        java.util.HashMap<String,Meshy3DObjectScene.Transform> transforms=new java.util.HashMap<>();
+        for(Meshy3DObjectScene.Object3D object:objectScene.getObjects())
+            transforms.put(object.id,object.transform.copy());
+        sceneTransformKeyframes.put(key,transforms);
     }
-    public void deleteMeshKeyframe(int frame){meshKeyframes.remove(Math.max(0,frame));}
-    public int getMeshKeyframeCount(){return meshKeyframes.size();}
+
+    public void deleteMeshKeyframe(int frame){
+        int key=Math.max(0,frame);
+        meshKeyframes.remove(key);
+        sceneTransformKeyframes.remove(key);
+    }
+
+    public int getMeshKeyframeCount(){return getMeshKeyframeFrames().size();}
+
     public java.util.ArrayList<Integer> getMeshKeyframeFrames(){
-        java.util.ArrayList<Integer> frames=new java.util.ArrayList<>(meshKeyframes.keySet());
-        java.util.Collections.sort(frames);return frames;
+        java.util.TreeSet<Integer> unique=new java.util.TreeSet<>();
+        unique.addAll(meshKeyframes.keySet());
+        unique.addAll(sceneTransformKeyframes.keySet());
+        return new java.util.ArrayList<>(unique);
     }
+
+    /** Smoothly interpolates mesh shape and location/rotation/scale for every keyed object. */
     public void applyAnimationFrame(float frame){
-        if(meshKeyframes.isEmpty())return;
         java.util.ArrayList<Integer> keys=getMeshKeyframeFrames();
+        if(keys.isEmpty())return;
         int before=keys.get(0),after=keys.get(keys.size()-1);
         for(int k:keys){if(k<=frame)before=k;if(k>=frame){after=k;break;}}
-        float[][] a=meshKeyframes.get(before),b=meshKeyframes.get(after);
-        if(a==null||b==null||a.length!=vertices.length||b.length!=vertices.length)return;
         float t=after==before?0f:Math.max(0f,Math.min(1f,(frame-before)/(float)(after-before)));
         t=t*t*(3f-2f*t);
-        for(int i=0;i<vertices.length;i++)for(int axis=0;axis<3;axis++)
-            vertices[i][axis]=a[i][axis]+(b[i][axis]-a[i][axis])*t;
-        syncCoreFromViewport();invalidate();
+
+        float[][] a=meshKeyframes.get(before),b=meshKeyframes.get(after);
+        if(a!=null&&b!=null&&a.length==vertices.length&&b.length==vertices.length){
+            for(int i=0;i<vertices.length;i++)for(int axis=0;axis<3;axis++)
+                vertices[i][axis]=a[i][axis]+(b[i][axis]-a[i][axis])*t;
+            syncCoreFromViewport();
+        }
+
+        java.util.HashMap<String,Meshy3DObjectScene.Transform> ta=sceneTransformKeyframes.get(before);
+        java.util.HashMap<String,Meshy3DObjectScene.Transform> tb=sceneTransformKeyframes.get(after);
+        if(ta!=null||tb!=null){
+            for(Meshy3DObjectScene.Object3D object:objectScene.getObjects()){
+                Meshy3DObjectScene.Transform start=ta==null?null:ta.get(object.id);
+                Meshy3DObjectScene.Transform end=tb==null?null:tb.get(object.id);
+                if(start==null&&end==null)continue;
+                if(start==null)start=end;
+                if(end==null)end=start;
+                Meshy3DObjectScene.Transform value=new Meshy3DObjectScene.Transform();
+                value.x=start.x+(end.x-start.x)*t;
+                value.y=start.y+(end.y-start.y)*t;
+                value.z=start.z+(end.z-start.z)*t;
+                value.rotationX=start.rotationX+(end.rotationX-start.rotationX)*t;
+                value.rotationY=start.rotationY+(end.rotationY-start.rotationY)*t;
+                value.rotationZ=start.rotationZ+(end.rotationZ-start.rotationZ)*t;
+                value.scaleX=start.scaleX+(end.scaleX-start.scaleX)*t;
+                value.scaleY=start.scaleY+(end.scaleY-start.scaleY)*t;
+                value.scaleZ=start.scaleZ+(end.scaleZ-start.scaleZ)*t;
+                objectScene.setTransform(object.id,value);
+            }
+        }
+        invalidate();
     }
 
 
@@ -2288,6 +2333,26 @@ public final class Meshy3DViewport extends View {
                 frame.put("vertices", points); keyframes.put(frame);
             }
             state.put("keyframes", keyframes);
+            org.json.JSONArray sceneKeys = new org.json.JSONArray();
+            for (java.util.Map.Entry<Integer,java.util.HashMap<String,Meshy3DObjectScene.Transform>> entry
+                    : sceneTransformKeyframes.entrySet()) {
+                org.json.JSONObject frameData = new org.json.JSONObject();
+                frameData.put("frame", entry.getKey());
+                org.json.JSONArray objects = new org.json.JSONArray();
+                for (java.util.Map.Entry<String,Meshy3DObjectScene.Transform> objectEntry
+                        : entry.getValue().entrySet()) {
+                    Meshy3DObjectScene.Transform tr = objectEntry.getValue();
+                    org.json.JSONObject objectData = new org.json.JSONObject();
+                    objectData.put("id", objectEntry.getKey());
+                    objectData.put("x", tr.x); objectData.put("y", tr.y); objectData.put("z", tr.z);
+                    objectData.put("rx", tr.rotationX); objectData.put("ry", tr.rotationY); objectData.put("rz", tr.rotationZ);
+                    objectData.put("sx", tr.scaleX); objectData.put("sy", tr.scaleY); objectData.put("sz", tr.scaleZ);
+                    objects.put(objectData);
+                }
+                frameData.put("objects", objects);
+                sceneKeys.put(frameData);
+            }
+            state.put("sceneTransformKeyframes", sceneKeys);
             return state;
         } catch (org.json.JSONException error) {
             throw new IllegalStateException("Could not serialize Meshy3D mesh", error);
@@ -2352,6 +2417,25 @@ public final class Meshy3DViewport extends View {
                 uvCoordinates=restored;
             }
             meshKeyframes.clear();
+            sceneTransformKeyframes.clear();
+            org.json.JSONArray savedSceneKeys=state.optJSONArray("sceneTransformKeyframes");
+            if(savedSceneKeys!=null)for(int i=0;i<savedSceneKeys.length();i++){
+                org.json.JSONObject frameData=savedSceneKeys.getJSONObject(i);
+                int frameNumber=frameData.optInt("frame",i);
+                java.util.HashMap<String,Meshy3DObjectScene.Transform> transforms=new java.util.HashMap<>();
+                org.json.JSONArray objects=frameData.optJSONArray("objects");
+                if(objects!=null)for(int j=0;j<objects.length();j++){
+                    org.json.JSONObject objectData=objects.getJSONObject(j);
+                    String id=objectData.optString("id","");
+                    if(id.isEmpty())continue;
+                    Meshy3DObjectScene.Transform tr=new Meshy3DObjectScene.Transform();
+                    tr.x=(float)objectData.optDouble("x",0);tr.y=(float)objectData.optDouble("y",0);tr.z=(float)objectData.optDouble("z",0);
+                    tr.rotationX=(float)objectData.optDouble("rx",0);tr.rotationY=(float)objectData.optDouble("ry",0);tr.rotationZ=(float)objectData.optDouble("rz",0);
+                    tr.scaleX=(float)objectData.optDouble("sx",1);tr.scaleY=(float)objectData.optDouble("sy",1);tr.scaleZ=(float)objectData.optDouble("sz",1);
+                    transforms.put(id,tr);
+                }
+                sceneTransformKeyframes.put(frameNumber,transforms);
+            }
             org.json.JSONArray frames=state.optJSONArray("keyframes");
             if(frames!=null)for(int i=0;i<frames.length();i++){
                 org.json.JSONObject frame=frames.getJSONObject(i);
