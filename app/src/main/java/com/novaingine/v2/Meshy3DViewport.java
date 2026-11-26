@@ -65,6 +65,19 @@ public final class Meshy3DViewport extends View {
         boolean[] activeFaces;
     }
 
+    private static final class SceneRenderData {
+        float[][] vertices;
+        int[][] faces;
+        int[] faceMaterialIds;
+        int[] materialColors;
+        float[] materialMetallic;
+        float[] materialRoughness;
+        int[][] materialTextures;
+        int[] textureWidths;
+        int[] textureHeights;
+        float[][][] faceUvs;
+    }
+
     public Meshy3DObjectScene getObjectScene(){return objectScene;}
     public Meshy3DCore getDocumentCore(){return document;}
     public void setObjectSelectionListener(Runnable listener){onObjectSelectionChanged=listener;}
@@ -543,8 +556,68 @@ public final class Meshy3DViewport extends View {
         for(int i=0;i<active.size();i++)data.activeFaces[i]=active.get(i);
         return data;
     }
+    private SceneRenderData buildFinalSceneRenderData() {
+        ArrayList<float[]> sceneVertices=new ArrayList<>();
+        ArrayList<int[]> sceneFaces=new ArrayList<>();
+        ArrayList<Integer> faceMaterials=new ArrayList<>();
+        ArrayList<float[][]> faceUvList=new ArrayList<>();
+        ArrayList<Integer> materialColors=new ArrayList<>();
+        ArrayList<Float> materialMetallic=new ArrayList<>(),materialRoughness=new ArrayList<>();
+        ArrayList<int[]> materialTextures=new ArrayList<>();
+        ArrayList<Integer> textureWidths=new ArrayList<>(),textureHeights=new ArrayList<>();
+        java.util.IdentityHashMap<Meshy3DCore,Integer> materialIds=new java.util.IdentityHashMap<>();
+        for(Meshy3DObjectScene.Object3D object:objectScene.getObjects()) {
+            Meshy3DCore mesh=object.mesh;
+            if(mesh==null||!"MESH".equals(object.type)||!objectScene.isVisibleInRender(object))continue;
+            Integer materialId=materialIds.get(mesh);
+            if(materialId==null) {
+                materialId=materialColors.size();materialIds.put(mesh,materialId);
+                materialColors.add(mesh.getBaseColor());materialMetallic.add(mesh.getMetallic());
+                materialRoughness.add(mesh.getRoughness());
+                materialTextures.add(mesh.getTexturePixels());
+                textureWidths.add(mesh.getTextureWidth());textureHeights.add(mesh.getTextureHeight());
+            }
+            float[][] sourceVertices=mesh.copyVertices();int[][] sourceFaces=mesh.copyFaces();
+            float[][][] sourceUvs=mesh.copyFaceUvs();int offset=sceneVertices.size();
+            for(float[] vertex:sourceVertices) {
+                float[] world=objectScene.transformPoint(object.id,vertex[0],vertex[1],vertex[2]);
+                sceneVertices.add(new float[]{world[0]-viewTargetX,world[1]-viewTargetY,world[2]-viewTargetZ});
+            }
+            for(int fi=0;fi<sourceFaces.length;fi++) {
+                int[] face=sourceFaces[fi].clone();
+                for(int i=0;i<face.length;i++)face[i]+=offset;
+                sceneFaces.add(face);faceMaterials.add(materialId);
+                faceUvList.add(sourceUvs!=null&&fi<sourceUvs.length?sourceUvs[fi]:null);
+            }
+        }
+        SceneRenderData data=new SceneRenderData();
+        data.vertices=sceneVertices.toArray(new float[0][]);
+        data.faces=sceneFaces.toArray(new int[0][]);
+        data.faceMaterialIds=new int[faceMaterials.size()];
+        for(int i=0;i<data.faceMaterialIds.length;i++)data.faceMaterialIds[i]=faceMaterials.get(i);
+        data.materialColors=new int[materialColors.size()];
+        data.materialMetallic=new float[materialMetallic.size()];
+        data.materialRoughness=new float[materialRoughness.size()];
+        data.materialTextures=materialTextures.toArray(new int[0][]);
+        data.textureWidths=new int[textureWidths.size()];data.textureHeights=new int[textureHeights.size()];
+        for(int i=0;i<materialColors.size();i++){
+            data.materialColors[i]=materialColors.get(i);
+            data.materialMetallic[i]=materialMetallic.get(i);
+            data.materialRoughness[i]=materialRoughness.get(i);
+            data.textureWidths[i]=textureWidths.get(i);data.textureHeights[i]=textureHeights.get(i);
+        }
+        data.faceUvs=faceUvList.toArray(new float[0][][]);
+        return data;
+    }
+
     public android.graphics.Bitmap renderFinalImage(int width,int height){
         syncCoreFromViewport();
+        if(!meshEditMode) {
+            SceneRenderData scene=buildFinalSceneRenderData();
+            return Meshy3DSoftwareRenderer.renderScene(scene.vertices,scene.faces,width,height,yaw,pitch,zoom,
+                    scene.faceMaterialIds,scene.materialColors,scene.materialMetallic,scene.materialRoughness,
+                    scene.materialTextures,scene.textureWidths,scene.textureHeights,scene.faceUvs);
+        }
         return Meshy3DSoftwareRenderer.render(vertices,faces,width,height,yaw,pitch,meshTint,metallic,roughness,
                 document.getTexturePixels(),document.getTextureWidth(),document.getTextureHeight(),document.copyFaceUvs());
     }
