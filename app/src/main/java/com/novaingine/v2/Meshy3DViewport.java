@@ -1595,6 +1595,75 @@ public final class Meshy3DViewport extends View {
                 | ((int)(ag+(bg-ag)*t)<<8) | (int)(ab+(bb-ab)*t);
     }
 
+    /** Phone input API: all virtual controls manipulate the same viewport state as touch gestures. */
+    public void orbitBy(float dx, float dy) {
+        cameraViewActive=false;
+        float density=getResources().getDisplayMetrics().density;
+        yaw-=dx*0.008f/Math.max(.75f,density);
+        pitch=Math.max(-1.35f,Math.min(1.35f,pitch+dy*0.008f/Math.max(.75f,density)));
+        invalidate();
+    }
+
+    public void panByPixels(float dx, float dy) {
+        cameraViewActive=false;
+        float unit=Math.max(1f,Math.min(getWidth(),getHeight())*.235f*zoom);
+        float[] delta=cameraVectorToWorld(-dx/unit,dy/unit,0f);
+        viewTargetX+=delta[0];viewTargetY+=delta[1];viewTargetZ+=delta[2];
+        invalidate();
+    }
+
+    public void zoomBy(float factor) {
+        if(!Float.isFinite(factor)||factor<=0f)return;
+        cameraViewActive=false;
+        zoom=Math.max(.25f,Math.min(5.0f,zoom*factor));
+        invalidate();
+    }
+
+    /** Front, back, right, left, top and bottom orthographic-style view presets. */
+    public void setViewPreset(int preset) {
+        cameraViewActive=false;viewRoll=0f;
+        switch(preset) {
+            case 0: yaw=0f;pitch=0f;break;
+            case 1: yaw=(float)Math.PI;pitch=0f;break;
+            case 2: yaw=(float)(Math.PI*.5);pitch=0f;break;
+            case 3: yaw=(float)(-Math.PI*.5);pitch=0f;break;
+            case 4: yaw=0f;pitch=1.35f;break;
+            case 5: yaw=0f;pitch=-1.35f;break;
+            default:return;
+        }
+        invalidate();
+    }
+
+    /** Emulates the primary virtual-mouse click at the viewport centre. */
+    public void virtualLeftClick() {
+        float x=getWidth()*.5f,y=getHeight()*.49f;
+        if(meshEditMode)selectAt(x,y,false);
+        else if(objectSelectionEnabled)selectObjectAt(x,y,false);
+        performClick();
+    }
+
+    /** Applies a typed numeric value along one world axis using the active transform tool. */
+    public void applyNumericTransform(int axis,float amount) {
+        if(axis<0||axis>2||!Float.isFinite(amount))throw new IllegalArgumentException("Invalid axis or value");
+        int operation=objectTransformTool<0?0:objectTransformTool;
+        if(meshEditMode) {
+            float x=axis==0?amount:operation==2?1f:0f;
+            float y=axis==1?amount:operation==2?1f:0f;
+            float z=axis==2?amount:operation==2?1f:0f;
+            if(operation==2){x=axis==0?amount:1f;y=axis==1?amount:1f;z=axis==2?amount:1f;}
+            document.transformSelected(x,y,z,operation);
+            syncViewportFromCore();
+        } else {
+            float x=axis==0?amount:operation==2?1f:0f;
+            float y=axis==1?amount:operation==2?1f:0f;
+            float z=axis==2?amount:operation==2?1f:0f;
+            if(operation==2){x=axis==0?amount:1f;y=axis==1?amount:1f;z=axis==2?amount:1f;}
+            if(operation==1){x=axis==0?amount:0f;y=axis==1?amount:0f;z=axis==2?amount:0f;}
+            transformActiveObject(operation,x,y,z);
+        }
+        invalidate();
+    }
+
     public void resetView(){yaw=-0.62f;pitch=0.42f;zoom=1.0f;invalidate();}
 
     public void generatePlanarUv(){
