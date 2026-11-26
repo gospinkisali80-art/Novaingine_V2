@@ -352,7 +352,12 @@ public final class Meshy3DCore {
     private ArrayList<int[]> linksForGraph(int graph){return graph==0?geometryLinks:graph==1?shaderLinks:compositorLinks;}
     public float getGraphNodeValue(int graph,int index){ArrayList<Node> nodes=nodesForGraph(graph);return index>=0&&index<nodes.size()?nodes.get(index).value:0f;}
     public String getGraphNodeType(int graph,int index){ArrayList<Node> nodes=nodesForGraph(graph);return index>=0&&index<nodes.size()?nodes.get(index).type:"";}
-    public void setGraphNodeValue(int graph,int index,float value){ArrayList<Node> nodes=nodesForGraph(graph);if(index<0||index>=nodes.size())return;nodes.get(index).value=value;revision++;}
+    public void setGraphNodeValue(int graph,int index,float value){
+        ArrayList<Node> nodes=nodesForGraph(graph);if(index<0||index>=nodes.size())return;
+        Node node=nodes.get(index);node.value=value;
+        if(graph==0&&("Transform Geometry".equals(node.type)||"Instance on Points".equals(node.type)))node.x=value;
+        revision++;
+    }
     public int[][] getGraphLinks(int graph){ArrayList<int[]> links=linksForGraph(graph);int[][] out=new int[links.size()][2];for(int i=0;i<out.length;i++)out[i]=links.get(i).clone();return out;}
     public void connectGraphNodes(int graph,int from,int to){
         ArrayList<Node> nodes=nodesForGraph(graph);if(from<0||to<0||from>=nodes.size()||to>=nodes.size()||from==to)return;
@@ -382,7 +387,7 @@ public final class Meshy3DCore {
         for(int index:order){Node n=geometryNodes.get(index);
             if("Transform Geometry".equals(n.type)){for(float[] p:vertices){p[0]+=n.x;p[1]+=n.y;p[2]+=n.z;}}
             else if("Set Position".equals(n.type)){for(float[] p:vertices)p[1]+=n.value;}
-            else if("Smooth".equals(n.type))smooth(.2f,1);
+            else if("Smooth".equals(n.type))smooth(n.value==0?.2f:Math.max(0,Math.min(1,n.value)),1);
             else if("Subdivide".equals(n.type)||"Subdivide Mesh".equals(n.type))subdivide();
             else if("Delete Geometry".equals(n.type))deleteSelectedFaces();
             else if("Set Material".equals(n.type))baseColor=(int)n.value;
