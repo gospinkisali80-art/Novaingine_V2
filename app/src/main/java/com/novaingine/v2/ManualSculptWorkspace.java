@@ -546,6 +546,10 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 } else if ("Make Single User".equals(item)) {
                     checkpointMeshEdit();meshyViewport.makeActiveObjectSingleUser();refreshModelingOutliner();
                     status.setText("Modeling | Active object mesh data made single-user");
+                } else if ("Link Mesh Data".equals(item)) {
+                    try{checkpointMeshEdit();meshyViewport.linkSelectedObjectsToActiveMeshData();
+                        refreshModelingOutliner();status.setText("Modeling | Selected objects now share the active mesh datablock");}
+                    catch(Exception error){showObjectOperationError(error);}
                 } else if ("Set Active Camera".equals(item)) {
                     try{meshyViewport.makeActiveCamera();status.setText("Modeling | Active camera updated");}
                     catch(Exception error){showObjectOperationError(error);}
@@ -1301,7 +1305,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 +"\nScale: "+fmt(o.transform.scaleX)+", "+fmt(o.transform.scaleY)+", "+fmt(o.transform.scaleZ)
                 +"\nWorld Dimensions: "+fmt(size[0])+", "+fmt(size[1])+", "+fmt(size[2])
                 +"\nViewport Visible: "+o.visible+"\nSelectable: "+o.selectable+"\nRender Visible: "+o.renderVisible;
-        if(o.mesh!=null)message+="\nVertices: "+o.mesh.getVertexCount()+"\nEdges: "+o.mesh.getEdgeCount()+"\nFaces: "+o.mesh.getFaceCount();
+        if(o.mesh!=null)message+="\nMesh Data Users: "+scene.getMeshDataUserCount(o.id)
+                +"\nVertices: "+o.mesh.getVertexCount()+"\nEdges: "+o.mesh.getEdgeCount()+"\nFaces: "+o.mesh.getFaceCount();
         if("CAMERA".equals(o.type))message+="\nLens: "+fmt(o.cameraLens)+" mm\nClip: "+fmt(o.cameraClipStart)+" - "+fmt(o.cameraClipEnd);
         if("LIGHT".equals(o.type))message+="\nLight: "+o.lightType+"\nPower: "+fmt(o.lightPower)+"\nAngle: "+fmt(o.lightAngle);
         new android.app.AlertDialog.Builder(activity).setTitle("Object Properties").setMessage(message)
@@ -1667,7 +1672,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         "Lock Selection", "Unlock Selection", "Disable in Render", "Enable in Render",
                         "Apply Location", "Apply Rotation & Scale", "Apply All Transforms", "Clear Location", "Clear Rotation", "Clear Scale",
                         "Set Origin to Geometry", "Set Origin to 3D Cursor", "Parent To", "Parent Selected to Active", "Clear Parent",
-                        "Add Collection", "Manage Collections", "Move To Collection", "Link To Collection", "Make Single User",
+                        "Add Collection", "Manage Collections", "Move To Collection", "Link To Collection", "Make Single User", "Link Mesh Data",
                         "Set Active Camera", "Camera Settings", "Light Settings", "Object Statistics",
                         "EDIT MODE", "Vertex Select", "Edge Select", "Face Select",
                         "Select All", "Select Linked", "Select Loops", "Select Similar", "TRANSFORM",
