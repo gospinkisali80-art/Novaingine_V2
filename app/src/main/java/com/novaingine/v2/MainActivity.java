@@ -677,6 +677,7 @@ public final class MainActivity extends Activity
     private static final int REQUEST_EXPORT_MESHY_DOCUMENT = 7418;
     private static final int REQUEST_IMPORT_MESHY_DOCUMENT = 7419;
     private static final int REQUEST_SAVE_MESHY_SYSTEM_INFO = 7420;
+    private static final int REQUEST_IMPORT_MESHY_GLB = 7421;
 
     private android.graphics.Bitmap pendingMeshyImage;
     private String pendingMeshyExportJson;
@@ -802,7 +803,7 @@ public final class MainActivity extends Activity
                         android.widget.Toast.LENGTH_LONG).show();
                 break;
             case "Import":
-                importMeshyDocumentFromPicker();
+                showMeshyImportMenu();
                 break;
             case "Data Previews":
                 showSceneDataPreview();
@@ -1782,6 +1783,45 @@ public final class MainActivity extends Activity
             }, "Meshy-Import-Document").start();
             return;
         }
+        if (requestCode == REQUEST_IMPORT_MESHY_GLB) {
+            new Thread(() -> {
+                try (InputStream input = getContentResolver().openInputStream(uri)) {
+                    if (input == null) throw new IllegalStateException("Could not open the selected GLB file.");
+                    java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+                    byte[] buffer = new byte[8192];
+                    int read;
+                    long total = 0;
+                    while ((read = input.read(buffer)) != -1) {
+                        total += read;
+                        if (total > 100L * 1024L * 1024L)
+                            throw new IllegalArgumentException("GLB model exceeds the 100 MB mobile import limit.");
+                        bytes.write(buffer, 0, read);
+                    }
+                    java.util.List<Meshy3DGlbImporter.ImportedMesh> imported =
+                            Meshy3DGlbImporter.parse(bytes.toByteArray());
+                    runOnUiThread(() -> {
+                        if (manualSculptWorkspace == null) {
+                            android.widget.Toast.makeText(this, "Meshy3D was closed before the import completed.",
+                                    android.widget.Toast.LENGTH_LONG).show();
+                            return;
+                        }
+                        try {
+                            int count = manualSculptWorkspace.importGlbIntoMeshy3D(imported);
+                            android.widget.Toast.makeText(this,
+                                    "Imported " + count + " editable mesh object(s) into Meshy3D.",
+                                    android.widget.Toast.LENGTH_LONG).show();
+                        } catch (Exception error) {
+                            android.widget.Toast.makeText(this, "Meshy3D GLB import failed: " + error.getMessage(),
+                                    android.widget.Toast.LENGTH_LONG).show();
+                        }
+                    });
+                } catch (Exception error) {
+                    runOnUiThread(() -> android.widget.Toast.makeText(this,
+                            "GLB import failed: " + error.getMessage(), android.widget.Toast.LENGTH_LONG).show());
+                }
+            }, "Meshy3D-GLB-Import").start();
+            return;
+        }
         if (requestCode == REQUEST_OPEN_NOVA) {
             new Thread(() -> {
                 try {
@@ -2684,6 +2724,18 @@ public final class MainActivity extends Activity
         }
     }
 
+    private void showMeshyImportMenu() {
+        if (manualSculptWorkspace == null) {
+            android.widget.Toast.makeText(this, "Open Meshy3D before importing assets.", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        new AlertDialog.Builder(this).setTitle("Import into Meshy3D")
+                .setItems(new String[]{"Meshy3D document (.meshy3d)", "glTF Binary model (.glb)"}, (dialog, which) -> {
+                    if (which == 0) importMeshyDocumentFromPicker();
+                    else importMeshyGlbFromPicker();
+                }).setNegativeButton("Cancel", null).show();
+    }
+
     private void importMeshyDocumentFromPicker() {
         if(manualSculptWorkspace==null){
             android.widget.Toast.makeText(this,"Open Meshy3D before importing a document.",android.widget.Toast.LENGTH_SHORT).show();return;
@@ -2691,6 +2743,18 @@ public final class MainActivity extends Activity
         Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("*/*");intent.putExtra(Intent.EXTRA_MIME_TYPES,new String[]{"application/json","application/octet-stream"});
         startActivityForResult(intent,REQUEST_IMPORT_MESHY_DOCUMENT);
+    }
+
+    private void importMeshyGlbFromPicker() {
+        if (manualSculptWorkspace == null) {
+            android.widget.Toast.makeText(this, "Open Meshy3D before importing a GLB model.", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"model/gltf-binary", "application/octet-stream"});
+        startActivityForResult(intent, REQUEST_IMPORT_MESHY_GLB);
     }
 
     private void saveMeshyIncremental() {
