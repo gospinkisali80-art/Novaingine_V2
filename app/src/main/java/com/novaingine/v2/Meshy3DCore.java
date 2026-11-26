@@ -325,6 +325,40 @@ public final class Meshy3DCore {
         return new float[]{minU,minV,maxU,maxV};
     }
 
+    public void snapSelectedUvToPixels(int width,int height) {
+        if(faceUvs==null||selectedUvIsland<0||selectedUvIsland>=islands.size())return;
+        width=Math.max(1,width);height=Math.max(1,height);
+        for(int fi:islands.get(selectedUvIsland).faces)for(float[] uv:faceUvs[fi]){
+            uv[0]=Math.round(uv[0]*width)/(float)width;
+            uv[1]=Math.round(uv[1]*height)/(float)height;
+        }
+        revision++;
+    }
+
+    /** Translate the selected island so its first corner snaps to the nearest other UV corner. */
+    public boolean snapSelectedUvToNearestVertex(float maxDistance) {
+        if(faceUvs==null||selectedUvIsland<0||selectedUvIsland>=islands.size())return false;
+        int selectedFace=islands.get(selectedUvIsland).faces.get(0);
+        if(faceUvs[selectedFace].length==0)return false;
+        float[] anchorUv=faceUvs[selectedFace][0];
+        float best=Float.MAX_VALUE,targetU=0,targetV=0;
+        float max2=Math.max(0f,maxDistance)*Math.max(0f,maxDistance);
+        for(int islandIndex=0;islandIndex<islands.size();islandIndex++){
+            if(islandIndex==selectedUvIsland)continue;
+            for(int fi:islands.get(islandIndex).faces)for(float[] uv:faceUvs[fi]){
+                float du=uv[0]-anchorUv[0],dv=uv[1]-anchorUv[1],distance=du*du+dv*dv;
+                if(distance<best){best=distance;targetU=uv[0];targetV=uv[1];}
+            }
+        }
+        if(best==Float.MAX_VALUE||best>max2)return false;
+        float du=targetU-anchorUv[0],dv=targetV-anchorUv[1];
+        for(int fi:islands.get(selectedUvIsland).faces)for(float[] uv:faceUvs[fi]){
+            uv[0]+=du;uv[1]+=dv;
+        }
+        revision++;
+        return true;
+    }
+
     public boolean selectPinnedUvIsland() {
         for(int i=0;i<islands.size();i++)
             for(int fi:islands.get(i).faces)
