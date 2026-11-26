@@ -163,6 +163,12 @@ public final class ManualSculptWorkspace extends FrameLayout {
         appMark.setTextColor(0xFFFF8A32);
         appMark.setTextSize(15);
         appMark.setGravity(Gravity.CENTER);
+        appMark.setContentDescription("Meshy3D application menu");
+        appMark.setOnClickListener(view -> {
+            if (activity instanceof MainActivity) {
+                ((MainActivity) activity).showMeshyApplicationMenu(view);
+            }
+        });
         titleRow.addView(appMark, new LinearLayout.LayoutParams(dp(23), LayoutParams.MATCH_PARENT));
         TextView windowTitle = new TextView(activity);
         windowTitle.setText("(Unsaved) - Meshy3D");
