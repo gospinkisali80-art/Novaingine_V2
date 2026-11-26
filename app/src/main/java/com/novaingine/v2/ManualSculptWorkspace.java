@@ -966,6 +966,10 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 if ("Unwrap".equals(item) || "Smart UV Project".equals(item) || "Lightmap Pack".equals(item)) {
                     checkpointMeshEdit();meshyViewport.unwrapMesh();
                     status.setText("UV Editing | LSCM conformal unwrap | " + meshyViewport.getUvIslandCount() + " UV islands");
+                } else if ("Follow Active Quads".equals(item) || "Minimize Stretch".equals(item)
+                        || "Straighten".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.unwrapMesh();
+                    status.setText("UV Editing | LSCM unwrap applied; dedicated "+item+" algorithm is not implemented yet");
                 } else if ("Mark Seam".equals(item)) {
                     checkpointMeshEdit();meshyViewport.markSeams(false);meshyViewport.unwrapMesh();status.setText("UV Editing | Seams marked and LSCM islands regenerated");
                 } else if ("Clear Seam".equals(item)) {
@@ -977,9 +981,64 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     checkpointMeshEdit();meshyViewport.packUvIslands();status.setText("UV Editing | UV islands packed into the 0–1 tile");
                 } else if ("Select Linked".equals(item)) {
                     meshyViewport.selectLinkedUvIsland();status.setText("UV Editing | Linked seam-bounded region selected");
+                } else if ("Select Pinned".equals(item)) {
+                    status.setText(meshyViewport.selectPinnedUvIsland()
+                            ?"UV Editing | Island with pinned UV coordinates selected"
+                            :"UV Editing | No island has pinned coordinates");
+                } else if ("Select Overlapping".equals(item)) {
+                    status.setText(meshyViewport.selectOverlappingUvIsland()
+                            ?"UV Editing | First overlapping island bounds selected"
+                            :"UV Editing | No overlapping island bounds found");
+                } else if ("Select Boundary".equals(item)) {
+                    status.setText(meshyViewport.selectBoundaryUvIsland()
+                            ?"UV Editing | Largest boundary island selected"
+                            :"UV Editing | No UV islands available");
+                } else if ("Mirror X".equals(item) || "Mirror Y".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.mirrorSelectedUv("Mirror Y".equals(item)?1:0);
+                    status.setText("UV Editing | Selected island mirrored on "+("Mirror Y".equals(item)?"Y":"X"));
+                } else if ("Align X".equals(item) || "Align Y".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.alignSelectedUv("Align Y".equals(item)?1:0);
+                    status.setText("UV Editing | Selected island aligned to the "+("Align Y".equals(item)?"V":"U")+" tile edge");
+                } else if ("Weld".equals(item) || "Stitch".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.weldSelectedUv("Stitch".equals(item)?.005f:.001f);
+                    status.setText("UV Editing | Duplicate UV corners welded within the active island");
+                } else if ("Split".equals(item)) {
+                    checkpointMeshEdit();
+                    status.setText(meshyViewport.splitSelectedUvIsland()
+                            ?"UV Editing | Island boundary split and unwrap regenerated"
+                            :"UV Editing | Select an island with shared boundary faces first");
+                } else if ("Snap to Pixels".equals(item)) {
+                    checkpointMeshEdit();
+                    int w=meshyViewport.getDocumentCore().getTextureWidth();
+                    int h=meshyViewport.getDocumentCore().getTextureHeight();
+                    meshyViewport.snapSelectedUvToPixels(w>0?w:1024,h>0?h:1024);
+                    status.setText("UV Editing | Selected island snapped to image pixels");
+                } else if ("Snap to Vertex".equals(item)) {
+                    checkpointMeshEdit();
+                    status.setText(meshyViewport.snapSelectedUvToNearestVertex(.08f)
+                            ?"UV Editing | Island snapped to nearest UV corner"
+                            :"UV Editing | No nearby UV corner found");
+                } else if ("Pack Margin".equals(item) || "Margin".equals(item)) {
+                    showAmountDialog("UV Island Pack Margin",0f,.15f,value->{
+                        checkpointMeshEdit();meshyViewport.packUvIslands(value);
+                        status.setText("UV Editing | Packed islands with "+String.format(java.util.Locale.US,"%.3f",value)+" margin");
+                    });
+                } else if ("New UV Map".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.unwrapMesh();
+                    status.setText("UV Editing | Created/rebuilt the active UVMap using LSCM");
+                } else if ("Remove UV Map".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.removeUvMap();
+                    status.setText("UV Editing | Active UVMap removed");
+                } else if ("UV Maps".equals(item) || "Active UV Map".equals(item)) {
+                    showUvMapManagementDialog();
+                } else if ("Unwrap Method".equals(item)) {
+                    new android.app.AlertDialog.Builder(activity).setTitle("UV Unwrap Method")
+                            .setMessage("Meshy3D currently implements LSCM (conformal) unwrap. Other Blender unwrap algorithms are not available yet.")
+                            .setPositiveButton("Use LSCM",(d,w)->{checkpointMeshEdit();meshyViewport.unwrapMesh();})
+                            .setNegativeButton("Close",null).show();
                 } else if ("Move UV".equals(item) || "Rotate UV".equals(item) || "Scale UV".equals(item)
                         || "UV Canvas".equals(item) || "Image / UV View".equals(item)
-                        || "UV Islands".equals(item)) {
+                        || "UV Islands".equals(item) || "UV Editor".equals(item)) {
                     if(meshyViewport.getUvIslandCount()==0)meshyViewport.unwrapMesh();
                     showUvEditor(false);
                 } else if ("Export UV Layout".equals(item)) {
@@ -1071,6 +1130,22 @@ public final class ManualSculptWorkspace extends FrameLayout {
         }
     }
 
+    private void showUvMapManagementDialog() {
+        boolean hasMap=meshyViewport.hasUvMap();
+        String summary=hasMap?"UVMap (Active) • "+meshyViewport.getUvIslandCount()+" islands":"No active UV map";
+        new android.app.AlertDialog.Builder(activity).setTitle("UV Maps")
+                .setMessage(summary+"\n\nMeshy3D currently stores one active UV map per mesh.")
+                .setPositiveButton(hasMap?"Rebuild UVMap":"Create UVMap",(d,w)->{
+                    checkpointMeshEdit();meshyViewport.unwrapMesh();
+                    status.setText("UV Editing | Active UVMap generated with LSCM");
+                })
+                .setNeutralButton(hasMap?"Remove UVMap":null,(d,w)->{
+                    checkpointMeshEdit();meshyViewport.removeUvMap();
+                    status.setText("UV Editing | UVMap removed");
+                })
+                .setNegativeButton("Close",null).show();
+    }
+
     private void showTextureImageSaveDialog() {
         Meshy3DCore core=meshyViewport.getDocumentCore();
         int[] pixels=core.getTexturePixelsUnsafe();
@@ -1118,8 +1193,10 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 ?new String[]{"Draw","Soften","Smear","Clone","Set Clone","Fill","Mask","Erase Alpha",
                     "Line","Polyline","Airbrush","Gradient","Sample Color","Orange","Blue","White",
                     "Brush -","Brush +","Opacity +","Opacity -"}
-                :new String[]{"Select Linked","Move +","Move -","Rotate +","Rotate -","Scale +","Scale -",
-                    "Pin","Unpin","Mark Seam","Clear Seam","Pack Islands","Unwrap","Export UV"};
+                :new String[]{"Select Linked","Select Pinned","Select Overlap","Select Boundary",
+                    "Mirror X","Mirror Y","Align X","Align Y","Move +","Move -","Rotate +","Rotate -",
+                    "Scale +","Scale -","Weld","Split","Pin","Unpin","Mark Seam","Clear Seam",
+                    "Snap Pixels","Snap Vertex","Pack Islands","Unwrap","Export UV"};
         for(String action:actions){
             TextView b=dockItem(action,false);
             buttons.addView(b);
@@ -1139,6 +1216,20 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 }else{
                     switch(action){
                         case "Select Linked": meshyViewport.selectLinkedUvIsland();break;
+                        case "Select Pinned": meshyViewport.selectPinnedUvIsland();break;
+                        case "Select Overlap": meshyViewport.selectOverlappingUvIsland();break;
+                        case "Select Boundary": meshyViewport.selectBoundaryUvIsland();break;
+                        case "Mirror X": checkpointMeshEdit();meshyViewport.mirrorSelectedUv(0);break;
+                        case "Mirror Y": checkpointMeshEdit();meshyViewport.mirrorSelectedUv(1);break;
+                        case "Align X": checkpointMeshEdit();meshyViewport.alignSelectedUv(0);break;
+                        case "Align Y": checkpointMeshEdit();meshyViewport.alignSelectedUv(1);break;
+                        case "Weld": checkpointMeshEdit();meshyViewport.weldSelectedUv(.001f);break;
+                        case "Split": checkpointMeshEdit();meshyViewport.splitSelectedUvIsland();break;
+                        case "Snap Pixels":
+                            checkpointMeshEdit();meshyViewport.snapSelectedUvToPixels(
+                                    core.getTextureWidth()>0?core.getTextureWidth():1024,
+                                    core.getTextureHeight()>0?core.getTextureHeight():1024);break;
+                        case "Snap Vertex": checkpointMeshEdit();meshyViewport.snapSelectedUvToNearestVertex(.08f);break;
                         case "Move +": checkpointMeshEdit();core.transformSelectedUv(.05f,0,1,0);break;
                         case "Move -": checkpointMeshEdit();core.transformSelectedUv(-.05f,0,1,0);break;
                         case "Rotate +": checkpointMeshEdit();core.transformSelectedUv(0,0,1,(float)Math.toRadians(15));break;
