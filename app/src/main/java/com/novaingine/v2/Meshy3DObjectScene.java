@@ -630,6 +630,18 @@ int flags=caseSensitive?0:java.util.regex.Pattern.CASE_INSENSITIVE;
         c.name=uniqueCollectionName(clean,collectionId);revision++;
     }
     public void setCollectionVisibility(String collectionId,boolean visible) {requireCollection(collectionId).visible=visible;revision++;}
+    public void setCollectionRenderVisibility(String collectionId,boolean visible) {requireCollection(collectionId).renderVisible=visible;revision++;}
+    public void deleteCollection(String collectionId) {
+        Collection3D deleting=requireCollection(collectionId);
+        if(collections.size()<=1)throw new IllegalStateException("A scene must keep at least one collection");
+        String fallback=null;
+        for(String id:collections.keySet())if(!id.equals(collectionId)){fallback=id;break;}
+        for(Object3D object:objects.values()){
+            object.collectionIds.remove(collectionId);
+            if(object.collectionIds.isEmpty())object.collectionIds.add(fallback);
+        }
+        collections.remove(deleting.id);revision++;
+    }
     public void moveToCollection(String objectId,String collectionId) {
         Object3D o=requireObject(objectId);requireCollection(collectionId);
         o.collectionIds.clear();o.collectionIds.add(collectionId);revision++;
