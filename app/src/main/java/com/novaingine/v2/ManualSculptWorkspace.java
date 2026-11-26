@@ -1490,6 +1490,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
         StringBuilder details=new StringBuilder();
         details.append("Type: ").append(object.type)
                 .append("\nParent: ").append(parentName)
+                .append("\nViewport display: ").append(object.viewportDisplayType)
+                .append("\nCustom properties: ").append(scene.getCustomProperties(object.id).size())
                 .append("\nWorld dimensions: ").append(fmt(dimensions[0])).append(" × ")
                 .append(fmt(dimensions[1])).append(" × ").append(fmt(dimensions[2]));
         if(object.mesh!=null){
@@ -1589,6 +1591,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 .setView(panel).setPositiveButton("Apply",(dialog,which)->{
                     try{
                         String hex=colorField.getText().toString().trim().replace("#","");
+                        if(hex.length()!=6)throw new IllegalArgumentException("Enter exactly six hexadecimal color digits (RRGGBB).");
                         int color=0xFF000000|(Integer.parseInt(hex,16)&0xFFFFFF);
                         checkpointMeshEdit();
                         meshyViewport.getObjectScene().setViewportDisplay(active.id,
