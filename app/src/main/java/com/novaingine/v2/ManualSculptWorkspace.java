@@ -1104,6 +1104,25 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 } else if ("Delete Keyframe".equals(item)) {
                     checkpointMeshEdit();meshyViewport.deleteMeshKeyframe(currentTimelineFrame);
                     status.setText("Animation | Keyframe at frame "+currentTimelineFrame+" deleted");
+                } else if ("Duplicate Keyframes".equals(item)) {
+                    checkpointMeshEdit();
+                    boolean copied=meshyViewport.duplicateMeshKeyframe(currentTimelineFrame,
+                            currentTimelineFrame<250?currentTimelineFrame+1:currentTimelineFrame-1);
+                    status.setText(copied?"Animation | Keyframe duplicated to adjacent frame"
+                            :"Animation | No keyframe exists at the current frame");
+                } else if ("Snap".equals(item)) {
+                    java.util.ArrayList<Integer> keys=meshyViewport.getMeshKeyframeFrames();
+                    if(keys.isEmpty())status.setText("Animation | No keyframes to snap to");
+                    else {
+                        int nearest=keys.get(0);
+                        for(int key:keys)if(Math.abs(key-currentTimelineFrame)<Math.abs(nearest-currentTimelineFrame))nearest=key;
+                        currentTimelineFrame=nearest;meshyViewport.applyAnimationFrame(nearest);
+                        status.setText("Animation | Playhead snapped to keyframe "+nearest);
+                    }
+                } else if ("Mirror".equals(item)) {
+                    checkpointMeshEdit();
+                    int count=meshyViewport.mirrorMeshKeyframesAround(currentTimelineFrame);
+                    status.setText("Animation | Mirrored "+count+" keyframe states around frame "+currentTimelineFrame);
                 } else if ("Timeline".equals(item) || "Playback Controls".equals(item)
                         || "Current Frame: 1".equals(item) || "Dope Sheet".equals(item)
                         || "Graph Editor".equals(item)) showAnimationTimeline();
