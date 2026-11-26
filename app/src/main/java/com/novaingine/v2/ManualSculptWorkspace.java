@@ -655,6 +655,24 @@ public final class ManualSculptWorkspace extends FrameLayout {
         Meshy3DNodeGraphView graphView=new Meshy3DNodeGraphView(activity);
         graphView.setNodes(core.getGraphNodeLabels(graph));
         graphView.setLinks(core.getGraphLinks(graph));
+        graphView.setOnNodeClickListener(index->{
+            String type=core.getGraphNodeType(graph,index);float current=core.getGraphNodeValue(graph,index);
+            if(type.equals("Base Color")||type.equals("Set Material")){
+                String[] names={"Grey","Orange","Blue","Green","Red","White"};
+                int[] colors={0xFF9DAAB7,0xFFE79A45,0xFF5D9BEA,0xFF63B887,0xFFD85B5B,0xFFF2F2F2};
+                new android.app.AlertDialog.Builder(activity).setTitle(type+" Node Color").setItems(names,(d,w)->{
+                    core.setGraphNodeValue(graph,index,colors[w]&0xFFFFFF);graphView.invalidate();
+                }).show();
+            }else{
+                float min=(type.equals("Metallic")||type.equals("Roughness"))?0f:-100f;
+                float max=(type.equals("Metallic")||type.equals("Roughness"))?1f:100f;
+                if(type.equals("Blur")){min=1f;max=8f;}
+                showAmountDialog(type+" Node Value",min,max,value->{
+                    core.setGraphNodeValue(graph,index,value);graphView.invalidate();
+                    status.setText(title+" | "+type+" node value updated");
+                });
+            }
+        });
         graphView.setOnLinkListener((from,to)->{
             core.connectGraphNodes(graph,from,to);graphView.setLinks(core.getGraphLinks(graph));
             status.setText(title+" | Connected "+from+" → "+to);
