@@ -227,6 +227,7 @@ public final class Meshy3DViewport extends View {
         float[][] p=new float[vertices.length][3];
         for(int i=0;i<vertices.length;i++) p[i]=project(vertices[i][0],vertices[i][1],vertices[i][2],cx,cy,unit);
 
+        float[] viewportLight=cameraPoint(-.45f,.82f,.65f);
         int[] activeTexture=document.getTexturePixels();
         float[][][] activeUvs=document.copyFaceUvs();
         int textureW=document.getTextureWidth(),textureH=document.getTextureHeight();
@@ -268,6 +269,7 @@ public final class Meshy3DViewport extends View {
                 int ty=Math.max(0,Math.min(textureH-1,(int)((1-v)*(textureH-1))));
                 shaded=blendColor(shaded,activeTexture[ty*textureW+tx],0.72f);
             }
+            if(!document.isFaceSelected(f))shaded=shadeViewportColor(shaded,nx,ny,nz,viewportLight);
             paint.setStyle(Paint.Style.FILL); paint.setColor(shaded); canvas.drawPath(path,paint);
             if (showTopology) {
                 paint.setStyle(Paint.Style.STROKE); paint.setColor(0xAA303840);
@@ -310,6 +312,27 @@ public final class Meshy3DViewport extends View {
             paint.setStyle(Paint.Style.STROKE);
         }
         paint.setStyle(Paint.Style.FILL);
+    }
+
+    private int shadeViewportColor(int color,float nx,float ny,float nz,float[] light){
+        float nl=(float)Math.sqrt(nx*nx+ny*ny+nz*nz);if(nl<1e-6f)return color;
+        nx/=nl;ny/=nl;nz/=nl;
+        float ll=(float)Math.sqrt(light[0]*light[0]+light[1]*light[1]+light[2]*light[2]);if(ll<1e-6f)ll=1;
+        float lx=light[0]/ll,ly=light[1]/ll,lz=light[2]/ll;
+        float ndl=Math.max(0,nx*lx+ny*ly+nz*lz);
+        float hx=lx,hy=ly,hz=lz+1f;float hl=(float)Math.sqrt(hx*hx+hy*hy+hz*hz);hx/=hl;hy/=hl;hz/=hl;
+        float ndh=Math.max(0,nx*hx+ny*hy+nz*hz);
+        float r=Math.max(.03f,roughness),a=r*r,a2=a*a;
+        float den=ndh*ndh*(a2-1f)+1f;
+        float spec=a2/(float)(Math.PI*den*den+1e-5f);
+        float baseR=((color>>16)&255)/255f,baseG=((color>>8)&255)/255f,baseB=(color&255)/255f;
+        float metal=Math.max(0,Math.min(1,metallic));
+        float diffuse=.12f+(1f-metal)*ndl*.88f;
+        float shine=spec*(.08f+.35f*(1f-r));
+        int rr=(int)(Math.min(1f,baseR*diffuse+shine*(.04f*(1-metal)+baseR*metal))*255);
+        int gg=(int)(Math.min(1f,baseG*diffuse+shine*(.04f*(1-metal)+baseG*metal))*255);
+        int bb=(int)(Math.min(1f,baseB*diffuse+shine*(.04f*(1-metal)+baseB*metal))*255);
+        return 0xFF000000|(rr<<16)|(gg<<8)|bb;
     }
 
     private static int blendColor(int a, int b, float amount) {
