@@ -1112,6 +1112,7 @@ public final class MainActivity extends Activity
         for (int i = 0; i < entries.length; i++) {
             android.view.MenuItem item = popup.getMenu().add(0, i, i, entries[i]);
             if ("Lock Object Modes".equals(entries[i])) item.setCheckable(true).setChecked(meshyObjectModesLocked);
+            if ("Knife Split".equals(entries[i])) item.setEnabled(false);
         }
         popup.setOnMenuItemClickListener(item -> {
             performMeshyEditAction(item.getTitle().toString());
@@ -1210,10 +1211,23 @@ public final class MainActivity extends Activity
     private void showMeshyUndoHistory() {
         if (manualSculptWorkspace != null) {
             int count = manualSculptWorkspace.getMeshUndoCount();
+            String[] entries = new String[count + 1];
+            entries[0] = "Current State";
+            for (int i = 1; i <= count; i++) entries[i] = "Undo to checkpoint " + i;
             new AlertDialog.Builder(this).setTitle("Meshy3D Undo History")
-                    .setMessage("Saved mesh edit checkpoints: " + count
-                            + "\nUse Undo and Redo to move through the document history.")
-                    .setPositiveButton("Close", null).show();
+                    .setItems(entries, (dialog, which) -> {
+                        if (which <= 0) return;
+                        int restored = 0;
+                        for (int step = 0; step < which; step++) {
+                            if (!manualSculptWorkspace.undoMeshEdit()) break;
+                            restored++;
+                        }
+                        android.widget.Toast.makeText(this, restored > 0
+                                ? "Restored " + restored + " Meshy3D history step(s)."
+                                : "No earlier Meshy3D checkpoint is available.",
+                                android.widget.Toast.LENGTH_LONG).show();
+                    })
+                    .setNegativeButton("Close", null).show();
             return;
         }
         java.util.ArrayList<String> rows = new java.util.ArrayList<>();
@@ -1238,7 +1252,7 @@ public final class MainActivity extends Activity
         final String[] commands = {"Undo", "Redo", "Undo History", "Repeat Last", "Repeat History",
                 "Adjust Last Operation", "Rename Active Item", "Batch Rename",
                 "Lock Object Modes", "Preferences", "Extrude", "Inset", "Bevel",
-                "Loop Cut", "Subdivide", "Merge by Distance", "Knife Split"};
+                "Loop Cut", "Subdivide", "Merge by Distance"};
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dp(16), dp(8), dp(16), 0);
@@ -1307,57 +1321,67 @@ public final class MainActivity extends Activity
     }
 
     private void renameActiveItem() {
-        String selectedName = "";
-        String[] objects = engineSurface.getSceneObjects();
-        if (objects != null) {
-            // The engine's selected-object rename API targets the actual active object;
-            // never guess selection by taking the final row in the Outliner.
-            float[] selected = engineSurface.getSelectedTransform();
-            if (selected == null) {
-                android.widget.Toast.makeText(this, "Select an object first.", android.widget.Toast.LENGTH_SHORT).show();
-                return;
-            }
-            // Native selected-object rename is authoritative. Use the current selected name
-            // only when the engine exposes it; otherwise request the new name directly.
+        if (manualSculptWorkspace == null) {
+            android.widget.Toast.makeText(this, "Open the Meshy3D workspace first.", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String currentName = manualSculptWorkspace.getActiveObjectName();
+        if (currentName == null) {
+            android.widget.Toast.makeText(this, "Select a Meshy3D object first.", android.widget.Toast.LENGTH_SHORT).show();
+            return;
         }
         EditText name = new EditText(this);
         name.setSingleLine(true);
+        name.setText(currentName);
         name.setHint("New active object name");
         new AlertDialog.Builder(this).setTitle("Rename Active Item").setView(name)
                 .setNegativeButton("Cancel", null).setPositiveButton("Rename", (d, w) -> {
                     String value = name.getText().toString().trim();
-                    if (value.isEmpty()) return;
-                    captureMeshyState(meshyUndo, "rename", () -> {
-                        meshyRedo.clear();
-                        engineSurface.renameSelectedObject(value, ok -> {
-                            if (ok) recordMeshyHistory("Rename Active Item");
-                            else android.widget.Toast.makeText(this, "No active object could be renamed.", android.widget.Toast.LENGTH_SHORT).show();
-                        });
-                    });
+                    if (value.isEmpty()) {
+                        android.widget.Toast.makeText(this, "Object name cannot be empty.", android.widget.Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    if (manualSculptWorkspace.renameActiveMeshyObject(value)) {
+                        recordMeshyHistory("Rename Active Item");
+                    } else {
+                        android.widget.Toast.makeText(this, "No active Meshy3D object could be renamed.", android.widget.Toast.LENGTH_SHORT).show();
+                    }
                 }).show();
     }
 
     private void showMeshyBatchRename() {
-        String[] objects = engineSurface.getSceneObjects();
-        if (objects == null || objects.length == 0) return;
+        if (manualSculptWorkspace == null) {
+            android.widget.Toast.makeText(this, "Open the Meshy3D workspace first.", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        int selectedCount = manualSculptWorkspace.getSelectedObjectCount();
+        if (selectedCount == 0) {
+            android.widget.Toast.makeText(this, "Select the Meshy3D objects to rename first.", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
         LinearLayout form = new LinearLayout(this);
         form.setPadding(dp(16), dp(8), dp(16), 0);
         form.setOrientation(LinearLayout.VERTICAL);
-        EditText prefix = new EditText(this); prefix.setSingleLine(true); prefix.setHint("Name prefix"); prefix.setText("Object");
-        EditText start = new EditText(this); start.setSingleLine(true); start.setInputType(android.text.InputType.TYPE_CLASS_NUMBER); start.setText("1");
-        form.addView(prefix); form.addView(start);
-        new AlertDialog.Builder(this).setTitle("Batch Rename " + objects.length + " Objects").setView(form)
-                .setNegativeButton("Cancel", null).setPositiveButton("Rename All", (d, w) -> {
+        EditText prefix = new EditText(this);
+        prefix.setSingleLine(true);
+        prefix.setHint("Name prefix");
+        prefix.setText("Object");
+        EditText start = new EditText(this);
+        start.setSingleLine(true);
+        start.setInputType(android.text.InputType.TYPE_CLASS_NUMBER | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+        start.setText("1");
+        form.addView(prefix);
+        form.addView(start);
+        new AlertDialog.Builder(this).setTitle("Batch Rename " + selectedCount + " Meshy3D Objects").setView(form)
+                .setNegativeButton("Cancel", null).setPositiveButton("Rename Selected", (d, w) -> {
                     String base = prefix.getText().toString().trim();
                     int first;
-                    try { first = Integer.parseInt(start.getText().toString()); } catch (Exception e) { first = 1; }
+                    try { first = Integer.parseInt(start.getText().toString()); }
+                    catch (Exception e) { first = 1; }
                     if (base.isEmpty()) base = "Object";
-                    final String root = base;
-                    final int offset = first;
-                    captureMeshyState(meshyUndo, "batch_rename", () -> {
-                        meshyRedo.clear();
-                        renameBatchAt(objects, 0, root, offset);
-                    });
+                    int renamed = manualSculptWorkspace.renameSelectedMeshyObjects(base, first);
+                    if (renamed > 0) recordMeshyHistory("Batch Rename");
+                    else android.widget.Toast.makeText(this, "No selected Meshy3D objects were renamed.", android.widget.Toast.LENGTH_SHORT).show();
                 }).show();
     }
 
