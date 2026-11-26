@@ -217,11 +217,6 @@ public final class Meshy3DObjectScene {
         constraint.targetId=target.id;revision++;
     }
 
-    public void setConstraintType(String objectId,String constraintId,String type){
-        Constraint3D constraint=findConstraint(requireObject(objectId),constraintId);
-        constraint.type=cleanConstraintType(type);revision++;
-    }
-
     public List<Modifier3D> getModifiers(String objectId){
         return Collections.unmodifiableList(new ArrayList<>(requireObject(objectId).modifiers));
     }
@@ -275,7 +270,7 @@ public final class Meshy3DObjectScene {
     public void setModifierParameters(String objectId,String modifierId,int axis,int count,
             int levels,float value,float offsetX,float offsetY,float offsetZ){
         Modifier3D modifier=findModifier(requireObject(objectId),modifierId);
-        if(axis<0||axis>2||count<1||count>50||levels<1||levels>3
+        if(axis<0||axis>2||count<1||count>20||levels<1||levels>3
                 ||!Float.isFinite(value)||Math.abs(value)>100f
                 ||!Float.isFinite(offsetX)||!Float.isFinite(offsetY)||!Float.isFinite(offsetZ)
                 ||Math.abs(offsetX)>1000f||Math.abs(offsetY)>1000f||Math.abs(offsetZ)>1000f)
@@ -1413,7 +1408,7 @@ public final class Meshy3DObjectScene {
                     modifier.offsetX=(float)saved.optDouble("offsetX",2f);
                     modifier.offsetY=(float)saved.optDouble("offsetY",0f);
                     modifier.offsetZ=(float)saved.optDouble("offsetZ",0f);
-                    if(modifier.axis<0||modifier.axis>2||modifier.count<1||modifier.count>50
+                    if(modifier.axis<0||modifier.axis>2||modifier.count<1||modifier.count>20
                             ||modifier.levels<1||modifier.levels>3||!Float.isFinite(modifier.value)
                             ||!Float.isFinite(modifier.offsetX)||!Float.isFinite(modifier.offsetY)
                             ||!Float.isFinite(modifier.offsetZ))return false;
