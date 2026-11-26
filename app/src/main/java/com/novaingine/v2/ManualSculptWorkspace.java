@@ -57,7 +57,12 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private static final int ACCENT = 0xFFFFA52B;
 
     private final Activity activity;
-    private final EngineSurface engine;
+    private Meshy3DViewport meshyViewport;
+    private int selectedSculptBrush;
+    private float sculptRadiusUi=0.18f, sculptStrengthUi=0.40f, sculptFalloffUi=0.5f, sculptPressureUi=1.0f;
+    private int sculptSymmetryUi;
+    private int sculptStrokeMethodUi;
+    private boolean sculptSubtractUi;
     private final Runnable onExit;
     private final TextView status;
     private final TextView[] brushButtons = new TextView[BRUSHES.length];
@@ -76,7 +81,10 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private float pressure = 1.0f;
     private int symmetryAxis = 0;
     private boolean subtract;
-    private boolean sculptEnabled = true;
+    private boolean sculptEnabled = false;
+    private boolean objectModesLocked;
+    private String activeEditorMode = "Object Mode";
+    private TextView modeButton;
     private boolean orbitMode = false;
     private TextView orbitButton;
     private EditText[] positionInputs = new EditText[3];
@@ -90,985 +98,1293 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private View rightResizeHandle;
     private LinearLayout bottomDock;
     private final ArrayList<float[]> transformKeyframes = new ArrayList<>();
+    private static final String[] WORKSPACE_NAMES = {
+            "Layout", "Modeling", "Sculpting", "UV Editing", "Texture Paint",
+            "Shading", "Animation", "Rendering", "Compositing", "Geometry Nodes"
+    };
+    private final ArrayList<TextView> workspaceTabs = new ArrayList<>();
+    private int activeWorkspaceIndex;
+    private int workspaceTransitionToken;
+    private boolean viewportFocusMode;
+    private FrameLayout workspaceLayoutLayer;
+    private LinearLayout workspaceToolbar;
+    private LinearLayout workspaceLeftDock;
+    private LinearLayout workspaceRightDock;
+    private LinearLayout workspaceBottomDock;
+    private final java.util.ArrayDeque<org.json.JSONObject> meshUndoStack = new java.util.ArrayDeque<>();
+    private final java.util.ArrayDeque<org.json.JSONObject> meshRedoStack = new java.util.ArrayDeque<>();
     private final Handler timelineHandler = new Handler(Looper.getMainLooper());
     private boolean timelinePlaying;
     private long timelineStartMs;
-    private final Runnable timelineTick = this::advanceTimeline;
+    private int currentTimelineFrame=1;
+    private Runnable timelineTick;
 
     public ManualSculptWorkspace(Activity activity, EngineSurface engine, Runnable onExit) {
         super(activity);
         this.activity = activity;
-        this.engine = engine;
         this.onExit = onExit;
         float density = getResources().getDisplayMetrics().density;
         float availableHeightDp = getResources().getDisplayMetrics().heightPixels / density;
         uiScale = Math.max(0.55f, Math.min(1.0f, availableHeightDp / 260.0f));
         setBackgroundColor(Color.TRANSPARENT);
+        setClickable(false);
 
-        SculptTouchSurface touch = new SculptTouchSurface();
+        // Meshy3D owns this viewport and its starter cube; it is not the Novaingine GL scene.
+        meshyViewport = new Meshy3DViewport(activity, this::toggleViewportFocus);
+        addView(meshyViewport, new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
-        // Reference-matched editor: fixed top bar, left brush workspace, open viewport,
-        // right tool rail and bottom shortcut shelf. The GL surface remains visible below.
-        LinearLayout root = new LinearLayout(activity);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.TRANSPARENT);
-        FrameLayout.LayoutParams rootParams = new FrameLayout.LayoutParams(
-                LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT);
-        addView(root, rootParams);
+        // Meshy3D is being rebuilt from the Blender reference one section at a time.
+        // This pass contains ONLY the complete top header; the native viewport remains below.
+        LinearLayout topStack = new LinearLayout(activity);
+        topStack.setOrientation(LinearLayout.VERTICAL);
+        topStack.setBackgroundColor(0xFF202020);
+        FrameLayout.LayoutParams stackParams = new FrameLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.TOP);
+        addView(topStack, stackParams);
 
-        LinearLayout top = new LinearLayout(activity);
-        top.setGravity(Gravity.CENTER_VERTICAL);
-        top.setPadding(dp(9), dp(3), dp(9), dp(3));
-        top.setBackgroundColor(0xF21B1B1B);
-        root.addView(top, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(43)));
+        // Window title row.
+        LinearLayout titleRow = new LinearLayout(activity);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        titleRow.setPadding(dp(7), 0, dp(9), 0);
+        titleRow.setBackgroundColor(0xFF171717);
+        topStack.addView(titleRow, new LinearLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, dp(25)));
+        TextView appMark = new TextView(activity);
+        appMark.setText("◉");
+        appMark.setTextColor(0xFFFF8A32);
+        appMark.setTextSize(15);
+        appMark.setGravity(Gravity.CENTER);
+        titleRow.addView(appMark, new LinearLayout.LayoutParams(dp(23), LayoutParams.MATCH_PARENT));
+        TextView windowTitle = new TextView(activity);
+        windowTitle.setText("(Unsaved) - Meshy3D");
+        windowTitle.setTextColor(0xFFE1E1E1);
+        windowTitle.setTextSize(11);
+        windowTitle.setGravity(Gravity.CENTER_VERTICAL);
+        titleRow.addView(windowTitle, new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f));
+        TextView windowVersion = new TextView(activity);
+        windowVersion.setText("Meshy3D Editor");
+        windowVersion.setTextColor(0xFF929292);
+        windowVersion.setTextSize(10);
+        windowVersion.setGravity(Gravity.CENTER_VERTICAL);
+        titleRow.addView(windowVersion);
 
-        TextView home = button("⌂");
-        top.addView(home, new LinearLayout.LayoutParams(dp(42), LayoutParams.MATCH_PARENT));
-        home.setOnClickListener(v -> this.onExit.run());
-        TextView save = button("▣");
-        top.addView(save, new LinearLayout.LayoutParams(dp(42), LayoutParams.MATCH_PARENT));
-        save.setOnClickListener(v -> {
-            File folder = activity.getExternalFilesDir(null);
-            if (folder == null) { Toast.makeText(activity, "Save folder unavailable.", Toast.LENGTH_LONG).show(); return; }
-            File file = new File(folder, "Novaingine_Sculpt_Scene.nova");
-            engine.saveSceneAsync(file.getAbsolutePath(), ok -> Toast.makeText(activity,
-                    ok ? "Scene saved: " + file.getAbsolutePath() : "Scene save failed.",
-                    Toast.LENGTH_LONG).show());
-        });
-        TextView importButton = button("⇧");
-        top.addView(importButton, new LinearLayout.LayoutParams(dp(42), LayoutParams.MATCH_PARENT));
-        importButton.setOnClickListener(v -> {
-            if (activity instanceof MainActivity) ((MainActivity) activity).openSculptAssetPicker();
-            else Toast.makeText(activity, "Import picker unavailable.", Toast.LENGTH_SHORT).show();
-        });
-        TextView refine = button("REFINE");
-        top.addView(refine, new LinearLayout.LayoutParams(dp(58), LayoutParams.MATCH_PARENT));
-        refine.setOnClickListener(v -> {
-            new android.app.AlertDialog.Builder(activity)
-                    .setTitle("Refine sculpt topology")
-                    .setMessage("Split each triangle into four and interpolate the existing mask. This increases mesh density without changing the overall silhouette. Mobile limits apply.")
-                    .setNegativeButton("CANCEL", null)
-                    .setPositiveButton("REFINE", (dialog, which) -> engine.refineSculptMesh(result -> {
-                        String message = result == 1 ? "Sculpt mesh refined."
-                                : result == -2 ? "Finish the current stroke, then try again."
-                                : result == -3 ? "Mesh is already at the mobile topology limit."
-                                : result == -1 ? "Enter Sculpt Mode and select its sculpt mesh first."
-                                : "Refinement failed (" + result + ").";
-                        Toast.makeText(activity, message, Toast.LENGTH_LONG).show();
-                    })).show();
-        });
-        TextView project = label("NOVAINGINE  •  SCULPT WORKSPACE", 11, Color.WHITE, true);
-        project.setGravity(Gravity.CENTER);
-        top.addView(project, new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1));
-        TextView undo = button("↶");
-        top.addView(undo, new LinearLayout.LayoutParams(dp(42), LayoutParams.MATCH_PARENT));
-        undo.setOnClickListener(v -> engine.undoScene());
-        TextView redo = button("↷");
-        top.addView(redo, new LinearLayout.LayoutParams(dp(42), LayoutParams.MATCH_PARENT));
-        redo.setOnClickListener(v -> engine.redoScene());
-        TextView help = button("?");
-        top.addView(help, new LinearLayout.LayoutParams(dp(36), LayoutParams.MATCH_PARENT));
-        help.setOnClickListener(v -> new android.app.AlertDialog.Builder(activity)
-                .setTitle("Sculpt workspace")
-                .setMessage("Choose a brush, adjust its controls, then drag on the model. Use two fingers to orbit/pan/zoom. Select a transform mode to edit the selected mesh.")
-                .setPositiveButton("OK", null).show());
-        TextView leftDockToggle = button("◧");
-        top.addView(leftDockToggle, new LinearLayout.LayoutParams(dp(38), LayoutParams.MATCH_PARENT));
-        leftDockToggle.setOnClickListener(v -> {
-            if (brushDock != null) {
-                boolean show = brushDock.getVisibility() != View.VISIBLE;
-                brushDock.setVisibility(show ? View.VISIBLE : View.GONE);
-                if (leftResizeHandle != null) leftResizeHandle.setVisibility(show ? View.VISIBLE : View.GONE);
-            }
-        });
-        TextView bottomDockToggle = button("▤");
-        top.addView(bottomDockToggle, new LinearLayout.LayoutParams(dp(38), LayoutParams.MATCH_PARENT));
-        bottomDockToggle.setOnClickListener(v -> toggleBottomDock());
-        TextView rightDockToggle = button("◨");
-        top.addView(rightDockToggle, new LinearLayout.LayoutParams(dp(38), LayoutParams.MATCH_PARENT));
-        rightDockToggle.setOnClickListener(v -> {
-            if (rightDock != null) {
-                boolean show = rightDock.getVisibility() != View.VISIBLE;
-                rightDock.setVisibility(show ? View.VISIBLE : View.GONE);
-                if (rightResizeHandle != null) rightResizeHandle.setVisibility(show ? View.VISIBLE : View.GONE);
-            }
-        });
-
-        LinearLayout workArea = new LinearLayout(activity);
-        workArea.setOrientation(LinearLayout.HORIZONTAL);
-        root.addView(workArea, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1));
-
-        // Left quick-control rail (matching the reference's narrow strip).
-        LinearLayout leftRail = new LinearLayout(activity);
-        leftRail.setOrientation(LinearLayout.VERTICAL);
-        leftRail.setGravity(Gravity.CENTER_HORIZONTAL);
-        leftRail.setPadding(dp(3), dp(5), dp(3), dp(5));
-        leftRail.setBackgroundColor(0xE9161719);
-        workArea.addView(leftRail, new LinearLayout.LayoutParams(dp(42), LayoutParams.MATCH_PARENT));
-        TextView activeBrush = button("●");
-        leftRail.addView(activeBrush, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
-        activeBrush.setOnClickListener(v -> showBrushPicker());
-        TextView symmetry = button("X");
-        leftRail.addView(symmetry, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
-        symmetry.setOnClickListener(v -> {
-            symmetryAxis = symmetryAxis == 0 ? 1 : symmetryAxis == 1 ? 2 : symmetryAxis == 2 ? -1 : 0;
-            symmetry.setText(symmetryAxis < 0 ? "Ø" : symmetryAxis == 0 ? "X" : symmetryAxis == 1 ? "Y" : "Z");
-            symmetry.setTextColor(symmetryAxis < 0 ? Color.WHITE : ACCENT);
-            applyOptions();
-        });
-        TextView subtractQuick = button("±");
-        leftRail.addView(subtractQuick, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
-        subtractQuick.setOnClickListener(v -> {
-            subtract = !subtract;
-            subtractQuick.setText(subtract ? "−" : "+");
-            subtractQuick.setTextColor(subtract ? ACCENT : Color.WHITE);
-            applyOptions();
-        });
-        TextView smoothQuick = button("S");
-        leftRail.addView(smoothQuick, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
-        smoothQuick.setOnClickListener(v -> selectBrush(1));
-        TextView maskQuick = button("M");
-        leftRail.addView(maskQuick, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
-        maskQuick.setOnClickListener(v -> selectBrush(7));
-        TextView undoQuick = button("↶");
-        leftRail.addView(undoQuick, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
-        undoQuick.setOnClickListener(v -> engine.undoScene());
-        TextView redoQuick = button("↷");
-        leftRail.addView(redoQuick, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
-        redoQuick.setOnClickListener(v -> engine.redoScene());
-
-        // Brush browser panel: categories and a three-column, scrollable brush grid.
-        LinearLayout browser = new LinearLayout(activity);
-        browser.setOrientation(LinearLayout.VERTICAL);
-        browser.setPadding(dp(7), dp(6), dp(7), dp(5));
-        browser.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                new int[]{0xF52B2B2B, 0xF51C1C1C}));
-        LinearLayout.LayoutParams browserParams = new LinearLayout.LayoutParams(dp(292), LayoutParams.MATCH_PARENT);
-        browserParams.setMargins(dp(4), dp(4), dp(4), dp(4));
-        workArea.addView(browser, browserParams);
-        brushDock = browser;
-        leftResizeHandle = createResizeHandle(true, browser);
-        workArea.addView(leftResizeHandle, new LinearLayout.LayoutParams(dp(6), LayoutParams.MATCH_PARENT));
-
-        LinearLayout browserHeader = new LinearLayout(activity);
-        browserHeader.setGravity(Gravity.CENTER_VERTICAL);
-        browser.addView(browserHeader, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(38)));
-        TextView browserTitle = label("Brushes", 17, Color.WHITE, true);
-        browserTitle.setGravity(Gravity.CENTER);
-        browserHeader.addView(browserTitle, new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1));
-        TextView filter = button("☷");
-        browserHeader.addView(filter, new LinearLayout.LayoutParams(dp(38), LayoutParams.MATCH_PARENT));
-        filter.setOnClickListener(v -> showBrushPicker());
-        TextView more = button("⋯");
-        browserHeader.addView(more, new LinearLayout.LayoutParams(dp(34), LayoutParams.MATCH_PARENT));
-        more.setOnClickListener(v -> new android.app.AlertDialog.Builder(activity)
-                .setTitle("Brush options")
-                .setItems(new String[]{"All brushes", "Recent", "Favorites", "Brush settings"}, (d, which) -> {
-                    if (which == 3) showBrushSettings();
-                }).show());
-
-        TextView featured = label("  SELECTED  •  " + BRUSHES[selectedBrush].toUpperCase(), 10, ACCENT, true);
-        featured.setGravity(Gravity.CENTER_VERTICAL);
-        browser.addView(featured, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(27)));
-
-        HorizontalScrollView categoriesScroll = new HorizontalScrollView(activity);
-        categoriesScroll.setHorizontalScrollBarEnabled(false);
-        LinearLayout categories = new LinearLayout(activity);
-        categories.setGravity(Gravity.CENTER_VERTICAL);
-        categoriesScroll.addView(categories);
-        browser.addView(categoriesScroll, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(34)));
-        String[] categoryNames = {"Recent", "Favorites", "All", "Clay", "Move", "Crease", "Mask", "Flatten", "Special"};
-        for (String category : categoryNames) {
-            TextView cat = button(category);
-            categories.addView(cat, new LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, dp(30)));
-            cat.setOnClickListener(v -> {
-                // Categories are quick filters; all brushes remain available in All.
-                String key = category.equals("Move") ? "Grab" : category.equals("Crease") ? "Crease" : category;
-                if (category.equals("All") || category.equals("Recent") || category.equals("Favorites")) {
-                    for (TextView b : brushButtons) if (b != null) b.setVisibility(View.VISIBLE);
-                } else {
-                    for (int i = 0; i < brushButtons.length; i++) {
-                        String n = BRUSHES[i].toLowerCase(java.util.Locale.US);
-                        boolean show = category.equals("Clay") ? n.contains("clay") || n.equals("blob")
-                                : category.equals("Mask") ? n.contains("mask")
-                                : category.equals("Flatten") ? n.contains("flatten") || n.contains("scrape")
-                                : category.equals("Special") ? i >= 12
-                                : n.contains(key.toLowerCase(java.util.Locale.US));
-                        brushButtons[i].setVisibility(show ? View.VISIBLE : View.GONE);
-                    }
-                }
-            });
-        }
-
-        ScrollView brushScroll = new ScrollView(activity);
-        brushScroll.setFillViewport(false);
-        brushScroll.setVerticalScrollBarEnabled(true);
-        LinearLayout brushGrid = new LinearLayout(activity);
-        brushGrid.setOrientation(LinearLayout.VERTICAL);
-        brushScroll.addView(brushGrid);
-        browser.addView(brushScroll, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1));
-
-        for (int row = 0; row < (BRUSHES.length + 2) / 3; row++) {
-            LinearLayout line = new LinearLayout(activity);
-            line.setOrientation(LinearLayout.HORIZONTAL);
-            brushGrid.addView(line, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(88)));
-            for (int col = 0; col < 3; col++) {
-                final int index = row * 3 + col;
-                if (index >= BRUSHES.length) break;
-                LinearLayout tile = new LinearLayout(activity);
-                tile.setOrientation(LinearLayout.VERTICAL);
-                tile.setGravity(Gravity.CENTER);
-                tile.setPadding(dp(2), dp(4), dp(2), dp(3));
-                tile.setBackground(background(index == selectedBrush ? 0xFF51402B : 0xFF292929));
-                TextView icon = label("◉", 22, index == selectedBrush ? ACCENT : 0xFFD7D7D7, true);
-                icon.setGravity(Gravity.CENTER);
-                tile.addView(icon, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)));
-                TextView name = label(BRUSHES[index], 9, Color.WHITE, true);
-                name.setGravity(Gravity.CENTER);
-                tile.addView(name, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(30)));
-                LinearLayout.LayoutParams tileParams = new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1);
-                tileParams.setMargins(dp(2), dp(2), dp(2), dp(2));
-                line.addView(tile, tileParams);
-                brushButtons[index] = name;
-                tile.setOnClickListener(v -> {
-                    selectBrush(index);
-                    featured.setText("  SELECTED  •  " + BRUSHES[index].toUpperCase());
-                    for (int i = 0; i < brushButtons.length; i++) {
-                        if (brushButtons[i] != null) {
-                            brushButtons[i].setTextColor(i == index ? ACCENT : Color.WHITE);
-                            View parent = (View) brushButtons[i].getParent();
-                            if (parent != null) parent.setBackground(background(i == index ? 0xFF51402B : 0xFF292929));
-                        }
-                    }
-                });
-            }
-        }
-
-        status = label("Drag on the model to sculpt.", 9, 0xFFB8C4D1, false);
-        status.setGravity(Gravity.CENTER_VERTICAL);
-        browser.addView(status, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(23)));
-
-        brushControls = new LinearLayout(activity);
-        brushControls.setOrientation(LinearLayout.VERTICAL);
-        brushControls.setPadding(dp(2), 0, dp(2), 0);
-        browser.addView(brushControls, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(112)));
-        addSlider(brushControls, "SIZE", 1, 300, 7, value -> {
-            radius = 0.02f + ((value - 1) / 299.0f) * 7.98f; applyOptions();
-        });
-        addSlider(brushControls, "STRENGTH", 0, 100, 40, value -> {
-            strength = value / 100.0f; applyOptions();
-        });
-        addSlider(brushControls, "HARDNESS", 0, 100, 50, value -> {
-            falloff = value / 100.0f; applyOptions();
-        });
-        addSlider(brushControls, "PRESSURE", 5, 100, 100, value -> {
-            pressure = value / 100.0f; applyOptions();
-        });
-
-        // The center remains an unobstructed 3D viewport.
-        // Sculpt input is confined to the viewport gap so it cannot intercept editor controls.
-        View viewportSpacer = touch;
-        viewportSpacer.setBackgroundColor(Color.TRANSPARENT);
-        workArea.addView(viewportSpacer, new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1));
-
-        // Right-side modelling and scene rail, like the reference.
-        LinearLayout rightRail = new LinearLayout(activity);
-        rightRail.setOrientation(LinearLayout.VERTICAL);
-        rightRail.setGravity(Gravity.CENTER_HORIZONTAL);
-        rightRail.setPadding(dp(3), dp(5), dp(3), dp(5));
-        rightRail.setBackgroundColor(0xE9161719);
-        rightResizeHandle = createResizeHandle(false, rightRail);
-        workArea.addView(rightResizeHandle, new LinearLayout.LayoutParams(dp(6), LayoutParams.MATCH_PARENT));
-        workArea.addView(rightRail, new LinearLayout.LayoutParams(dp(43), LayoutParams.MATCH_PARENT));
-        rightDock = rightRail;
-        TextView scene = button("▤");
-        rightRail.addView(scene, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)));
-        scene.setOnClickListener(v -> showSceneObjects());
-        TextView layers = button("▱");
-        rightRail.addView(layers, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)));
-        layers.setOnClickListener(v -> showSceneObjects());
-        TextView shapes = button("◇");
-        rightRail.addView(shapes, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)));
-        shapes.setOnClickListener(v -> showShapes());
-        TextView transform = button("XYZ");
-        rightRail.addView(transform, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)));
-        transform.setOnClickListener(v -> showTransformEditor(touch));
-        TextView orbit = button("◎");
-        rightRail.addView(orbit, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)));
-        orbit.setOnClickListener(v -> {
-            orbitMode = !orbitMode;
-            sculptEnabled = !orbitMode;
-            applyOptions();
-            status.setText(orbitMode ? "Orbit mode: drag to rotate the selected object." : "Sculpt mode active.");
-        });
-        TextView symmetryRight = button("Y");
-        rightRail.addView(symmetryRight, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)));
-        symmetryRight.setOnClickListener(v -> {
-            symmetryAxis = symmetryAxis == 1 ? -1 : 1;
-            symmetryRight.setText(symmetryAxis == 1 ? "Y" : "Ø");
-            applyOptions();
-        });
-        TextView export = button("⇧");
-        rightRail.addView(export, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(40)));
-        export.setOnClickListener(v -> exportMesh());
-
-        bottomDock = new LinearLayout(activity);
-        bottomDock.setOrientation(LinearLayout.VERTICAL);
-        bottomDock.setBackgroundColor(0xF01B2027);
-        bottomDock.setVisibility(View.GONE);
-        root.addView(bottomDock, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0));
-        View dockGrip = new View(activity);
-        dockGrip.setBackgroundColor(ACCENT);
-        bottomDock.addView(dockGrip, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(6)));
-        final float[] dockY = new float[1];
-        final int[] dockHeight = new int[1];
-        dockGrip.setOnTouchListener((v, event) -> {
-            LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) bottomDock.getLayoutParams();
-            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) { dockY[0] = event.getRawY(); dockHeight[0] = lp.height; return true; }
-            if (event.getActionMasked() == MotionEvent.ACTION_MOVE) { lp.height = Math.max(dp(90), Math.min(dp(320), dockHeight[0] + Math.round(dockY[0] - event.getRawY()))); bottomDock.setLayoutParams(lp); return true; }
-            return event.getActionMasked() == MotionEvent.ACTION_UP;
-        });
-        LinearLayout dockTabs = new LinearLayout(activity);
-        dockTabs.setGravity(Gravity.CENTER_VERTICAL);
-        bottomDock.addView(dockTabs, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(34)));
-        FrameLayout dockBody = new FrameLayout(activity);
-        bottomDock.addView(dockBody, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1));
-        String[] dockNames = {"Console", "Objects", "Properties", "Timeline", "Assets"};
-        for (String dockName : dockNames) {
-            TextView tab = button(dockName);
-            dockTabs.addView(tab, new LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
-            tab.setOnClickListener(v -> showDockPanel(dockName, dockBody, touch));
-        }
-        showDockPanel("Console", dockBody, touch);
-
-        // Bottom brush shelf: persistent shortcuts, not a close/drawer control.
-        HorizontalScrollView shelfScroll = new HorizontalScrollView(activity);
-        shelfScroll.setHorizontalScrollBarEnabled(false);
-        shelfScroll.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{0xF52A2A2A, 0xF51B1B1B}));
-        LinearLayout shelf = new LinearLayout(activity);
-        shelf.setGravity(Gravity.CENTER_VERTICAL);
-        shelf.setPadding(dp(7), dp(3), dp(7), dp(3));
-        shelfScroll.addView(shelf);
-        root.addView(shelfScroll, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(52)));
-        int[] favorites = {1, 8, 0, 3, 4, 5, 6, 9, 10, 12, 13, 14, 15, 7, 11};
-        for (int brush : favorites) {
-            final int index = brush;
-            TextView shortcut = button(BRUSHES[index].equals("Clay Strips") ? "▧" : "●");
-            shortcut.setTextSize(16);
-            LinearLayout.LayoutParams shortcutParams = new LinearLayout.LayoutParams(dp(42), LayoutParams.MATCH_PARENT);
-            shortcutParams.setMargins(dp(2), 0, dp(2), 0);
-            shelf.addView(shortcut, shortcutParams);
-            shortcut.setOnClickListener(v -> {
-                selectBrush(index);
-                featured.setText("  SELECTED  •  " + BRUSHES[index].toUpperCase());
-                for (int i = 0; i < brushButtons.length; i++) {
-                    if (brushButtons[i] != null) {
-                        brushButtons[i].setTextColor(i == index ? ACCENT : Color.WHITE);
-                        View parent = (View) brushButtons[i].getParent();
-                        if (parent != null) parent.setBackground(background(i == index ? 0xFF51402B : 0xFF292929));
-                    }
-                }
-            });
-        }
-        TextView shapeShelf = button("SHAPES");
-        shelf.addView(shapeShelf, new LinearLayout.LayoutParams(dp(76), LayoutParams.MATCH_PARENT));
-        shapeShelf.setOnClickListener(v -> showShapes());
-        TextView moveShelf = button("MOVE");
-        shelf.addView(moveShelf, new LinearLayout.LayoutParams(dp(64), LayoutParams.MATCH_PARENT));
-        moveShelf.setOnClickListener(v -> setTransformMode(0, touch));
-        TextView rotateShelf = button("ROT");
-        shelf.addView(rotateShelf, new LinearLayout.LayoutParams(dp(54), LayoutParams.MATCH_PARENT));
-        rotateShelf.setOnClickListener(v -> setTransformMode(1, touch));
-        TextView scaleShelf = button("SCALE");
-        shelf.addView(scaleShelf, new LinearLayout.LayoutParams(dp(64), LayoutParams.MATCH_PARENT));
-        scaleShelf.setOnClickListener(v -> setTransformMode(2, touch));
-
-        updateBrushButtons();
-        applyOptions();
-    }
-
-    private View createResizeHandle(boolean leftPanel, View panel) {
-        View handle = new View(activity);
-        handle.setBackgroundColor(0xFF596675);
-        handle.setOnTouchListener((view, event) -> {
-            LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) panel.getLayoutParams();
-            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
-                view.setTag(new float[]{event.getRawX(), params.width});
-                return true;
-            }
-            if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
-                float[] start = (float[]) view.getTag();
-                if (start == null) return true;
-                float delta = event.getRawX() - start[0];
-                float next = start[1] + (leftPanel ? delta : -delta);
-                params.width = (int) Math.max(dp(leftPanel ? 190 : 43), Math.min(dp(leftPanel ? 430 : 220), next));
-                panel.setLayoutParams(params);
-                return true;
-            }
-            return event.getActionMasked() == MotionEvent.ACTION_UP
-                    || event.getActionMasked() == MotionEvent.ACTION_CANCEL;
-        });
-        return handle;
-    }
-
-    private void showDockPanel(String name, FrameLayout host, View touch) {
-        host.removeAllViews();
-        LinearLayout panel = new LinearLayout(activity);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(10), dp(5), dp(10), dp(5));
-        ScrollView scroll = new ScrollView(activity);
-        scroll.addView(panel);
-        host.addView(scroll, new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
-        if ("Console".equals(name)) {
-            panel.addView(label("NOVAINGINE CONSOLE", 11, ACCENT, true));
-            String[] objects = engine.getSceneObjects();
-            float[] transform = engine.getSelectedTransform();
-            panel.addView(label("Renderer FPS: " + engine.getFps(), 10, Color.WHITE, false));
-            panel.addView(label("Scene objects: " + (objects == null ? 0 : objects.length), 10, Color.WHITE, false));
-            panel.addView(label("Selected object: " + (transform == null ? "None" : "Available"), 10, Color.WHITE, false));
-            TextView refresh = button("REFRESH");
-            panel.addView(refresh);
-            refresh.setOnClickListener(v -> showDockPanel("Console", host, touch));
-        } else if ("Objects".equals(name)) {
-            panel.addView(label("SCENE HIERARCHY", 11, ACCENT, true));
-            String[] objects = engine.getSceneObjects();
-            if (objects == null || objects.length == 0) {
-                panel.addView(label("No objects in the scene. Use SHAPES to create one.", 10, Color.WHITE, false));
-            } else {
-                for (String row : objects) {
-                    String value = row == null ? "" : row;
-                    int split = value.indexOf('|');
-                    int id = 0;
-                    try { id = Integer.parseInt(split < 0 ? value : value.substring(0, split)); } catch (NumberFormatException ignored) {}
-                    String objectName = split < 0 ? value : value.substring(split + 1);
-                    final int objectId = id;
-                    TextView item = button(objectName);
-                    panel.addView(item, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(36)));
-                    item.setOnClickListener(v -> {
-                        if (objectId != 0) {
-                            engine.selectObjectById(objectId);
-                            status.setText("Selected: " + objectName);
-                        }
-                    });
-                }
-            }
-            TextView refresh = button("REFRESH HIERARCHY");
-            panel.addView(refresh);
-            refresh.setOnClickListener(v -> showDockPanel("Objects", host, touch));
-        } else if ("Properties".equals(name)) {
-            panel.addView(label("TRANSFORM PROPERTIES", 11, ACCENT, true));
-            float[] values = engine.getSelectedTransform();
-            if (values == null || values.length < 9) {
-                panel.addView(label("Select an object in the viewport or Objects tab.", 10, Color.WHITE, false));
-            } else {
-                String[] names = {"Position", "Rotation", "Scale"};
-                for (int c = 0; c < 3; c++) {
-                    panel.addView(label(names[c] + "   X " + values[c*3] + "   Y " + values[c*3+1] + "   Z " + values[c*3+2], 10, Color.WHITE, false));
-                }
-                TextView edit = button("EDIT XYZ");
-                panel.addView(edit);
-                edit.setOnClickListener(v -> showTransformEditor(touch));
-            }
-        } else if ("Timeline".equals(name)) {
-            panel.addView(label("TRANSFORM TIMELINE", 11, ACCENT, true));
-            TextView info = label("Keyframes: " + transformKeyframes.size() + "  •  1.2 seconds between keys", 10, Color.WHITE, false);
-            panel.addView(info);
-            TextView addKey = button("ADD KEYFRAME FROM SELECTED OBJECT");
-            panel.addView(addKey);
-            addKey.setOnClickListener(v -> {
-                float[] transform = engine.getSelectedTransform();
-                if (transform == null || transform.length < 9) {
-                    Toast.makeText(activity, "Select an object before recording a keyframe.", Toast.LENGTH_SHORT).show();
-                    return;
-                }
-                transformKeyframes.add(transform.clone());
-                info.setText("Keyframes: " + transformKeyframes.size() + "  •  1.2 seconds between keys");
-                status.setText("Timeline keyframe " + transformKeyframes.size() + " recorded.");
-            });
-            TextView play = button("PLAY TIMELINE");
-            panel.addView(play);
-            play.setOnClickListener(v -> startTimelinePlayback());
-            TextView stop = button("STOP");
-            panel.addView(stop);
-            stop.setOnClickListener(v -> stopTimelinePlayback());
-            TextView clear = button("CLEAR KEYFRAMES");
-            panel.addView(clear);
-            clear.setOnClickListener(v -> {
-                stopTimelinePlayback();
-                transformKeyframes.clear();
-                info.setText("Keyframes: 0  •  1.2 seconds between keys");
-                status.setText("Timeline cleared.");
-            });
-            panel.addView(label("Keyframes are held in memory for this sculpt session; they are not yet saved into project files.", 9, 0xFFFFC56B, false));
-        } else if ("Assets".equals(name)) {
-            panel.addView(label("PROJECT ASSETS", 11, ACCENT, true));
-            panel.addView(label("Import a glTF binary model (.glb) or export the selected sculpt mesh as OBJ.", 10, Color.WHITE, false));
-            TextView importAsset = button("IMPORT .GLB");
-            panel.addView(importAsset);
-            importAsset.setOnClickListener(v -> {
-                if (activity instanceof MainActivity) ((MainActivity) activity).openSculptAssetPicker();
-            });
-            TextView exportAsset = button("EXPORT SELECTED OBJ");
-            panel.addView(exportAsset);
-            exportAsset.setOnClickListener(v -> exportMesh());
-        }
-    }
-
-    private void startTimelinePlayback() {
-        if (transformKeyframes.size() < 2) {
-            Toast.makeText(activity, "Record at least two keyframes first.", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        timelineHandler.removeCallbacks(timelineTick);
-        timelinePlaying = true;
-        timelineStartMs = SystemClock.uptimeMillis();
-        timelineHandler.post(timelineTick);
-        status.setText("Timeline playback started.");
-    }
-
-    private void stopTimelinePlayback() {
-        timelinePlaying = false;
-        timelineHandler.removeCallbacks(timelineTick);
-        status.setText("Timeline playback stopped.");
-    }
-
-    private void advanceTimeline() {
-        if (!timelinePlaying || transformKeyframes.size() < 2) return;
-        long elapsed = SystemClock.uptimeMillis() - timelineStartMs;
-        final long segmentDuration = 1200L;
-        int segment = (int) (elapsed / segmentDuration);
-        if (segment >= transformKeyframes.size() - 1) {
-            engine.setSelectedTransform(transformKeyframes.get(transformKeyframes.size() - 1));
-            stopTimelinePlayback();
-            return;
-        }
-        float t = (elapsed % segmentDuration) / (float) segmentDuration;
-        float[] from = transformKeyframes.get(segment);
-        float[] to = transformKeyframes.get(segment + 1);
-        float[] current = new float[9];
-        for (int i = 0; i < current.length; i++) current[i] = from[i] + (to[i] - from[i]) * t;
-        engine.setSelectedTransform(current);
-        timelineHandler.postDelayed(timelineTick, 16L);
-    }
-
-    @Override protected void onDetachedFromWindow() {
-        stopTimelinePlayback();
-        timelineHandler.removeCallbacksAndMessages(null);
-        super.onDetachedFromWindow();
-    }
-
-    private void toggleBottomDock() {
-        if (bottomDock == null) return;
-        boolean show = bottomDock.getVisibility() != View.VISIBLE;
-        bottomDock.setVisibility(show ? View.VISIBLE : View.GONE);
-        LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) bottomDock.getLayoutParams();
-        lp.height = show ? dp(150) : 0;
-        bottomDock.setLayoutParams(lp);
-    }
-
-    private void selectBrush(int index) {
-        selectedBrush = Math.max(0, Math.min(BRUSHES.length - 1, index));
-        activeTransformMode = -1;
-        orbitMode = false;
-        sculptEnabled = true;
-        applyOptions();
-        updateBrushButtons();
-        status.setText(BRUSH_DESCRIPTIONS[selectedBrush]);
-    }
-
-    private void showBrushPicker() {
-        new android.app.AlertDialog.Builder(activity).setTitle("Brushes")
-                .setItems(BRUSHES, (dialog, which) -> selectBrush(which)).show();
-    }
-
-    private void showBrushSettings() {
-        new android.app.AlertDialog.Builder(activity).setTitle("Brush settings")
-                .setMessage("Size, strength, hardness and pressure are available in the Brushes panel.")
-                .setPositiveButton("OK", null).show();
-    }
-
-    private void showShapes() {
-        String[] names = {"Sphere", "Plane", "Cube", "Cylinder", "Cone", "Torus", "Capsule", "Wedge", "Round Sphere"};
-        int[] densities = {64, 128, 32, 48, 48, 48, 48, 32, 64};
-        new android.app.AlertDialog.Builder(activity).setTitle("Shapes")
-                .setItems(names, (dialog, which) -> createMesh(which, densities[which])).show();
-    }
-
-    private void setTransformMode(int mode, View touch) {
-        engine.setTransformMode(mode);
-        activeTransformMode = mode;
-        transformComponent = mode;
-        sculptEnabled = false;
-        orbitMode = false;
-        transformDragState = engine.getSelectedTransform();
-        applyOptions();
-        touch.invalidate();
-        status.setText(mode == 0 ? "Move: drag an XYZ gizmo axis or set coordinates."
-                : mode == 1 ? "Rotate selected mesh." : "Scale selected mesh.");
-    }
-
-    private void showTransformEditor(View touch) {
-        float[] values = engine.getSelectedTransform();
-        if (values == null || values.length < 9) {
-            Toast.makeText(activity, "Select an object first.", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        LinearLayout content = new LinearLayout(activity);
-        content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(12), dp(6), dp(12), dp(6));
-        EditText[][] fields = new EditText[3][3];
-        String[] names = {"POSITION", "ROTATION", "SCALE"};
-        for (int component = 0; component < 3; component++) {
-            TextView heading = label(names[component], 11, ACCENT, true);
-            content.addView(heading);
-            LinearLayout row = new LinearLayout(activity);
-            content.addView(row);
-            for (int axis = 0; axis < 3; axis++) {
-                EditText input = new EditText(activity);
-                input.setSingleLine(true);
-                input.setTextSize(11);
-                input.setHint(axis == 0 ? "X" : axis == 1 ? "Y" : "Z");
-                input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER
-                        | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
-                        | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
-                input.setText(String.valueOf(values[component * 3 + axis]));
-                row.addView(input, new LinearLayout.LayoutParams(0, dp(40), 1));
-                fields[component][axis] = input;
-            }
-        }
-        new android.app.AlertDialog.Builder(activity).setTitle("XYZ Transform")
-                .setView(content).setPositiveButton("APPLY", (dialog, which) -> {
-                    float[] next = values.clone();
-                    try {
-                        for (int c = 0; c < 3; c++) for (int a = 0; a < 3; a++)
-                            next[c * 3 + a] = Float.parseFloat(fields[c][a].getText().toString());
-                        engine.setSelectedTransform(next);
-                        positionInputs = fields[transformComponent];
-                        touch.invalidate();
-                        status.setText("Position, rotation and scale updated.");
-                    } catch (NumberFormatException error) {
-                        status.setText("Invalid XYZ value.");
-                    }
-                }).setNegativeButton("CANCEL", null).show();
-    }
-
-    private void showSceneObjects() {
-        String[] objects = engine.getSceneObjects();
-        if (objects == null || objects.length == 0) {
-            new android.app.AlertDialog.Builder(activity).setTitle("Scene").setMessage("No objects in the scene.")
-                    .setPositiveButton("OK", null).show();
-            return;
-        }
-        String[] labels = new String[objects.length];
-        int[] ids = new int[objects.length];
-        for (int i = 0; i < objects.length; i++) {
-            String row = objects[i] == null ? "" : objects[i];
-            int split = row.indexOf('|');
-            try { ids[i] = Integer.parseInt(split < 0 ? row : row.substring(0, split)); }
-            catch (NumberFormatException ignored) { ids[i] = 0; }
-            labels[i] = split < 0 ? row : row.substring(split + 1);
-        }
-        new android.app.AlertDialog.Builder(activity).setTitle("Scene objects")
-                .setItems(labels, (dialog, which) -> { if (ids[which] != 0) engine.selectObjectById(ids[which]); })
-                .setNegativeButton("CLOSE", null).show();
-    }
-
-    private void createMesh(int shape, int density) {
-        engine.createSculptMesh(shape, density, id -> {
-            if (id > 0) {
-                String[] names = {"sphere", "plane", "cube", "cylinder", "cone",
-                        "torus", "capsule", "wedge", "rounded sphere"};
-                status.setText("Sculpt " + names[Math.max(0, Math.min(8, shape))]
-                        + " created and selected. Drag to sculpt.");
-                float[] transform = engine.getSelectedTransform();
-                if (transform != null && transform.length >= 9) {
-                    for (int axis = 0; axis < 3; axis++) {
-                        if (positionInputs[axis] != null) positionInputs[axis].setText(String.valueOf(transform[axis + transformComponent * 3]));
-                    }
-                }
-            } else {
-                status.setText("Could not create mesh. Try again.");
-            }
-        });
-    }
-
-    private void exportMesh() {
-        File folder = activity.getExternalFilesDir(null);
-        if (folder == null) {
-            Toast.makeText(activity, "Export folder unavailable", Toast.LENGTH_LONG).show();
-            return;
-        }
-        File file = new File(folder, "Novaingine_Sculpt.obj");
-        engine.exportSelectedObj(file.getAbsolutePath(), ok ->
-                Toast.makeText(activity, ok ? "OBJ exported to app storage" :
-                        "Select a sculptable mesh first", Toast.LENGTH_LONG).show());
-    }
-
-    private interface SliderChange { void onChanged(int value); }
-
-    private void addSlider(LinearLayout parent, String name, int min, int max,
-                           int initial, SliderChange change) {
-        LinearLayout row = new LinearLayout(activity);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = label(name, 9, 0xFFD3DCE5, true);
-        row.addView(title, new LinearLayout.LayoutParams(dp(66), dp(28)));
-        SeekBar seek = new SeekBar(activity);
-        seek.setMax(max - min);
-        seek.setProgress(initial - min);
-        row.addView(seek, new LinearLayout.LayoutParams(0, dp(30), 1));
-        parent.addView(row, new LinearLayout.LayoutParams(
+        // Blender-style application menus and workspace tabs.
+        LinearLayout menuWorkspaceRow = new LinearLayout(activity);
+        menuWorkspaceRow.setGravity(Gravity.CENTER_VERTICAL);
+        menuWorkspaceRow.setBackgroundColor(0xFF242424);
+        topStack.addView(menuWorkspaceRow, new LinearLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT, dp(31)));
-        seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
-                change.onChanged(progress + min);
-            }
-            @Override public void onStartTrackingTouch(SeekBar bar) {}
-            @Override public void onStopTrackingTouch(SeekBar bar) {}
-        });
-    }
 
-    private void applyOptions() {
-        engine.setSculptOptions(sculptEnabled, selectedBrush, radius, strength,
-                falloff, symmetryAxis, subtract, pressure);
-    }
-
-    private void updateBrushButtons() {
-        for (int i = 0; i < brushButtons.length; i++) {
-            if (brushButtons[i] == null) continue;
-            brushButtons[i].setText(BRUSHES[i] + (i == selectedBrush ? "  • SELECTED" : ""));
-            brushButtons[i].setTextColor(i == selectedBrush ? ACCENT : Color.WHITE);
+        LinearLayout menus = new LinearLayout(activity);
+        menus.setGravity(Gravity.CENTER_VERTICAL);
+        menuWorkspaceRow.addView(menus, new LinearLayout.LayoutParams(
+                LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
+        String[] menuNames = {"File", "Edit", "Window", "Help"};
+        for (String menuName : menuNames) {
+            TextView menu = new TextView(activity);
+            menu.setText(menuName);
+            menu.setTextColor(0xFFE0E0E0);
+            menu.setTextSize(11);
+            menu.setGravity(Gravity.CENTER);
+            menu.setPadding(dp(8), 0, dp(8), 0);
+            menu.setOnClickListener(view -> {
+                if (activity instanceof MainActivity) {
+                    MainActivity host = (MainActivity) activity;
+                    if ("File".equals(menuName)) host.showMeshyFileMenu(view);
+                    else if ("Edit".equals(menuName)) host.showMeshyEditMenu(view);
+                    else if ("Window".equals(menuName)) host.showMeshyWindowMenu(view);
+                    else if ("Help".equals(menuName)) host.showMeshyHelpMenu(view);
+                }
+            });
+            menus.addView(menu, new LinearLayout.LayoutParams(
+                    LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
         }
+
+        HorizontalScrollView workspaceScroll = new HorizontalScrollView(activity);
+        workspaceScroll.setHorizontalScrollBarEnabled(false);
+        workspaceScroll.setFillViewport(false);
+        menuWorkspaceRow.addView(workspaceScroll, new LinearLayout.LayoutParams(
+                0, LayoutParams.MATCH_PARENT, 1f));
+        LinearLayout workspaces = new LinearLayout(activity);
+        workspaces.setGravity(Gravity.CENTER_VERTICAL);
+        workspaceScroll.addView(workspaces, new HorizontalScrollView.LayoutParams(
+                LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
+        for (int i = 0; i < WORKSPACE_NAMES.length; i++) {
+            final int workspaceIndex = i;
+            TextView tab = new TextView(activity);
+            tab.setText(WORKSPACE_NAMES[i]);
+            tab.setTextColor(0xFFB7B7B7);
+            tab.setTextSize(10);
+            tab.setGravity(Gravity.CENTER);
+            tab.setPadding(dp(9), 0, dp(9), 0);
+            tab.setOnClickListener(v -> setActiveWorkspaceIndex(workspaceIndex));
+            workspaceTabs.add(tab);
+            workspaces.addView(tab, new LinearLayout.LayoutParams(
+                    LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
+        }
+        setActiveWorkspaceIndex(0);
+
+        // 3D Viewport editor header, matching the controls visible beneath Blender's top bar.
+        HorizontalScrollView viewportHeaderScroll = new HorizontalScrollView(activity);
+        viewportHeaderScroll.setHorizontalScrollBarEnabled(false);
+        viewportHeaderScroll.setFillViewport(true);
+        viewportHeaderScroll.setBackgroundColor(0xFF303030);
+        topStack.addView(viewportHeaderScroll, new LinearLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, dp(30)));
+        LinearLayout viewportHeader = new LinearLayout(activity);
+        viewportHeader.setGravity(Gravity.CENTER_VERTICAL);
+        viewportHeader.setPadding(dp(7), 0, dp(8), 0);
+        viewportHeaderScroll.addView(viewportHeader, new HorizontalScrollView.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+
+        String[] leftHeaderItems = {"▣", "Object Mode", "View", "Select", "Add", "Object"};
+        for (int i = 0; i < leftHeaderItems.length; i++) {
+            TextView item = new TextView(activity);
+            item.setText(leftHeaderItems[i]);
+            item.setTextColor(0xFFE0E0E0);
+            item.setTextSize(i == 0 ? 13 : 10);
+            item.setGravity(Gravity.CENTER);
+            item.setPadding(dp(6), 0, dp(6), 0);
+            if (i == 1) {
+                modeButton = item;
+                item.setOnClickListener(v -> showEditorModeMenu());
+            }
+            viewportHeader.addView(item, new LinearLayout.LayoutParams(
+                    LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
+        }
+        View headerSpacer = new View(activity);
+        viewportHeader.addView(headerSpacer, new LinearLayout.LayoutParams(0, 1, 1f));
+        String[] rightHeaderItems = {"↔  Global", "◇", "⌖", "▦", "◉", "⌄"};
+        for (String value : rightHeaderItems) {
+            TextView item = new TextView(activity);
+            item.setText(value);
+            item.setTextColor(0xFFD0D0D0);
+            item.setTextSize(10);
+            item.setGravity(Gravity.CENTER);
+            item.setPadding(dp(7), 0, dp(7), 0);
+            viewportHeader.addView(item, new LinearLayout.LayoutParams(
+                    LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
+        }
+
+        status = new TextView(activity);
+        status.setText("Meshy3D  |  " + WORKSPACE_NAMES[activeWorkspaceIndex]);
+        updateSculptViewport();
+        status.setTextColor(0xFFB8C4D1);
+        status.setTextSize(9);
+        workspaceLayoutLayer = new FrameLayout(activity);
+        FrameLayout.LayoutParams layerParams = new FrameLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT);
+        layerParams.topMargin = dp(86);
+        addView(workspaceLayoutLayer, layerParams);
+        renderWorkspaceLayout(0);
     }
 
-    private TextView button(String text) {
-        TextView view = label(text, 10, Color.WHITE, true);
-        view.setGravity(Gravity.CENTER);
-        view.setPadding(dp(9), dp(6), dp(9), dp(6));
-        view.setBackground(background(0xFF303B48));
-        view.setClickable(true);
-        view.setFocusable(true);
+    public void setActiveWorkspaceIndex(int index) {
+        if (index < 0 || index >= WORKSPACE_NAMES.length) return;
+        int previousIndex = activeWorkspaceIndex;
+        viewportFocusMode = false;
+        boolean shouldSlide = workspaceLayoutLayer != null && previousIndex != index;
+        activeWorkspaceIndex = index;
+        if (index == 2) {
+            sculptEnabled = true;
+            activeEditorMode = "Sculpt Mode";
+            if (modeButton != null) modeButton.setText(activeEditorMode);
+        } else if (previousIndex == 2) {
+            sculptEnabled = false;
+            activeEditorMode = "Object Mode";
+            if (modeButton != null) modeButton.setText(activeEditorMode);
+        }
+        updateSculptViewport();
+        for (int i = 0; i < workspaceTabs.size(); i++) {
+            TextView tab = workspaceTabs.get(i);
+            boolean selected = i == index;
+            tab.setTextColor(selected ? Color.WHITE : 0xFFB7B7B7);
+            if (selected) {
+                GradientDrawable background = new GradientDrawable();
+                background.setColor(0xFF3A3A3A);
+                background.setCornerRadius(dp(2));
+                tab.setBackground(background);
+            } else {
+                tab.setBackgroundColor(Color.TRANSPARENT);
+            }
+        }
+        if (status != null) status.setText("Meshy3D  |  " + WORKSPACE_NAMES[index] + " Workspace");
+        if (!shouldSlide) {
+            renderWorkspaceLayout(index);
+            return;
+        }
+
+        // Slide the previous workspace out, rebuild its replacement, then slide it in.
+        final int transition = ++workspaceTransitionToken;
+        final float direction = index > previousIndex ? 1.0f : -1.0f;
+        workspaceLayoutLayer.animate().cancel();
+        workspaceLayoutLayer.animate()
+                .translationX(direction * dp(54))
+                .alpha(0.0f)
+                .setDuration(145)
+                .withEndAction(() -> {
+                    if (transition != workspaceTransitionToken || workspaceLayoutLayer == null) return;
+                    renderWorkspaceLayout(index);
+                    workspaceLayoutLayer.setTranslationX(-direction * dp(54));
+                    workspaceLayoutLayer.animate()
+                            .translationX(0.0f)
+                            .alpha(1.0f)
+                            .setDuration(185)
+                            .start();
+                })
+                .start();
+    }
+
+    private TextView dockHeading(String text) {
+        TextView view = new TextView(activity);
+        view.setText(text.toUpperCase());
+        view.setTextColor(0xFFFFB45A);
+        view.setTextSize(10);
+        view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        view.setPadding(dp(9), dp(8), dp(7), dp(6));
         return view;
     }
 
-    private TextView label(String text, float size, int color, boolean bold) {
+    private TextView dockItem(String text, boolean selected) {
         TextView view = new TextView(activity);
         view.setText(text);
-        view.setTextSize(size);
-        view.setTextColor(color);
-        if (bold) view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        view.setTextColor(selected ? Color.WHITE : 0xFFD0D6DE);
+        view.setTextSize(10);
+        view.setPadding(dp(9), dp(7), dp(7), dp(7));
+        if (selected) {
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(0xFF394654);
+            bg.setCornerRadius(dp(3));
+            view.setBackground(bg);
+        }
+        view.setOnClickListener(v -> {
+            if (activeWorkspaceIndex == 2) handleSculptPanelItem(text);
+            else handleWorkspaceItem(text);
+        });
         return view;
     }
 
-    private GradientDrawable background(int color) {
-        GradientDrawable d = new GradientDrawable();
-        d.setColor(color);
-        d.setCornerRadius(dp(6));
-        d.setStroke(dp(1), 0xFF465464);
-        return d;
+    private void updateSculptViewport() {
+        if (meshyViewport != null) meshyViewport.setSculptSettings(
+                sculptEnabled, selectedSculptBrush, sculptRadiusUi, sculptStrengthUi,
+                sculptFalloffUi, sculptSymmetryUi, sculptSubtractUi, sculptPressureUi);
+        if(meshyViewport!=null)meshyViewport.setSculptStrokeMethod(sculptStrokeMethodUi);
     }
 
-    private LinearLayout.LayoutParams weighted(int height, float weight) {
-        return new LinearLayout.LayoutParams(0,
-                height == 0 ? LayoutParams.MATCH_PARENT : dp(height), weight);
+    private void handleSculptPanelItem(String item) {
+        for (int i=0;i<BRUSHES.length;i++) {
+            if (BRUSHES[i].equalsIgnoreCase(item)) {
+                selectedSculptBrush=i; updateSculptViewport();
+                if(status!=null) status.setText("Sculpting | "+BRUSHES[i]+" — "+BRUSH_DESCRIPTIONS[i]);
+                return;
+            }
+        }
+        if ("Radius".equals(item)) showSculptSlider("Brush Radius",0.02f,0.75f,sculptRadiusUi,v->sculptRadiusUi=v);
+        else if ("Strength".equals(item)) showSculptSlider("Brush Strength",0.01f,1f,sculptStrengthUi,v->sculptStrengthUi=v);
+        else if ("Falloff".equals(item)) showSculptSlider("Brush Falloff",0f,1f,sculptFalloffUi,v->sculptFalloffUi=v);
+        else if ("Pressure".equals(item)) showSculptSlider("Pressure Sensitivity",0.05f,1f,sculptPressureUi,v->sculptPressureUi=v);
+        else if ("Symmetry".equals(item)) {
+            String[] axes={"Off","X","Y","Z"};
+            new android.app.AlertDialog.Builder(activity).setTitle("Sculpt Symmetry")
+                    .setSingleChoiceItems(axes,sculptSymmetryUi,(d,w)->{sculptSymmetryUi=w;updateSculptViewport();d.dismiss();})
+                    .setNegativeButton("Cancel",null).show();
+        } else if ("Add / Subtract".equals(item)) {
+            sculptSubtractUi=!sculptSubtractUi; updateSculptViewport();
+            Toast.makeText(activity,sculptSubtractUi?"Subtract mode":"Add mode",Toast.LENGTH_SHORT).show();
+        } else if ("Brush Preview".equals(item)) {
+            Toast.makeText(activity,"Active brush: "+BRUSHES[selectedSculptBrush],Toast.LENGTH_SHORT).show();
+        } else if ("Stroke Method".equals(item)) {
+            String[] methods={"Dots","Drag Dot","Space"};
+            new android.app.AlertDialog.Builder(activity).setTitle("Stroke Method")
+                    .setSingleChoiceItems(methods,sculptStrokeMethodUi,(d,w)->{
+                        sculptStrokeMethodUi=w;updateSculptViewport();
+                        status.setText("Sculpting | Stroke method: "+methods[w]);d.dismiss();
+                    }).setNegativeButton("Cancel",null).show();
+        } else if ("Dyntopo / Remesh options".equals(item)) {
+            new android.app.AlertDialog.Builder(activity).setTitle("Mesh Detail")
+                    .setItems(new String[]{"Uniform Subdivide","Smooth Detail","Information"},(d,w)->{
+                        if(w==0){checkpointMeshEdit();meshyViewport.subdivideSelected();status.setText("Sculpting | Uniform mesh subdivision applied");}
+                        else if(w==1){showSculptSlider("Detail smoothing",0.05f,.8f,.25f,value->{checkpointMeshEdit();meshyViewport.smoothMesh(value,2);});}
+                        else new android.app.AlertDialog.Builder(activity).setTitle("Mesh Detail")
+                                .setMessage("Current mesh: "+meshyViewport.getVertexCount()+" vertices, "+meshyViewport.getFaceCount()+" faces. Adaptive Dyntopo and voxel remeshing are not implemented yet.")
+                                .setPositiveButton("OK",null).show();
+                    }).show();
+        }
+    }
+
+    private void handleWorkspaceItem(String item) {
+        if (meshyViewport == null) return;
+        if ("Cube".equalsIgnoreCase(item)) {
+            for(Meshy3DObjectScene.Object3D object:meshyViewport.getObjectScene().getObjects()) {
+                if(object.name.equalsIgnoreCase(item)){meshyViewport.selectSceneObject(object.id);
+                    status.setText(WORKSPACE_NAMES[activeWorkspaceIndex]+" | Active object: "+object.name);return;}
+            }
+        }
+        if ("Selected Mesh".equalsIgnoreCase(item) || "Active Tool".equalsIgnoreCase(item)) {
+            Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
+            status.setText(WORKSPACE_NAMES[activeWorkspaceIndex] + " | Active object: "
+                    +(active==null?"None":active.name));
+            return;
+        }
+        switch (activeWorkspaceIndex) {
+            case 0:
+                if ("Hide / Show Objects".equals(item)) {
+                    checkpointMeshEdit(); meshyViewport.toggleMeshVisible();
+                    status.setText("Layout | Cube visibility toggled");
+                } else if ("Camera View".equals(item)) {
+                    meshyViewport.resetView();
+                    status.setText("Layout | View framed on Cube");
+                } else if ("Show Grid".equals(item) || "Grid".equals(item)) {
+                    checkpointMeshEdit(); meshyViewport.toggleFloorGrid();
+                } else if ("Move".equals(item) || "Rotate".equals(item) || "Scale".equals(item)
+                        || "Transform".equals(item)) showTransformDialog(item.equals("Transform") ? "Move" : item);
+                else if ("Hide Object".equals(item)) meshyViewport.setMeshVisible(false);
+                else showWorkspaceActionInfo(item);
+                break;
+            case 1:
+                if ("Add Cube".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.addCubeObject();
+                    activeEditorMode="Object Mode";if(modeButton!=null)modeButton.setText(activeEditorMode);
+                    meshyViewport.setMeshEditMode(false);
+                    status.setText("Modeling | New independent Cube object added");
+                } else if ("Duplicate".equals(item) || "Duplicate Linked".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.duplicateActiveObject("Duplicate Linked".equals(item));
+                    status.setText("Modeling | "+item+" created");
+                } else if ("Delete Object".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.deleteActiveObject();
+                    status.setText("Modeling | Active object deleted");
+                } else if ("Rename Object".equals(item)) showObjectRenameDialog();
+                else if ("Select Object".equals(item)) showObjectPickerDialog(false);
+                else if ("Hide / Show Object".equals(item)) {
+                    Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
+                    if(active!=null){meshyViewport.setActiveObjectVisible(!active.visible);status.setText("Modeling | "+active.name+(active.visible?" hidden":" visible"));}
+                } else if ("Apply Rotation & Scale".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.applyActiveObjectRotationAndScale();
+                    status.setText("Modeling | Active object rotation and scale applied");
+                } else if ("Parent To".equals(item)) showObjectPickerDialog(true);
+                else if ("Clear Parent".equals(item)) {
+                    meshyViewport.setActiveObjectParent(null);status.setText("Modeling | Parent relationship cleared");
+                } else if ("Add Collection".equals(item)) showCreateCollectionDialog();
+                else if ("Move To Collection".equals(item)) showCollectionPickerDialog();
+                else if ("Object Statistics".equals(item)) {
+                    Meshy3DObjectScene scene=meshyViewport.getObjectScene();
+                    status.setText("Scene | "+scene.getObjectCount()+" objects | "+scene.getCollectionCount()+" collections");
+                } else if (("Move".equals(item)||"Rotate".equals(item)||"Scale".equals(item))
+                        && !"Edit Mode".equals(activeEditorMode)) {
+                    showObjectTransformDialog(item);
+                } else if ("Vertex".equalsIgnoreCase(item) || "Vertex Select".equalsIgnoreCase(item)) {
+                    meshyViewport.setMeshEditMode(true);meshyViewport.setSelectionMode("Vertex");
+                    status.setText("Modeling | Vertex selection | Tap vertices to select");
+                } else if ("Edge".equalsIgnoreCase(item) || "Edge Select".equalsIgnoreCase(item)) {
+                    meshyViewport.setMeshEditMode(true);meshyViewport.setSelectionMode("Edge");
+                    status.setText("Modeling | Edge selection | Tap edges to select");
+                } else if ("Face".equalsIgnoreCase(item) || "Face Select".equalsIgnoreCase(item)) {
+                    meshyViewport.setMeshEditMode(true);meshyViewport.setSelectionMode("Face");
+                    status.setText("Modeling | Face selection | Tap faces to select");
+                } else if ("Select All".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.selectAllElements();
+                    status.setText("Modeling | All " + meshyViewport.getSelectionMode().toLowerCase()
+                            + " elements selected (" + meshyViewport.getSelectedElementCount() + ")");
+                } else if ("Select Loops".equals(item)) {
+                    meshyViewport.selectLoops();status.setText("Modeling | Connected quad edge loops selected");
+                } else if ("Select Similar".equals(item)) {
+                    meshyViewport.selectSimilar();status.setText("Modeling | Similar mesh elements selected");
+                } else if ("Move".equals(item) || "Rotate".equals(item) || "Scale".equals(item)
+                        || "Transform".equals(item)) {
+                    if ("Edit Mode".equals(activeEditorMode)) {
+                        meshyViewport.setMeshEditMode(true);
+                        showTransformDialog(item.equals("Transform") ? "Move" : item);
+                    } else showObjectTransformDialog(item.equals("Transform") ? "Move" : item);
+                } else if ("Extrude Region".equals(item) || "Extrude Along Normals".equals(item)
+                        || "Extrude Individual Faces".equals(item) || "Extrude".equals(item)) {
+                    final boolean individual="Extrude Individual Faces".equals(item);
+                    final boolean alongNormals="Extrude Along Normals".equals(item);
+                    showAmountDialog("Extrude distance",0.01f,2.0f,value->{
+                        checkpointMeshEdit();
+                        if(individual||alongNormals)meshyViewport.extrudeSelectedAlongNormals(value,individual);
+                        else meshyViewport.extrudeSelected(value);
+                        status.setText("Modeling | "+(individual?"Individual face extrusion":alongNormals?"Extrude along normals":"Region extrusion")+" applied");
+                    });
+                } else if ("Inset Faces".equals(item) || "Inset".equals(item)) {
+                    showAmountDialog("Inset thickness",0.01f,0.9f,value->{
+                        checkpointMeshEdit();meshyViewport.insetSelected(value);
+                        status.setText("Modeling | Inset operation applied to selected faces");
+                    });
+                } else if ("Bevel Edges".equals(item) || "Bevel".equals(item)) {
+                    showAmountDialog("Bevel width",0.01f,0.45f,value->{
+                        checkpointMeshEdit();meshyViewport.bevelSelected(value);
+                        status.setText("Modeling | Bevel applied to selected edges");
+                    });
+                } else if ("Loop Cut".equals(item)) {
+                    showAmountDialog("Loop cut position",0.05f,0.95f,value->{
+                        checkpointMeshEdit();meshyViewport.loopCutSelected(value);
+                        status.setText("Modeling | Loop cut evaluated on selected edge");
+                    });
+                } else if ("Mirror".equals(item) || "Mirror Modifier".equals(item) || "Symmetrize".equals(item)) {
+                    String[] axes={"X","Y","Z"};
+                    new android.app.AlertDialog.Builder(activity).setTitle("Mirror across axis")
+                            .setItems(axes,(d,w)->{checkpointMeshEdit();meshyViewport.mirrorSelected(w);status.setText("Modeling | Mirrored selected geometry across "+axes[w]);}).show();
+                } else if ("Shrink / Fatten".equals(item)) {
+                    showAmountDialog("Shrink / Fatten distance",-1f,1f,value->{checkpointMeshEdit();meshyViewport.shrinkFattenSelected(value);status.setText("Modeling | Vertices moved along their normals");});
+                } else if ("Shear".equals(item) || "Bend".equals(item)) {
+                    showAmountDialog("Shear amount",-1.5f,1.5f,value->{checkpointMeshEdit();meshyViewport.shearSelected(value);status.setText("Modeling | Selected geometry sheared");});
+                } else if ("To Sphere".equals(item)) {
+                    showAmountDialog("To Sphere factor",0f,1f,value->{checkpointMeshEdit();meshyViewport.toSphereSelected(value);status.setText("Modeling | Selected geometry blended toward a sphere");});
+                } else if ("Randomize".equals(item)) {
+                    showAmountDialog("Random displacement",0f,.5f,value->{checkpointMeshEdit();meshyViewport.randomizeSelected(value);status.setText("Modeling | Selected vertices randomized");});
+                } else if ("Make Planar".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.makePlanarSelected();status.setText("Modeling | Selected vertices projected onto a best-fit plane");
+                } else if ("Flip Normals".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.flipSelectedNormals();status.setText("Modeling | Selected face winding flipped");
+                } else if ("Fill".equals(item) || "Grid Fill".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.fillSelectedBoundary();status.setText("Modeling | Selected closed boundary filled");
+                } else if ("Bridge".equals(item) || "Bridge Edge Loops".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.bridgeSelectedLoops();status.setText("Modeling | Selected equal-count boundary loops bridged");
+                } else if ("Bisect".equals(item)) {
+                    String[] axes={"X plane","Y plane","Z plane"};
+                    new android.app.AlertDialog.Builder(activity).setTitle("Bisect — choose plane")
+                            .setItems(axes,(d,w)->showAmountDialog("Bisect plane offset",-1f,1f,value->{
+                                checkpointMeshEdit();meshyViewport.bisectMesh(w==0?1:0,w==1?1:0,w==2?1:0,value);
+                                status.setText("Modeling | Mesh bisected by "+axes[w]);
+                            })).show();
+                } else if ("Plane Cut".equals(item)) {
+                    String[] axes={"X plane","Y plane","Z plane"};
+                    new android.app.AlertDialog.Builder(activity).setTitle("Plane Cut")
+                            .setItems(axes,(d,w)->showAmountDialog("Cut plane offset",-1f,1f,value->{
+                                checkpointMeshEdit();meshyViewport.bisectMesh(w==0?1:0,w==1?1:0,w==2?1:0,value);
+                                status.setText("Modeling | Mesh cut along "+axes[w]);
+                            })).show();
+                } else if ("Poly Build".equals(item)) {
+                    meshyViewport.startPolyBuild();status.setText("Modeling | Poly Build: tap points, then tap the first point to close the face");
+                } else if ("Un-Subdivide".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.unSubdividePlanar();status.setText("Modeling | Coplanar subdivision edges dissolved");
+                } else if ("Decimate".equals(item)) {
+                    showAmountDialog("Planar decimation angle",0f,45f,value->{
+                        checkpointMeshEdit();meshyViewport.decimatePlanar(value,Math.max(4,meshyViewport.getFaceCount()/2));
+                        status.setText("Modeling | Planar decimation reduced coplanar face count");
+                    });
+                } else if ("Spin".equals(item) || "Screw".equals(item)) {
+                    final boolean screw="Screw".equals(item);
+                    showAmountDialog(screw?"Screw rotation (degrees)":"Spin rotation (degrees)",15f,360f,value->{
+                        checkpointMeshEdit();meshyViewport.spinSelectedFaces((float)Math.toRadians(value),8,screw?1f:0f);
+                        status.setText("Modeling | "+item+" generated eight rotational steps");
+                    });
+                } else if ("Split".equals(item) || "Rip".equals(item) || "Separate Selection".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.splitSelectedFaces();
+                    status.setText("Modeling | Selected faces disconnected by duplicating their boundary vertices (still in this object)");
+                } else if ("Solidify".equals(item)) {
+                    showAmountDialog("Solidify thickness",0.01f,.5f,value->{checkpointMeshEdit();meshyViewport.solidifySelected(value);status.setText("Modeling | Solid thickness generated");});
+                } else if ("Bevel Modifier".equals(item)) {
+                    showAmountDialog("Bevel width",.001f,.45f,value->{checkpointMeshEdit();meshyViewport.bevelSelected(value);status.setText("Modeling | Bevel geometry generated");});
+                } else if ("Remesh".equals(item)) {
+                    new android.app.AlertDialog.Builder(activity).setTitle(item)
+                            .setMessage("This operator is not implemented yet. No geometry was changed.")
+                            .setPositiveButton("OK",null).show();
+                } else if ("Poke Faces".equals(item) || "Poke".equals(item)) {
+                    showAmountDialog("Poke offset",0f,1f,value->{checkpointMeshEdit();meshyViewport.pokeSelectedFaces(value);status.setText("Modeling | Selected faces poked into triangle fans");});
+                } else if ("Delete Edges".equals(item) || "Dissolve Faces".equals(item) || "Limited Dissolve".equals(item)) {
+                    checkpointMeshEdit();
+                    if("Dissolve Faces".equals(item))meshyViewport.deleteSelectedFaces();else meshyViewport.dissolveSelectedEdges();
+                    status.setText("Modeling | "+item+" operation applied to the current selection");
+                } else if ("Degenerate Dissolve".equals(item) || "Weld".equals(item) || "Merge by Distance".equals(item) || "Merge".equals(item)) {
+                    showAmountDialog("Merge distance",0.001f,0.25f,value->{checkpointMeshEdit();meshyViewport.mergeSelected(value);status.setText("Modeling | Nearby selected vertices merged");});
+                } else if ("Subdivision Surface".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.subdivideSelected();status.setText("Modeling | Quad faces subdivided");
+                } else if ("Weighted Normal".equals(item) || "Normals".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.recalculateNormals();status.setText("Modeling | Face winding and normals recalculated");
+                } else if ("Edge Slide".equals(item) || "Vertex Slide".equals(item)) {
+                    showAmountDialog(item+" factor",0f,1f,value->{checkpointMeshEdit();meshyViewport.slideSelected(value,"Edge Slide".equals(item));status.setText("Modeling | Selected elements slid along connected topology");});
+                } else if ("Subdivide".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.subdivideSelected();
+                    status.setText("Modeling | Mesh subdivided");
+                } else if ("Dissolve Edges".equals(item) || "Dissolve Edge".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.dissolveSelectedEdges();
+                    status.setText("Modeling | Selected shared edge dissolved");
+                } else if ("Triangulate Faces".equals(item) || "Triangulate".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.triangulateSelectedFaces();
+                    status.setText("Modeling | Selected faces triangulated");
+                } else if ("Delete Faces".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.deleteSelectedFaces();
+                    status.setText("Modeling | Selected faces deleted");
+                } else if ("Delete Vertices".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.deleteSelectedVertices();
+                    status.setText("Modeling | Selected vertices and connected faces deleted");
+                } else if ("Recalculate Normals".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.recalculateNormals();
+                    status.setText("Modeling | Face winding and outward normals recalculated");
+
+                } else if ("Smooth Vertices".equals(item) || "Smooth".equals(item))
+                    showAmountDialog("Smoothing amount",0.05f,0.8f,value->{checkpointMeshEdit();meshyViewport.smoothMesh(value,2);});
+                else if ("Mesh Statistics".equals(item) || "Vertex / Edge / Face Counts".equals(item)
+                        || "Topology Overview".equals(item) || "Vertices".equals(item) || "Edges".equals(item) || "Faces".equals(item))
+                    status.setText("Mesh | " + meshyViewport.getVertexCount() + " vertices | "
+                            + meshyViewport.getEdgeCount() + " edges | " + meshyViewport.getFaceCount() + " faces");
+                else if ("Selection Mode".equals(item)) {
+                    new android.app.AlertDialog.Builder(activity).setTitle("Selection Mode")
+                            .setItems(new String[]{"Vertex","Edge","Face"},(d,w)->{
+                                String mode=new String[]{"Vertex","Edge","Face"}[w];meshyViewport.setSelectionMode(mode);
+                                status.setText("Modeling | "+mode+" selection mode");
+                            }).show();
+                } else if ("Transform Orientation".equals(item) || "Pivot Point".equals(item)) {
+                    final String[] choices="Transform Orientation".equals(item)
+                            ?new String[]{"Global","Local","Normal","View"}
+                            :new String[]{"Median Point","Active Element","3D Cursor","Individual Origins"};
+                    new android.app.AlertDialog.Builder(activity).setTitle(item)
+                            .setItems(choices,(d,w)->status.setText("Modeling | "+item+": "+choices[w])).show();
+                } else if ("Operation Amount".equals(item) || "Offset".equals(item) || "Segments".equals(item)
+                        || "Profile".equals(item) || "Loop Cut Count".equals(item) || "Merge Threshold".equals(item)) {
+                    showAmountDialog(item,0f,"Segments".equals(item)||"Loop Cut Count".equals(item)?12f:1f,
+                            value->status.setText("Modeling | "+item+" parameter set to "+String.format(java.util.Locale.US,"%.2f",value)));
+                }
+                else if ("Object Mode / Edit Mode".equals(item) || "Edit Mode".equals(item)) {
+                    activeEditorMode = "Edit Mode";if(modeButton!=null)modeButton.setText(activeEditorMode);
+                    meshyViewport.setMeshEditMode(true);meshyViewport.setObjectSelectionEnabled(false);
+                    meshyViewport.setShowTopology(true);status.setText("Modeling | Edit Mode");
+                } else if ("Object Mode".equals(item)) {
+                    activeEditorMode = "Object Mode";if(modeButton!=null)modeButton.setText(activeEditorMode);
+                    meshyViewport.setMeshEditMode(false);meshyViewport.setObjectSelectionEnabled(true);
+                    status.setText("Modeling | Object Mode");
+                } else if ("Wireframe".equals(item)) meshyViewport.toggleTopology();
+                else if ("Reset Mesh".equals(item)) {checkpointMeshEdit();meshyViewport.resetMesh();}
+                else showWorkspaceActionInfo(item);
+                break;
+            case 3:
+                if ("Unwrap".equals(item) || "Smart UV Project".equals(item) || "Lightmap Pack".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.unwrapMesh();
+                    status.setText("UV Editing | LSCM conformal unwrap | " + meshyViewport.getUvIslandCount() + " UV islands");
+                } else if ("Mark Seam".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.markSeams(false);meshyViewport.unwrapMesh();status.setText("UV Editing | Seams marked and LSCM islands regenerated");
+                } else if ("Clear Seam".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.markSeams(true);meshyViewport.unwrapMesh();status.setText("UV Editing | Selected seams cleared and UVs regenerated");
+                } else if ("Pin".equals(item) || "Unpin".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.pinSelectedUvs("Pin".equals(item));
+                    status.setText("UV Editing | Selected UV coordinates "+("Pin".equals(item)?"pinned":"unpinned"));
+                } else if ("Pack Islands".equals(item) || "Average Islands Scale".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.packUvIslands();status.setText("UV Editing | UV islands packed into the 0–1 tile");
+                } else if ("Select Linked".equals(item)) {
+                    meshyViewport.selectLinkedUvIsland();status.setText("UV Editing | Linked seam-bounded region selected");
+                } else if ("Move UV".equals(item) || "Rotate UV".equals(item) || "Scale UV".equals(item)
+                        || "UV Canvas".equals(item) || "Image / UV View".equals(item)
+                        || "UV Islands".equals(item)) {
+                    if(meshyViewport.getUvIslandCount()==0)meshyViewport.unwrapMesh();
+                    showUvEditor(false);
+                } else if ("Export UV Layout".equals(item)) {
+                    android.content.ClipboardManager clipboard = (android.content.ClipboardManager)
+                            activity.getSystemService(Activity.CLIPBOARD_SERVICE);
+                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText(
+                            "Meshy3D UV Layout", meshyViewport.exportUvCsv()));
+                    status.setText("UV Editing | UV coordinates copied as CSV");
+                } else showWorkspaceActionInfo(item);
+                break;
+            case 4:
+                if ("New Texture".equals(item)) {
+                    meshyViewport.createPaintTexture(1024,1024,0xFFFFFFFF);
+                    showUvEditor(true);
+                    status.setText("Texture Paint | Created 1024 × 1024 RGBA image");
+                } else if ("Brush Color".equals(item)) showPaintColorDialog();
+                else if ("Active Texture".equals(item) || "Draw".equals(item) || "Texture Canvas".equals(item)) {
+                    if(meshyViewport.getDocumentCore().getTexturePixels()==null)
+                        meshyViewport.createPaintTexture(1024,1024,0xFFFFFFFF);
+                    showUvEditor(true);
+                } else showWorkspaceActionInfo(item);
+                break;
+            case 5:
+                if ("Shader Editor".equals(item) || "Shader Nodes".equals(item) || "Node Graph".equals(item)
+                        || "Principled BSDF".equals(item)) showNodeGraph(1);
+                else if ("Base Color".equals(item) || "Viewport Display".equals(item)
+                        || "New Material".equals(item) || "Material Preview".equals(item)) showPaintColorDialog();
+                else if ("Metallic".equals(item)) showAmountDialog("Metallic",0f,1f,value->{
+                    checkpointMeshEdit();meshyViewport.setMaterialParameters(value,meshyViewport.getRoughness());
+                    status.setText("Shading | Metallic "+value);
+                });
+                else if ("Roughness".equals(item)) showAmountDialog("Roughness",.02f,1f,value->{
+                    checkpointMeshEdit();meshyViewport.setMaterialParameters(meshyViewport.getMetallic(),value);
+                    status.setText("Shading | Roughness "+value);
+                });
+                else showWorkspaceActionInfo(item);
+                break;
+            case 6:
+                if ("Insert Keyframe".equals(item) || "Keyframes".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.storeMeshKeyframe(currentTimelineFrame);
+                    status.setText("Animation | Keyframe stored at frame "+currentTimelineFrame);
+                } else if ("Delete Keyframe".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.deleteMeshKeyframe(currentTimelineFrame);
+                    status.setText("Animation | Keyframe at frame "+currentTimelineFrame+" deleted");
+                } else if ("Timeline".equals(item) || "Playback Controls".equals(item)
+                        || "Current Frame: 1".equals(item) || "Dope Sheet".equals(item)
+                        || "Graph Editor".equals(item)) showAnimationTimeline();
+                else showWorkspaceActionInfo(item);
+                break;
+            case 7:
+                if ("Render Image".equals(item) || "Render Viewport".equals(item) || "Last Render".equals(item))
+                    saveViewportRender();
+                else showWorkspaceActionInfo(item);
+                break;
+            case 8:
+                if ("Node Editor".equals(item) || "Compositor".equals(item) || "Node Graph".equals(item)
+                        || "Add Node".equals(item)) {
+                    if(meshyViewport.getDocumentCore().getTexturePixels()==null)
+                        meshyViewport.createPaintTexture(512,512,0xFF808080);
+                    showNodeGraph(2);
+                } else showWorkspaceActionInfo(item);
+                break;
+            case 9:
+                if ("Node Graph".equals(item) || "Geometry Nodes".equals(item) || "Add Node".equals(item)
+                        || "Group Input".equals(item) || "Group Output".equals(item)) showNodeGraph(0);
+                else if ("Transform Geometry".equals(item) || "Set Position".equals(item) || "Move".equals(item))
+                    showTransformDialog("Move");
+                else if ("Set Shade Smooth".equals(item) || "Smooth".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.smoothMesh(.18f,1);
+                    status.setText("Geometry Nodes | Smooth operation evaluated on active mesh");
+                } else showWorkspaceActionInfo(item);
+                break;
+            default: showWorkspaceActionInfo(item);
+        }
+    }
+
+    private void showUvEditor(boolean paintMode) {
+        Meshy3DUvEditorView editor=new Meshy3DUvEditorView(activity,meshyViewport.getDocumentCore(),paintMode);
+        LinearLayout root=new LinearLayout(activity);root.setOrientation(LinearLayout.VERTICAL);
+        HorizontalScrollView tools=new HorizontalScrollView(activity);tools.setHorizontalScrollBarEnabled(false);
+        LinearLayout buttons=new LinearLayout(activity);buttons.setOrientation(LinearLayout.HORIZONTAL);
+        String[] actions=paintMode?new String[]{"Orange","Blue","White","Smaller Brush","Larger Brush","Opacity +","Opacity -"}
+                :new String[]{"Move +","Move -","Rotate 15°","Rotate -15°","Scale Up","Scale Down"};
+        for(String action:actions){TextView b=dockItem(action,false);buttons.addView(b);
+            b.setOnClickListener(v->{
+                Meshy3DCore core=meshyViewport.getDocumentCore();
+                if(paintMode){
+                    if(action.equals("Orange"))editor.setBrush(0xFFFF6B35,core.getBrushRadius(),core.getBrushOpacity());
+                    else if(action.equals("Blue"))editor.setBrush(0xFF368BFF,core.getBrushRadius(),core.getBrushOpacity());
+                    else if(action.equals("White"))editor.setBrush(0xFFFFFFFF,core.getBrushRadius(),core.getBrushOpacity());
+                    else if(action.equals("Smaller Brush"))editor.setBrush(core.getBrushColor(),Math.max(1,core.getBrushRadius()-4),core.getBrushOpacity());
+                    else if(action.equals("Larger Brush"))editor.setBrush(core.getBrushColor(),Math.min(128,core.getBrushRadius()+4),core.getBrushOpacity());
+                    else if(action.equals("Opacity +"))editor.setBrush(core.getBrushColor(),core.getBrushRadius(),Math.min(1,core.getBrushOpacity()+.1f));
+                    else editor.setBrush(core.getBrushColor(),core.getBrushRadius(),Math.max(.05f,core.getBrushOpacity()-.1f));
+                }else{
+                    if(action.equals("Move +"))core.transformSelectedUv(.05f,0,1,0);
+                    else if(action.equals("Move -"))core.transformSelectedUv(-.05f,0,1,0);
+                    else if(action.equals("Rotate 15°"))core.transformSelectedUv(0,0,1,(float)Math.toRadians(15));
+                    else if(action.equals("Rotate -15°"))core.transformSelectedUv(0,0,1,(float)Math.toRadians(-15));
+                    else if(action.equals("Scale Up"))core.transformSelectedUv(0,0,1.1f,0);
+                    else core.transformSelectedUv(0,0,.9f,0);
+                    editor.invalidate();
+                }
+            });
+        }
+        tools.addView(buttons);root.addView(tools,new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT,dp(44)));
+        root.addView(editor,new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT,dp(420)));
+        new android.app.AlertDialog.Builder(activity).setTitle(paintMode?"Texture Paint Image":"UV Editor")
+                .setView(root).setPositiveButton("Done",(d,w)->status.setText(paintMode
+                        ?"Texture Paint | Pixel image updated":"UV Editing | UV island changes applied"))
+                .setNegativeButton("Close",null).show();
+    }
+
+    private void showAnimationTimeline() {
+        LinearLayout panel=new LinearLayout(activity);panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(14),dp(10),dp(14),dp(8));
+        TextView frameLabel=new TextView(activity);frameLabel.setTextColor(Color.WHITE);frameLabel.setText("Frame "+currentTimelineFrame);
+        SeekBar frame=new SeekBar(activity);frame.setMax(249);frame.setProgress(currentTimelineFrame-1);
+        frame.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
+            public void onProgressChanged(SeekBar b,int p,boolean user){currentTimelineFrame=p+1;frameLabel.setText("Frame "+currentTimelineFrame+"  •  "+meshyViewport.getMeshKeyframeCount()+" keyframes");meshyViewport.applyAnimationFrame(currentTimelineFrame);}
+            public void onStartTrackingTouch(SeekBar b){}
+            public void onStopTrackingTouch(SeekBar b){}
+        });
+        panel.addView(frameLabel);panel.addView(frame);
+        HorizontalScrollView actions=new HorizontalScrollView(activity);actions.setHorizontalScrollBarEnabled(false);
+        LinearLayout row=new LinearLayout(activity);row.setOrientation(LinearLayout.HORIZONTAL);
+        TextView insert=dockItem("Insert Keyframe",false),remove=dockItem("Delete Keyframe",false),play=dockItem("Play",false);
+        row.addView(insert);row.addView(remove);row.addView(play);actions.addView(row);panel.addView(actions);
+        insert.setOnClickListener(v->{checkpointMeshEdit();meshyViewport.storeMeshKeyframe(currentTimelineFrame);frameLabel.setText("Frame "+currentTimelineFrame+"  •  "+meshyViewport.getMeshKeyframeCount()+" keyframes");});
+        remove.setOnClickListener(v->{checkpointMeshEdit();meshyViewport.deleteMeshKeyframe(currentTimelineFrame);frameLabel.setText("Frame "+currentTimelineFrame+"  •  "+meshyViewport.getMeshKeyframeCount()+" keyframes");});
+        play.setOnClickListener(v->{
+            timelinePlaying=!timelinePlaying;play.setText(timelinePlaying?"Pause":"Play");
+            if(timelinePlaying){
+                timelineTick=new Runnable(){public void run(){
+                    if(!timelinePlaying)return;currentTimelineFrame=currentTimelineFrame>=250?1:currentTimelineFrame+1;
+                    frame.setProgress(currentTimelineFrame-1);meshyViewport.applyAnimationFrame(currentTimelineFrame);
+                    timelineHandler.postDelayed(this,33L);
+                }};timelineHandler.post(timelineTick);
+            }else if(timelineTick!=null)timelineHandler.removeCallbacks(timelineTick);
+        });
+        android.app.AlertDialog dialog=new android.app.AlertDialog.Builder(activity).setTitle("Animation Timeline")
+                .setView(panel).setPositiveButton("Done",null).setNegativeButton("Close",null).create();
+        dialog.setOnDismissListener(d->{timelinePlaying=false;if(timelineTick!=null)timelineHandler.removeCallbacks(timelineTick);});
+        dialog.show();
+    }
+
+    private void showNodeGraph(int graph) {
+        Meshy3DCore core=meshyViewport.getDocumentCore();
+        String title=graph==0?"Geometry Nodes":graph==1?"Shader Editor":"Compositor";
+        Meshy3DNodeGraphView graphView=new Meshy3DNodeGraphView(activity);
+        graphView.setNodes(core.getGraphNodeLabels(graph));
+        graphView.setLinks(core.getGraphLinks(graph));
+        graphView.setOnNodeClickListener(index->{
+            String type=core.getGraphNodeType(graph,index);float current=core.getGraphNodeValue(graph,index);
+            if(type.equals("Base Color")||type.equals("Set Material")){
+                String[] names={"Grey","Orange","Blue","Green","Red","White"};
+                int[] colors={0xFF9DAAB7,0xFFE79A45,0xFF5D9BEA,0xFF63B887,0xFFD85B5B,0xFFF2F2F2};
+                new android.app.AlertDialog.Builder(activity).setTitle(type+" Node Color").setItems(names,(d,w)->{
+                    core.setGraphNodeValue(graph,index,colors[w]&0xFFFFFF);graphView.invalidate();
+                }).show();
+            }else{
+                float min=(type.equals("Metallic")||type.equals("Roughness"))?0f:-100f;
+                float max=(type.equals("Metallic")||type.equals("Roughness"))?1f:100f;
+                if(type.equals("Blur")){min=1f;max=8f;}else if(type.equals("Alpha Over")){min=0f;max=1f;}else if(type.equals("Instance on Points")){min=1f;max=20f;}else if(graph==0&&type.equals("Smooth")){min=0f;max=1f;}
+                showAmountDialog(type+" Node Value",min,max,value->{
+                    core.setGraphNodeValue(graph,index,value);graphView.invalidate();
+                    status.setText(title+" | "+type+" node value updated");
+                });
+            }
+        });
+        graphView.setOnLinkListener((from,to)->{
+            boolean connected=core.connectGraphNodes(graph,from,to);graphView.setLinks(core.getGraphLinks(graph));
+            status.setText(connected?title+" | Connected "+from+" → "+to:title+" | Connection rejected (cycle or invalid socket)");
+        });
+        LinearLayout root=new LinearLayout(activity);root.setOrientation(LinearLayout.VERTICAL);
+        HorizontalScrollView actions=new HorizontalScrollView(activity);actions.setHorizontalScrollBarEnabled(false);
+        LinearLayout row=new LinearLayout(activity);row.setOrientation(LinearLayout.HORIZONTAL);
+        TextView add=dockItem("Add Node",false),evaluate=dockItem("Evaluate Graph",false);
+        row.addView(add);row.addView(evaluate);actions.addView(row);
+        add.setOnClickListener(v->{
+            String[] choices=graph==0
+                    ?new String[]{"Transform Geometry","Set Position","Subdivide Mesh","Smooth","Delete Geometry","Join Geometry","Instance on Points","Set Material","Random Value","Math"}
+                    :graph==1?new String[]{"Image Texture","Base Color","Principled BSDF","Metallic","Roughness","Material Output"}
+                    :new String[]{"Grayscale","Brightness","Contrast","Blur","Invert","Alpha Over","Color Balance","Composite"};
+            new android.app.AlertDialog.Builder(activity).setTitle("Add "+title+" Node").setItems(choices,(d,w)->{
+                String type=choices[w];float value=graph==0?.15f:graph==1
+                        ?(type.equals("Metallic")?.5f:type.equals("Roughness")?.65f:type.equals("Base Color")?(float)(core.getBaseColor()&0xFFFFFF):0f)
+                        :type.equals("Blur")?2f:type.equals("Alpha Over")?.25f:20f;
+                if(graph==0)core.addGeometryNode(type,type.equals("Instance on Points")?2f:0f,0f,0f,type.equals("Instance on Points")?3f:value);
+                else core.addNodeToGraph(graph,type,value);
+                graphView.setNodes(core.getGraphNodeLabels(graph));graphView.setLinks(core.getGraphLinks(graph));
+                status.setText(title+" | Added "+type+" node");
+            }).setNegativeButton("Cancel",null).show();
+        });
+        evaluate.setOnClickListener(v->{
+            checkpointMeshEdit();core.evaluateGraph(graph);
+            if(graph==0){meshyViewport.setMeshTint(core.getBaseColor());meshyViewport.refreshFromDocument();status.setText("Geometry Nodes | "+core.getVertexCount()+" vertices, "+core.getFaceCount()+" faces evaluated");}
+            else if(graph==1){meshyViewport.setMeshTint(core.getBaseColor());meshyViewport.setMaterialParameters(core.getMetallic(),core.getRoughness());status.setText("Shading | Shader graph evaluated");}
+            else {status.setText("Compositor | "+core.getCompositorNodeCount()+" image operations ready; they run on the next final render");}
+            graphView.setNodes(core.getGraphNodeLabels(graph));graphView.setLinks(core.getGraphLinks(graph));
+        });
+        root.addView(actions,new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT,dp(44)));
+        int graphHeight=Math.max(390,55+((core.getGraphNodeLabels(graph).length+2)/3)*125);
+        android.widget.HorizontalScrollView graphHorizontal=new android.widget.HorizontalScrollView(activity);
+        graphHorizontal.setHorizontalScrollBarEnabled(true);
+        graphHorizontal.addView(graphView,new android.widget.HorizontalScrollView.LayoutParams(dp(620),dp(graphHeight)));
+        android.widget.ScrollView graphVertical=new android.widget.ScrollView(activity);
+        graphVertical.addView(graphHorizontal,new android.widget.ScrollView.LayoutParams(LayoutParams.WRAP_CONTENT,LayoutParams.WRAP_CONTENT));
+        root.addView(graphVertical,new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT,dp(390)));
+        new android.app.AlertDialog.Builder(activity).setTitle(title+" • Executable Node Graph")
+                .setView(root).setPositiveButton("Done",null).setNegativeButton("Close",null).show();
+    }
+
+    private void showWorkspaceActionInfo(String item) {
+        status.setText(WORKSPACE_NAMES[activeWorkspaceIndex] + " | " + item
+                + " is not implemented yet; no project data was changed.");
+    }
+
+    private void showTransformDialog(String operation) {
+        LinearLayout panel = new LinearLayout(activity);
+        panel.setPadding(dp(18), dp(8), dp(18), dp(8)); panel.setOrientation(LinearLayout.VERTICAL);
+        EditText[] fields = new EditText[3]; String[] axes = {"X", "Y", "Z"};
+        for (int i = 0; i < 3; i++) {
+            TextView label = new TextView(activity); label.setText(axes[i]);
+            fields[i] = new EditText(activity); fields[i].setSingleLine(true);
+            fields[i].setInputType(android.text.InputType.TYPE_CLASS_NUMBER
+                    | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+                    | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+            fields[i].setText(operation.equals("Scale") ? "1.0" : "0.0");
+            panel.addView(label); panel.addView(fields[i]);
+        }
+        new android.app.AlertDialog.Builder(activity).setTitle(operation + " Cube").setView(panel)
+                .setPositiveButton("Apply", (d, w) -> {
+                    try {
+                        float x=Float.parseFloat(fields[0].getText().toString());
+                        float y=Float.parseFloat(fields[1].getText().toString());
+                        float z=Float.parseFloat(fields[2].getText().toString());
+                        checkpointMeshEdit();
+                        meshyViewport.transformMesh(operation.equals("Move") ? 0 : operation.equals("Rotate") ? 1 : 2,
+                                x, y, z);
+                        status.setText(WORKSPACE_NAMES[activeWorkspaceIndex] + " | " + operation + " applied to mesh");
+                    } catch (NumberFormatException error) {
+                        Toast.makeText(activity, "Enter valid X, Y and Z values.", Toast.LENGTH_SHORT).show();
+                    }
+                }).setNegativeButton("Cancel", null).show();
+    }
+
+    private void showObjectTransformDialog(String operation) {
+        Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
+        if(active==null)return;
+        LinearLayout panel=new LinearLayout(activity);panel.setPadding(dp(18),dp(8),dp(18),dp(8));
+        panel.setOrientation(LinearLayout.VERTICAL);
+        EditText[] fields=new EditText[3];String[] axes={"X","Y","Z"};
+        float[] values=operation.equals("Move")
+                ?new float[]{active.transform.x,active.transform.y,active.transform.z}
+                :operation.equals("Rotate")
+                ?new float[]{active.transform.rotationX,active.transform.rotationY,active.transform.rotationZ}
+                :new float[]{active.transform.scaleX,active.transform.scaleY,active.transform.scaleZ};
+        for(int i=0;i<3;i++){
+            TextView label=new TextView(activity);label.setText(axes[i]);fields[i]=new EditText(activity);
+            fields[i].setSingleLine(true);
+            fields[i].setInputType(android.text.InputType.TYPE_CLASS_NUMBER
+                    |android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+                    |android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+            fields[i].setText(String.format(java.util.Locale.US,"%.3f",values[i]));panel.addView(label);panel.addView(fields[i]);
+        }
+        new android.app.AlertDialog.Builder(activity).setTitle(operation+" Object").setView(panel)
+                .setPositiveButton("Apply",(d,w)->{
+                    try{
+                        float x=Float.parseFloat(fields[0].getText().toString());
+                        float y=Float.parseFloat(fields[1].getText().toString());
+                        float z=Float.parseFloat(fields[2].getText().toString());
+                        checkpointMeshEdit();
+                        if(operation.equals("Move"))meshyViewport.transformActiveObject(0,x-active.transform.x,y-active.transform.y,z-active.transform.z);
+                        else if(operation.equals("Rotate"))meshyViewport.transformActiveObject(1,x-active.transform.rotationX,y-active.transform.rotationY,z-active.transform.rotationZ);
+                        else meshyViewport.transformActiveObject(2,x/active.transform.scaleX,y/active.transform.scaleY,z/active.transform.scaleZ);
+                        status.setText("Modeling | Object "+operation.toLowerCase(java.util.Locale.ROOT)+" updated");
+                    }catch(Exception error){Toast.makeText(activity,"Enter valid X, Y and Z values.",Toast.LENGTH_SHORT).show();}
+                }).setNegativeButton("Cancel",null).show();
+    }
+
+    private void showObjectRenameDialog() {
+        Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();if(active==null)return;
+        EditText input=new EditText(activity);input.setSingleLine(true);input.setText(active.name);
+        new android.app.AlertDialog.Builder(activity).setTitle("Rename Object").setView(input)
+                .setPositiveButton("Rename",(d,w)->{
+                    try{meshyViewport.renameActiveObject(input.getText().toString());status.setText("Modeling | Object renamed");}
+                    catch(Exception e){Toast.makeText(activity,"Enter a valid object name.",Toast.LENGTH_SHORT).show();}
+                }).setNegativeButton("Cancel",null).show();
+    }
+
+    private void showObjectPickerDialog(boolean parentMode) {
+        Meshy3DObjectScene scene=meshyViewport.getObjectScene();
+        java.util.ArrayList<Meshy3DObjectScene.Object3D> objects=new java.util.ArrayList<>(scene.getObjects());
+        java.util.ArrayList<String> names=new java.util.ArrayList<>();
+        for(Meshy3DObjectScene.Object3D o:objects)names.add(o.name+(o.id.equals(scene.getActiveObjectId())?"  (Active)":""));
+        if(names.isEmpty())return;
+        new android.app.AlertDialog.Builder(activity).setTitle(parentMode?"Choose Parent":"Select Object")
+                .setItems(names.toArray(new String[0]),(d,w)->{
+                    Meshy3DObjectScene.Object3D target=objects.get(w);
+                    try{
+                        if(parentMode){if(!target.id.equals(scene.getActiveObjectId()))meshyViewport.setActiveObjectParent(target.id);
+                            status.setText("Modeling | Parent set to "+target.name);}
+                        else {meshyViewport.selectSceneObject(target.id);status.setText("Modeling | Active object: "+target.name);}
+                    }catch(Exception error){new android.app.AlertDialog.Builder(activity).setTitle("Object Relationship")
+                            .setMessage(error.getMessage()).setPositiveButton("OK",null).show();}
+                }).setNegativeButton("Cancel",null).show();
+    }
+
+    private void showCreateCollectionDialog() {
+        EditText input=new EditText(activity);input.setSingleLine(true);input.setHint("Collection name");
+        new android.app.AlertDialog.Builder(activity).setTitle("New Collection").setView(input)
+                .setPositiveButton("Create",(d,w)->{
+                    String name=input.getText().toString().trim();if(name.isEmpty())name="Collection";
+                    Meshy3DObjectScene.Collection3D collection=meshyViewport.getObjectScene().createCollection(name);
+                    Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
+                    if(active!=null)meshyViewport.getObjectScene().moveToCollection(active.id,collection.id);
+                    status.setText("Modeling | Collection created: "+collection.name);
+                }).setNegativeButton("Cancel",null).show();
+    }
+
+    private void showCollectionPickerDialog() {
+        Meshy3DObjectScene scene=meshyViewport.getObjectScene();
+        java.util.ArrayList<Meshy3DObjectScene.Collection3D> collections=new java.util.ArrayList<>(scene.getCollections());
+        String[] names=new String[collections.size()];for(int i=0;i<names.length;i++)names[i]=collections.get(i).name;
+        if(names.length==0)return;
+        new android.app.AlertDialog.Builder(activity).setTitle("Move Object To Collection")
+                .setItems(names,(d,w)->{
+                    Meshy3DObjectScene.Object3D active=scene.getActiveObject();
+                    if(active!=null){scene.moveToCollection(active.id,collections.get(w).id);
+                        status.setText("Modeling | "+active.name+" added to "+collections.get(w).name);}
+                }).setNegativeButton("Cancel",null).show();
+    }
+
+    private interface AmountAction { void apply(float amount); }
+    private void showAmountDialog(String title, float min, float max, AmountAction action) {
+        SeekBar bar = new SeekBar(activity); bar.setMax(1000); bar.setProgress(250);
+        TextView value = new TextView(activity); value.setText("0.25");
+        bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(SeekBar b, int p, boolean from) {
+                value.setText(String.format(java.util.Locale.US, "%.3f", min+(max-min)*p/1000f));
+            }
+            public void onStartTrackingTouch(SeekBar b) {}
+            public void onStopTrackingTouch(SeekBar b) {}
+        });
+        LinearLayout panel = new LinearLayout(activity); panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(16), dp(8), dp(16), dp(8)); panel.addView(value); panel.addView(bar);
+        new android.app.AlertDialog.Builder(activity).setTitle(title).setView(panel)
+                .setPositiveButton("Apply", (d, w) -> action.apply(min+(max-min)*bar.getProgress()/1000f))
+                .setNegativeButton("Cancel", null).show();
+    }
+
+    private void showPaintColorDialog() {
+        String[] names={"Clay Grey","Warm Orange","Blue","Green","Red","White"};
+        int[] colors={0xFF9DAAB7,0xFFE79A45,0xFF5D9BEA,0xFF63B887,0xFFD85B5B,0xFFF2F2F2};
+        boolean texturePaint=activeWorkspaceIndex==4;
+        new android.app.AlertDialog.Builder(activity).setTitle(texturePaint?"Texture Brush Color":"Mesh Material Color")
+                .setItems(names,(d,w)->{
+                    checkpointMeshEdit();
+                    if(texturePaint)meshyViewport.setPaintBrush(colors[w],18f,.9f);
+                    else meshyViewport.setMeshTint(colors[w]);
+                    status.setText(WORKSPACE_NAMES[activeWorkspaceIndex]+" | "+(texturePaint?"Pixel paint brush color updated":"Mesh material color updated"));
+                }).show();
+    }
+
+    private void saveViewportRender() {
+        try {
+            int width=Math.max(640,Math.min(1280,meshyViewport.getWidth()*2));
+            int height=Math.max(360,Math.min(720,(int)(width*(meshyViewport.getHeight()/(float)Math.max(1,meshyViewport.getWidth())))));
+            android.graphics.Bitmap raw=meshyViewport.renderFinalImage(width,height);
+            int[] sourcePixels=new int[width*height];raw.getPixels(sourcePixels,0,width,0,0,width,height);raw.recycle();
+            int[] finalPixels=meshyViewport.getDocumentCore().evaluateCompositor(sourcePixels,width,height);
+            android.graphics.Bitmap bitmap=android.graphics.Bitmap.createBitmap(finalPixels,width,height,android.graphics.Bitmap.Config.ARGB_8888);
+            File dir=new File(activity.getFilesDir(),"Meshy3D/Renders");
+            if(!dir.exists()&&!dir.mkdirs())throw new java.io.IOException("Could not create render folder");
+            File output=new File(dir,"Meshy3D-Render-"+System.currentTimeMillis()+".png");
+            try(java.io.FileOutputStream stream=new java.io.FileOutputStream(output)){
+                if(!bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,stream))
+                    throw new java.io.IOException("PNG export failed");
+                stream.flush();
+            }
+            bitmap.recycle();status.setText("Rendering | CPU scene render saved: "+output.getAbsolutePath());
+            Toast.makeText(activity,"Final scene render saved",Toast.LENGTH_SHORT).show();
+        }catch(Exception error){status.setText("Rendering | Render failed: "+error.getMessage());}
+    }
+
+    private interface FloatSetter { void set(float value); }
+    private void showSculptSlider(String title,float min,float max,float current,FloatSetter setter) {
+        LinearLayout layout=new LinearLayout(activity); layout.setPadding(dp(18),dp(8),dp(18),dp(8));
+        layout.setOrientation(LinearLayout.VERTICAL);
+        TextView valueLabel=new TextView(activity);
+        valueLabel.setText(String.format(java.util.Locale.US,"%.2f",current));
+        SeekBar seek=new SeekBar(activity); seek.setMax(1000);
+        seek.setProgress((int)(((current-min)/(max-min))*1000));
+        layout.addView(valueLabel); layout.addView(seek);
+        seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
+            public void onProgressChanged(SeekBar b,int p,boolean from){float v=min+(max-min)*p/1000f;valueLabel.setText(String.format(java.util.Locale.US,"%.2f",v));}
+            public void onStartTrackingTouch(SeekBar b){}
+            public void onStopTrackingTouch(SeekBar b){}
+        });
+        new android.app.AlertDialog.Builder(activity).setTitle(title).setView(layout)
+                .setPositiveButton("Apply",(d,w)->{setter.set(min+(max-min)*seek.getProgress()/1000f);updateSculptViewport();})
+                .setNegativeButton("Cancel",null).show();
+    }
+
+    private LinearLayout createDock(String title, int width, int gravity) {
+        LinearLayout dock = new LinearLayout(activity);
+        dock.setOrientation(LinearLayout.VERTICAL);
+        dock.setBackgroundColor(0xF0181D24);
+        dock.addView(dockHeading(title), new LinearLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                dp(width), LayoutParams.MATCH_PARENT, gravity);
+        params.topMargin = dp(36);
+        params.bottomMargin = dp(8);
+        params.leftMargin = dp(6);
+        params.rightMargin = dp(6);
+        workspaceLayoutLayer.addView(dock, params);
+        return dock;
+    }
+
+    private void addDockItems(LinearLayout dock, String heading, String... items) {
+        dock.addView(dockHeading(heading));
+        ScrollView scroll = new ScrollView(activity);
+        scroll.setFillViewport(false);
+        scroll.setVerticalScrollBarEnabled(true);
+        LinearLayout content = new LinearLayout(activity);
+        content.setOrientation(LinearLayout.VERTICAL);
+        scroll.addView(content, new ScrollView.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        for (String item : items) content.addView(dockItem(item, false));
+        dock.addView(scroll, new LinearLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, 0, 1f));
+    }
+
+    private void renderWorkspaceLayout(int index) {
+        if (workspaceLayoutLayer == null) return;
+        workspaceLayoutLayer.removeAllViews();
+        viewportFocusMode = false;
+        if (meshyViewport != null) {
+            meshyViewport.setMeshEditMode(index == 1 && "Edit Mode".equals(activeEditorMode));
+            meshyViewport.setObjectSelectionEnabled(index == 1 && "Object Mode".equals(activeEditorMode));
+        }
+        workspaceToolbar = new LinearLayout(activity);
+        workspaceToolbar.setGravity(Gravity.CENTER_VERTICAL);
+        workspaceToolbar.setBackgroundColor(0xE02B333D);
+        workspaceToolbar.setPadding(dp(6), 0, dp(6), 0);
+        HorizontalScrollView toolbarScroll = new HorizontalScrollView(activity);
+        toolbarScroll.setHorizontalScrollBarEnabled(false);
+        toolbarScroll.addView(workspaceToolbar, new HorizontalScrollView.LayoutParams(
+                LayoutParams.WRAP_CONTENT, dp(32)));
+        FrameLayout.LayoutParams toolbarParams = new FrameLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, dp(32), Gravity.TOP);
+        workspaceLayoutLayer.addView(toolbarScroll, toolbarParams);
+
+        String[] tools;
+        String leftTitle;
+        String rightTitle;
+        String bottomTitle = null;
+        String[] leftItems;
+        String[] rightItems;
+        String[] bottomItems = null;
+        switch (index) {
+            case 0:
+                tools = new String[]{"Select Box", "3D Cursor", "Move", "Rotate", "Scale", "Transform",
+                        "Annotate", "Measure", "Add", "Camera View"};
+                leftTitle = "Scene Outliner";
+                leftItems = new String[]{"Scene Collection", "Collection", "  Camera", "  Cube", "  Light",
+                        "Add Collection", "Filter Objects", "Hide / Show Objects"};
+                rightTitle = "Properties Editor";
+                rightItems = new String[]{"Tool", "Render", "Output", "View Layer", "Scene", "World",
+                        "Collection", "Object", "Modifiers", "Particles", "Physics", "Constraints",
+                        "Object Data", "Material"};
+                bottomTitle = "Timeline";
+                bottomItems = new String[]{"Current Frame: 1", "Playback Controls", "Start Frame: 1",
+                        "End Frame: 250", "Keyframes"};
+                break;
+            case 1:
+                tools = new String[]{"Select", "Move", "Rotate", "Scale", "Add Cube", "Duplicate",
+                        "Duplicate Linked", "Delete Object", "Rename Object", "Apply Rotation & Scale",
+                        "Vertex", "Edge", "Face", "Extrude", "Inset", "Bevel", "Loop Cut", "Plane Cut",
+                        "Bisect", "Bridge", "Fill", "Subdivide", "Merge", "Dissolve", "Separate"};
+                leftTitle = "Modeling Tools";
+                leftItems = new String[]{
+                        "OBJECT MODE", "Add Cube", "Duplicate", "Duplicate Linked", "Delete Object",
+                        "Rename Object", "Select Object", "Hide / Show Object", "Apply Rotation & Scale",
+                        "Parent To", "Clear Parent", "Add Collection", "Move To Collection",
+                        "Object Statistics", "EDIT MODE", "Vertex Select", "Edge Select", "Face Select",
+                        "Select All", "Select Linked", "Select Loops", "Select Similar", "TRANSFORM",
+                        "Move", "Rotate", "Scale", "Mirror", "Shrink / Fatten", "Shear", "Bend",
+                        "To Sphere", "Edge Slide", "Vertex Slide", "MESH EDIT", "Extrude Region",
+                        "Extrude Along Normals", "Extrude Individual Faces", "Inset Faces", "Bevel Edges",
+                        "Loop Cut", "Plane Cut", "Bisect", "Poly Build", "Bridge Edge Loops", "Spin",
+                        "Screw", "Fill", "Grid Fill", "Bridge", "TOPOLOGY", "Subdivide", "Un-Subdivide",
+                        "Merge by Distance", "Dissolve Edges", "Dissolve Faces", "Limited Dissolve",
+                        "Delete Vertices", "Delete Edges", "Delete Faces", "Separate Selection", "Split",
+                        "Rip", "Decimate", "MESH CLEANUP", "Recalculate Normals", "Flip Normals",
+                        "Degenerate Dissolve", "Make Planar", "Smooth Vertices", "Randomize",
+                        "SYMMETRY & MODIFIERS", "Symmetrize", "Bisect", "Mirror Modifier",
+                        "Subdivision Surface", "Solidify", "Bevel Modifier", "Weighted Normal",
+                        "Remesh", "Weld", "Triangulate", "Wireframe"
+                };
+                rightTitle = "Tool Properties";
+                rightItems = new String[]{"Active Tool", "Selection Mode", "Operation Amount", "Offset",
+                        "Segments", "Profile", "Loop Cut Count", "Merge Threshold", "Mesh Statistics",
+                        "Vertices", "Edges", "Faces", "Normals", "Transform Orientation", "Pivot Point"};
+                bottomTitle = "Mesh Information";
+                bottomItems = new String[]{"Object Mode / Edit Mode", "Selected Mesh", "Topology Overview",
+                        "Vertex / Edge / Face Counts"};
+                break;
+            case 2:
+                tools = new String[]{"Draw", "Smooth", "Grab", "Inflate", "Pinch", "Flatten", "Crease", "Mask"};
+                leftTitle = "Sculpt Brushes";
+                leftItems = BRUSHES;
+                rightTitle = "Brush Settings";
+                rightItems = new String[]{"Radius", "Strength", "Falloff", "Pressure", "Symmetry", "Add / Subtract"};
+                bottomTitle = "Sculpt Options";
+                bottomItems = new String[]{"Brush Preview", "Stroke Method", "Dyntopo / Remesh options"};
+                break;
+            case 3:
+                tools = new String[]{"Select", "Select Linked", "Select Pinned", "Move UV", "Rotate UV", "Scale UV", "Mirror X", "Mirror Y", "Pin", "Unpin", "Mark Seam", "Clear Seam", "Unwrap", "Smart UV Project", "Lightmap Pack", "Follow Active Quads", "Minimize Stretch", "Average Islands Scale", "Pack Islands", "Align X", "Align Y", "Straighten", "Stitch", "Weld", "Export UV Layout"};
+                leftTitle = "UV Tools";
+                leftItems = new String[]{"SELECT", "Select", "Select Linked", "Select Pinned", "Select Overlapping", "Select Boundary", "TRANSFORM", "Move", "Rotate", "Scale", "Mirror X", "Mirror Y", "Align X", "Align Y", "Straighten", "Straighten X", "Straighten Y", "PIN & SEAMS", "Pin", "Unpin", "Mark Seam", "Clear Seam", "Mark Sharp", "UNWRAP", "Unwrap", "Smart UV Project", "Lightmap Pack", "Follow Active Quads", "Minimize Stretch", "UV TOOLS", "Average Islands Scale", "Pack Islands", "Stitch", "Weld", "Split", "Export UV Layout"};
+                rightTitle = "UV Properties";
+                rightItems = new String[]{"UV Maps", "Active UV Map", "New UV Map", "Remove UV Map", "Island Transform", "Pivot Point", "Proportional Editing", "Snap to Pixels", "Snap to Vertex", "Unwrap Method", "Angle Limit", "Margin", "Correct Aspect", "Stretch Display", "Overlap Display", "Image Settings", "Image Selection", "UDIM Tiles"};
+                bottomTitle = "UV Editor";
+                bottomItems = new String[]{"UV Canvas", "Image / UV View", "UV Islands", "Vertex / Edge / Face Selection", "UV Sync Selection", "UV Statistics", "Image Menu", "View Menu", "UV Menu"};
+                break;
+            case 4:
+                tools = new String[]{"Draw", "Soften", "Smear", "Clone", "Fill", "Mask", "Erase Alpha", "Line", "Polyline", "Airbrush", "Gradient", "Sample Color", "Set Clone"};
+                leftTitle = "Paint Tools";
+                leftItems = new String[]{"DRAW", "Draw", "Soften", "Smear", "Clone", "Fill", "Mask", "Erase Alpha", "Line", "Polyline", "Airbrush", "Gradient", "Sample Color", "Set Clone", "BRUSH CONTROLS", "Brush Asset", "Brush Texture", "Stroke Method", "Stroke Spacing", "Jitter", "Stabilize Stroke", "Symmetry X", "Symmetry Y", "Symmetry Z"};
+                rightTitle = "Texture Properties";
+                rightItems = new String[]{"Active Texture", "Texture Slots", "New Texture", "Open Image", "Save Image", "Image Format", "Image Size", "Color Space", "Alpha", "Brush Color", "Secondary Color", "Brush Radius", "Strength", "Blend Mode", "Falloff", "Texture Mask", "Stencil", "UV Map", "Canvas"};
+                bottomTitle = "Image Editor";
+                bottomItems = new String[]{"Texture Image Canvas", "Image Slots", "Paint Layers", "Image Channels", "Image Metadata", "Image Save / Reload", "UDIM Tiles", "Texture Paint Slots"};
+                break;
+            case 5:
+                tools = new String[]{"New Material", "Material Slots", "Preview", "Add Node", "Connect", "Disconnect", "Reroute", "Frame", "Group", "Ungroup", "Search", "Node Sidebar"};
+                leftTitle = "Material Browser";
+                leftItems = new String[]{"Scene Materials", "Material Slots", "New Material", "Duplicate Material", "Assign Material", "Material Preview", "Surface", "Volume", "Displacement", "Principled BSDF", "World Materials"};
+                rightTitle = "Shader Properties";
+                rightItems = new String[]{"Material", "Base Color", "Metallic", "Roughness", "IOR", "Alpha", "Emission Color", "Emission Strength", "Normal", "Coat", "Sheen", "Transmission", "Subsurface", "Anisotropic", "Thin Film", "Volume", "Displacement", "Viewport Display", "Material Preview Settings"};
+                bottomTitle = "Shader Editor";
+                bottomItems = new String[]{"Material Node Graph", "Shader Nodes", "Input Nodes", "Output Nodes", "Texture Nodes", "Color Nodes", "Vector Nodes", "Converter Nodes", "Script Nodes", "Group Nodes", "Layout Nodes", "Node Search", "Node Sidebar", "Node Properties"};
+                break;
+            case 6:
+                tools = new String[]{"Select", "Move", "Rotate", "Scale", "Insert Keyframe", "Delete Keyframe", "Duplicate Keyframes", "Snap", "Mirror", "Bake Action", "Play", "Pause", "Reverse", "Jump to First", "Jump to Last"};
+                leftTitle = "Animation Channels";
+                leftItems = new String[]{"Scene", "Object Transforms", "Location", "Rotation", "Scale", "Delta Transforms", "Object Properties", "Visibility", "Custom Properties", "Shape Keys", "Armature", "Pose Bones", "Constraints", "Modifiers", "Materials", "Cameras", "Lights", "World", "Action Editor", "NLA Tracks"};
+                rightTitle = "Keyframe Properties";
+                rightItems = new String[]{"Active Action", "Action Slots", "Frame", "Interpolation", "Bezier", "Linear", "Constant", "Handle Type", "Automatic Handles", "Aligned Handles", "Free Handles", "Easing", "Keyframe Type", "Extrapolation", "Playback Range", "Frame Rate", "Motion Paths"};
+                bottomTitle = "Dope Sheet / Timeline";
+                bottomItems = new String[]{"Dope Sheet", "Action Editor", "Timeline", "Graph Editor", "NLA Editor", "Keyframe Tracks", "Markers", "Playback Controls", "Start Frame", "End Frame", "Current Frame", "Preview Range", "Keying Sets"};
+                break;
+            case 7:
+                tools = new String[]{"Render Image", "Render Animation", "Render Viewport", "Cancel Render", "Pause Render", "Resume Render", "Camera View", "Render Region", "Clear Render Region", "Settings"};
+                leftTitle = "Render Settings";
+                leftItems = new String[]{"Render Engine", "Sampling", "Viewport Samples", "Render Samples", "Denoising", "Light Paths", "Shadows", "Ray Tracing", "Ambient Occlusion", "Motion Blur", "Film", "Simplify", "Freestyle", "Performance", "Bake", "Color Management", "View Transform", "Look", "Exposure", "Gamma"};
+                rightTitle = "Output Properties";
+                rightItems = new String[]{"Resolution X", "Resolution Y", "Percentage", "Aspect Ratio", "Frame Rate", "Frame Start", "Frame End", "Frame Step", "File Format", "Color Mode", "Color Depth", "Compression", "Output Path", "File Extensions", "Color Management", "Metadata", "Multiview"};
+                bottomTitle = "Render Status";
+                bottomItems = new String[]{"Viewport Preview", "Render Queue", "Render Progress", "Current Sample", "Denoising Status", "Last Render", "Render Result", "Render Slots", "Render Layers", "Render Passes"};
+                break;
+            case 8:
+                tools = new String[]{"Add Node", "Connect", "Disconnect", "Reroute", "Frame", "Group", "Ungroup", "Mute", "Bypass", "Search", "Preview", "Backdrop", "Fit View"};
+                leftTitle = "Compositor Nodes";
+                leftItems = new String[]{"INPUT", "Render Layers", "Image", "Texture", "Mask", "Movie Clip", "OUTPUT", "Composite", "Viewer", "File Output", "COLOR", "Mix Color", "RGB Curves", "Hue Saturation Value", "Color Balance", "Color Correction", "FILTER", "Blur", "Bilateral Blur", "Glare", "Defocus", "Denoise", "Filter", "Distort", "Lens Distortion", "Displace", "Map UV", "Transform", "Corner Pin", "Vector Blur", "KEYING", "Keying", "Cryptomatte", "Matte", "MASK", "Box Mask", "Ellipse Mask", "Polygon Mask", "UTILITIES", "Alpha Over", "Convert Color Space", "Math", "Time", "Switch", "Group"};
+                rightTitle = "Node Properties";
+                rightItems = new String[]{"Selected Node", "Node Label", "Inputs", "Outputs", "Properties", "Node Color", "Mute", "Hide", "Preview", "Execution Settings"};
+                bottomTitle = "Compositor Node Editor";
+                bottomItems = new String[]{"Node Graph Canvas", "Connect Sockets", "Backdrop Preview", "Viewer Node", "Composite Output", "Node Sidebar", "Node Search", "Node Groups"};
+                break;
+            default:
+                tools = new String[]{"Add Node", "Search", "Connect", "Disconnect", "Group", "Ungroup", "Reroute", "Frame", "Duplicate", "Mute", "Preview", "Viewer", "Bake"};
+                leftTitle = "Geometry Node Library";
+                leftItems = new String[]{"INPUT", "Group Input", "Object Info", "Collection Info", "Scene Time", "Index", "Named Attribute", "GEOMETRY", "Join Geometry", "Transform Geometry", "Delete Geometry", "Separate Geometry", "Set Position", "Set ID", "Set Material", "MESH", "Mesh Cube", "Mesh UV Sphere", "Mesh Ico Sphere", "Mesh Cylinder", "Mesh Cone", "Mesh Grid", "Mesh Circle", "Mesh Line", "Mesh to Curve", "Curve to Mesh", "Subdivide Mesh", "Triangulate", "Subdivision Surface", "Extrude Mesh", "Flip Faces", "Set Shade Smooth", "CURVE", "Curve Circle", "Curve Line", "Resample Curve", "Curve to Points", "Trim Curve", "Fillet Curve", "Set Curve Radius", "INSTANCES", "Instance on Points", "Realize Instances", "Rotate Instances", "Scale Instances", "UTILITIES", "Math", "Vector Math", "Boolean Math", "Random Value", "Map Range", "Switch", "Compare", "Repeat Zone", "Simulation Zone", "OUTPUT", "Group Output", "Viewer"};
+                rightTitle = "Modifier Properties";
+                rightItems = new String[]{"Geometry Nodes Modifier", "Node Group", "Group Inputs", "Input Defaults", "Attributes", "Bake", "Simulation Cache", "Performance", "Output Geometry"};
+                bottomTitle = "Geometry Node Editor";
+                bottomItems = new String[]{"Node Graph Canvas", "Group Inputs", "Group Outputs", "Node Search", "Node Sidebar", "Spreadsheet", "Viewer", "Simulation Zone", "Repeat Zone", "Bake Nodes"};
+                break;
+        }
+        for (String tool : tools) {
+            TextView item = dockItem(tool, false);
+            item.setPadding(dp(9), dp(6), dp(9), dp(6));
+            item.setOnClickListener(v -> {
+                if (activeWorkspaceIndex == 2) handleSculptPanelItem(tool);
+                else handleWorkspaceItem(tool);
+            });
+            workspaceToolbar.addView(item, new LinearLayout.LayoutParams(
+                    LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
+        }
+        workspaceLeftDock = createDock(leftTitle, index == 2 ? 126 : 142, Gravity.LEFT);
+        addDockItems(workspaceLeftDock, leftTitle, leftItems);
+        workspaceRightDock = createDock(rightTitle, index == 2 ? 142 : 156, Gravity.RIGHT);
+        addDockItems(workspaceRightDock, rightTitle, rightItems);
+        if (bottomTitle != null) {
+            workspaceBottomDock = new LinearLayout(activity);
+            workspaceBottomDock.setOrientation(LinearLayout.VERTICAL);
+            workspaceBottomDock.setBackgroundColor(0xF0181D24);
+            workspaceBottomDock.addView(dockHeading(bottomTitle));
+            for (String item : bottomItems) workspaceBottomDock.addView(dockItem(item, false));
+            FrameLayout.LayoutParams bottomParams = new FrameLayout.LayoutParams(
+                    LayoutParams.MATCH_PARENT, dp(index == 0 || index == 6 ? 72 : 82), Gravity.BOTTOM);
+            bottomParams.leftMargin = dp(154);
+            bottomParams.rightMargin = dp(166);
+            bottomParams.bottomMargin = dp(8);
+            workspaceLayoutLayer.addView(workspaceBottomDock, bottomParams);
+        }
+        if (index == 2) {
+            workspaceLeftDock.setVisibility(sculptEnabled ? View.VISIBLE : View.GONE);
+            workspaceRightDock.setVisibility(sculptEnabled ? View.VISIBLE : View.GONE);
+        }
+        status.setText("Meshy3D  |  " + WORKSPACE_NAMES[index] + " Workspace");
+    }
+
+    private void toggleViewportFocus() {
+        viewportFocusMode = !viewportFocusMode;
+        int visibility = viewportFocusMode ? View.GONE : View.VISIBLE;
+        if (workspaceLeftDock != null) workspaceLeftDock.setVisibility(visibility);
+        if (workspaceRightDock != null) workspaceRightDock.setVisibility(visibility);
+        if (workspaceBottomDock != null) workspaceBottomDock.setVisibility(visibility);
+        if (status != null) status.setText(viewportFocusMode
+                ? "Meshy3D  |  Viewport Focus  •  Tap viewport to restore panels"
+                : "Meshy3D  |  " + WORKSPACE_NAMES[activeWorkspaceIndex] + " Workspace");
+    }
+
+    public void checkpointMeshEdit() {
+        if (meshyViewport == null) return;
+        meshUndoStack.addLast(exportMeshyDocumentState());
+        while (meshUndoStack.size() > 40) meshUndoStack.removeFirst();
+        meshRedoStack.clear();
+    }
+
+    public boolean undoMeshEdit() {
+        if (meshUndoStack.isEmpty()) return false;
+        meshRedoStack.addLast(exportMeshyDocumentState());
+        org.json.JSONObject previous=meshUndoStack.removeLast();
+        return importMeshyDocumentState(previous);
+    }
+
+    public boolean redoMeshEdit() {
+        if (meshRedoStack.isEmpty()) return false;
+        meshUndoStack.addLast(exportMeshyDocumentState());
+        org.json.JSONObject next=meshRedoStack.removeLast();
+        return importMeshyDocumentState(next);
+    }
+
+    public int getMeshUndoCount() { return meshUndoStack.size(); }
+
+    /** Return the live document state owned by this Meshy3D workspace. */
+    public org.json.JSONObject exportMeshyDocumentState() {
+        org.json.JSONObject document = new org.json.JSONObject();
+        try {
+            document.put("format", "Meshy3D");
+            document.put("version", 2);
+            document.put("workspace", activeWorkspaceIndex);
+            document.put("mesh", meshyViewport.exportDocumentState());
+            return document;
+        } catch (org.json.JSONException error) {
+            throw new IllegalStateException("Could not serialize Meshy3D document", error);
+        }
+    }
+
+    /** Restore a saved Meshy3D document into this workspace's own viewport. */
+    public boolean importMeshyDocumentState(org.json.JSONObject document) {
+        if (document == null || !"Meshy3D".equals(document.optString("format"))) return false;
+        org.json.JSONObject mesh = document.optJSONObject("mesh");
+        // Version-1 starter documents contained only object metadata; keep the
+        // current default mesh when opening those older files.
+        if (mesh == null) return true;
+        if (meshyViewport == null || !meshyViewport.importDocumentState(mesh)) return false;
+        int savedWorkspace = document.optInt("workspace", activeWorkspaceIndex);
+        if (savedWorkspace >= 0 && savedWorkspace < WORKSPACE_NAMES.length) setActiveWorkspaceIndex(savedWorkspace);
+        return true;
+    }
+
+    public int getActiveWorkspaceIndex() { return activeWorkspaceIndex; }
+
+    public void showWorkspaceChooser() {
+        new android.app.AlertDialog.Builder(activity)
+                .setTitle("Meshy3D Workspaces")
+                .setSingleChoiceItems(WORKSPACE_NAMES, activeWorkspaceIndex,
+                        (dialog, which) -> {
+                            setActiveWorkspaceIndex(which);
+                            dialog.dismiss();
+                        })
+                .setNegativeButton("Cancel", null).show();
+    }
+
+    public void setObjectModesLocked(boolean locked) {
+        objectModesLocked = locked;
+        if (modeButton != null) modeButton.setAlpha(locked ? 0.55f : 1.0f);
+    }
+
+    private void showEditorModeMenu() {
+        final String[] modes = {"Object Mode", "Edit Mode", "Sculpt Mode"};
+        new android.app.AlertDialog.Builder(activity).setTitle("Meshy3D Mode")
+                .setItems(modes, (dialog, which) -> {
+                    String next = modes[which];
+                    if (objectModesLocked && !next.equals(activeEditorMode)) {
+                        Toast.makeText(activity, "Object mode switching is locked. Unlock it from Edit > Lock Object Modes.", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    activeEditorMode = next;
+                    sculptEnabled = "Sculpt Mode".equals(next);
+                    updateSculptViewport();
+                    if (modeButton != null) modeButton.setText(next);
+                    if (brushDock != null) brushDock.setVisibility(sculptEnabled ? View.VISIBLE : View.GONE);
+                    if (brushControls != null) brushControls.setVisibility(sculptEnabled ? View.VISIBLE : View.GONE);
+                    renderWorkspaceLayout(activeWorkspaceIndex);
+                    if (status != null) status.setText("Meshy3D  |  " + next);
+                    invalidate();
+                }).setNegativeButton("Cancel", null).show();
     }
 
     private int dp(float value) {
         return (int)(value * getResources().getDisplayMetrics().density * uiScale + 0.5f);
     }
 
-    private final class SculptTouchSurface extends View {
-        private float lastX;
-        private float lastY;
-        private float lastDistance;
-
-        SculptTouchSurface() {
-            super(activity);
-            setBackgroundColor(Color.TRANSPARENT);
-            setClickable(true);
-            setFocusable(true);
-        }
-
-        private float distanceToSegment(float px, float py, float ax, float ay, float bx, float by) {
-            float vx = bx - ax, vy = by - ay;
-            float length2 = vx * vx + vy * vy;
-            float t = length2 == 0 ? 0 : ((px - ax) * vx + (py - ay) * vy) / length2;
-            t = Math.max(0, Math.min(1, t));
-            float dx = px - (ax + t * vx), dy = py - (ay + t * vy);
-            return (float)Math.sqrt(dx * dx + dy * dy);
-        }
-
-        private void updateGizmoCenter() {
-            float[] projected = engine.projectSelectedGizmo();
-            if (projected == null || projected.length < 16 || projected[3] <= 0.0001f
-                    || projected[2] < -1.0f || projected[2] > 1.0f
-                    || Math.abs(projected[0]) > 1.15f || Math.abs(projected[1]) > 1.15f) {
-                gizmoVisible = false;
-                return;
-            }
-            gizmoCenterX = (projected[0] + 1.0f) * 0.5f * getWidth();
-            gizmoCenterY = (1.0f - projected[1]) * 0.5f * getHeight();
-            gizmoVisible = true;
-            for (int axis=0;axis<3;axis++) {
-                int offset=(axis+1)*4;
-                gizmoEndVisible[axis]=projected[offset+3]>0.0001f
-                        && projected[offset+2]>=-1.0f && projected[offset+2]<=1.0f;
-                gizmoEndX[axis]=(projected[offset]+1.0f)*0.5f*getWidth();
-                gizmoEndY[axis]=(1.0f-projected[offset+1])*0.5f*getHeight();
-            }
-        }
-
-        private int hitGizmoAxis(float x, float y) {
-            updateGizmoCenter();
-            if (!gizmoVisible) return -1;
-            float cx = gizmoCenterX, cy = gizmoCenterY;
-            for (int axis = 0; axis < 3; axis++) {
-                if (gizmoEndVisible[axis] && distanceToSegment(x, y, cx, cy,
-                        gizmoEndX[axis], gizmoEndY[axis]) < dp(18)) return axis;
-            }
-            return -1;
-        }
-
-        @Override protected void onDraw(Canvas canvas) {
-            super.onDraw(canvas);
-            if (activeTransformMode != 0) return;
-            updateGizmoCenter();
-            if (!gizmoVisible) {
-                postInvalidateDelayed(33);
-                return;
-            }
-            float cx = gizmoCenterX, cy = gizmoCenterY;
-            Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-            paint.setStrokeWidth(dp(4));
-            paint.setStrokeCap(Paint.Cap.ROUND);
-            paint.setStyle(Paint.Style.STROKE);
-            int[] colors = {0xFFFF5555, 0xFF55DD77, 0xFF5599FF};
-            for (int axis = 0; axis < 3; axis++) {
-                if (!gizmoEndVisible[axis]) continue;
-                float ex=gizmoEndX[axis], ey=gizmoEndY[axis];
-                paint.setColor(colors[axis]);
-                paint.setStrokeWidth(gizmoAxis == axis ? dp(7) : dp(4));
-                canvas.drawLine(cx, cy, ex, ey, paint);
-                float angle = (float)Math.atan2(ey-cy, ex-cx);
-                float head = dp(13);
-                Path arrow = new Path();
-                arrow.moveTo(ex, ey);
-                arrow.lineTo(ex-head*(float)Math.cos(angle-0.55f), ey-head*(float)Math.sin(angle-0.55f));
-                arrow.moveTo(ex, ey);
-                arrow.lineTo(ex-head*(float)Math.cos(angle+0.55f), ey-head*(float)Math.sin(angle+0.55f));
-                canvas.drawPath(arrow, paint);
-                paint.setStyle(Paint.Style.FILL);
-                canvas.drawText(axis == 0 ? "X" : axis == 1 ? "Y" : "Z", ex+dp(5), ey-dp(5), paint);
-                paint.setStyle(Paint.Style.STROKE);
-            }
-            postInvalidateDelayed(33);
-        }
-
-        private float distance(MotionEvent e) {
-            if (e.getPointerCount() < 2) return 0;
-            float dx = e.getX(0) - e.getX(1);
-            float dy = e.getY(0) - e.getY(1);
-            return (float)Math.sqrt(dx * dx + dy * dy);
-        }
-
-        @Override public boolean onTouchEvent(MotionEvent event) {
-            int action = event.getActionMasked();
-            if (event.getPointerCount() == 1 && activeTransformMode == 0) {
-                if (action == MotionEvent.ACTION_DOWN) {
-                    gizmoAxis = hitGizmoAxis(event.getX(), event.getY());
-                    if (gizmoAxis >= 0) {
-                        transformDragState = engine.getSelectedTransform();
-                        engine.beginTransformEdit();
-                        lastX = event.getX(); lastY = event.getY();
-                        return true;
-                    }
-                } else if (gizmoAxis >= 0 && action == MotionEvent.ACTION_MOVE) {
-                    float dx = event.getX() - lastX, dy = event.getY() - lastY;
-                    if (transformDragState != null && transformDragState.length >= 9) {
-                        float axisX=gizmoEndX[gizmoAxis]-gizmoCenterX;
-                        float axisY=gizmoEndY[gizmoAxis]-gizmoCenterY;
-                        float axisLengthSquared=axisX*axisX+axisY*axisY;
-                        if(axisLengthSquared>dp(8)*dp(8)) {
-                            // The projected world-axis endpoint is exactly one world unit away.
-                            // Project the finger delta onto that visible axis; screen Y inversion
-                            // is already accounted for by the projected endpoint.
-                            float delta=(dx*axisX+dy*axisY)/axisLengthSquared;
-                            transformDragState[gizmoAxis] += delta;
-                        }
-                        engine.updateSelectedTransform(transformDragState);
-                        if (positionInputs[gizmoAxis] != null) positionInputs[gizmoAxis].setText(String.valueOf(transformDragState[gizmoAxis]));
-                    }
-                    lastX = event.getX(); lastY = event.getY();
-                    invalidate();
-                    return true;
-                } else if ((action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) && gizmoAxis >= 0) {
-                    gizmoAxis = -1; invalidate(); return true;
-                }
-            }
-            engine.handleSculptTouchFromView(event, this);
-            if (event.getPointerCount() >= 2) {
-                float cx = (event.getX(0) + event.getX(1)) * 0.5f;
-                float cy = (event.getY(0) + event.getY(1)) * 0.5f;
-                float dist = distance(event);
-                if (action == MotionEvent.ACTION_POINTER_DOWN) {
-                    lastDistance = dist;
-                    lastX = cx;
-                    lastY = cy;
-                } else if (action == MotionEvent.ACTION_MOVE) {
-                    if (lastDistance > 0 && dist > 0) {
-                        float scale = dist / lastDistance;
-                        engine.queueEvent(() -> NativeBridge.nativeZoom(scale));
-                    }
-                    float px = cx - lastX;
-                    float py = cy - lastY;
-                    if (Math.abs(px) > 0.5f || Math.abs(py) > 0.5f) {
-                        engine.queueEvent(() -> NativeBridge.nativePan(px, py));
-                    }
-                    lastDistance = dist;
-                    lastX = cx;
-                    lastY = cy;
-                }
-            } else if (action == MotionEvent.ACTION_DOWN) {
-                if (activeTransformMode >= 0) engine.beginTransformEdit();
-                lastX = event.getX();
-                lastY = event.getY();
-            } else if (action == MotionEvent.ACTION_MOVE && !sculptEnabled) {
-                float dx = event.getX() - lastX;
-                float dy = event.getY() - lastY;
-                if (activeTransformMode >= 0) {
-                    float[] transform = transformDragState;
-                    if (transform != null && transform.length >= 9) {
-                        if (activeTransformMode == 0) {
-                            // Move in the viewport's screen-aligned XY plane.
-                            transform[0] += dx * 0.008f;
-                            transform[1] -= dy * 0.008f;
-                        } else if (activeTransformMode == 1) {
-                            transform[3] += dy * 0.45f;
-                            transform[4] += dx * 0.45f;
-                        } else {
-                            float factor = (float)Math.exp(-dy * 0.008f);
-                            transform[6] = Math.max(0.01f, Math.min(100.0f, transform[6] * factor));
-                            transform[7] = Math.max(0.01f, Math.min(100.0f, transform[7] * factor));
-                            transform[8] = Math.max(0.01f, Math.min(100.0f, transform[8] * factor));
-                        }
-                        transformDragState = transform;
-                        engine.updateSelectedTransform(transform);
-                        for (int axis = 0; axis < 3; axis++) {
-                            if (positionInputs[axis] != null) positionInputs[axis].setText(String.valueOf(
-                                    transform[axis + transformComponent * 3]));
-                        }
-                    }
-                } else if (orbitMode) {
-                    engine.queueEvent(() -> NativeBridge.nativeOrbitSelected(dx, dy));
-                } else {
-                    engine.queueEvent(() -> NativeBridge.nativeTouch(dx, dy));
-                }
-                lastX = event.getX();
-                lastY = event.getY();
-            }
-            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL
-                    || action == MotionEvent.ACTION_POINTER_UP) lastDistance = 0;
-            return true;
-        }
-    }
 }

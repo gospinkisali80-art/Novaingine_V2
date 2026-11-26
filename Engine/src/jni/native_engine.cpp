@@ -593,6 +593,10 @@ Java_com_novaingine_v2_NativeBridge_nativeInit(
 
     nova::SceneFactory::buildDefaultScene(gScene);
 
+    // Frame the default cube in the centre of the Meshy3D viewport.
+    gCamera.position = nova::Vec3(0.0f, 2.35f, 8.0f);
+    setCameraDirection(nova::Vec3(0.0f, 1.0f, 0.0f) - gCamera.position);
+
     if (!gRenderer.initialize()) {
         NOVA_LOG("Renderer initialization failed");
         gInitialized = false;
@@ -752,7 +756,9 @@ Java_com_novaingine_v2_NativeBridge_nativeZoom(
         return;
     }
 
-    gCamera.zoom(static_cast<float>(scale));
+    // Damp pinch changes so zooming is gradual and controllable.
+    const float gentleScale = 1.0f + (static_cast<float>(scale) - 1.0f) * 0.20f;
+    gCamera.zoom(gentleScale);
 }
 
 JNIEXPORT void JNICALL
@@ -1385,6 +1391,42 @@ Java_com_novaingine_v2_NativeBridge_nativeSelectObjectById(
     if (gInitialized) gScene.select(static_cast<uint32_t>(objectId));
 }
 
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeRenameSelectedObject(
+    JNIEnv* env, jclass, jstring rawName
+) {
+    if (!rawName) return JNI_FALSE;
+    const char* chars = env->GetStringUTFChars(rawName, nullptr);
+    if (!chars) return JNI_FALSE;
+    std::string name(chars);
+    env->ReleaseStringUTFChars(rawName, chars);
+    if (name.empty() || name.size() > 128) return JNI_FALSE;
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized) return JNI_FALSE;
+    nova::SceneObject* object = gScene.selected();
+    if (!object) return JNI_FALSE;
+    object->name = name;
+    return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeRenameObject(
+    JNIEnv* env, jclass, jint objectId, jstring rawName
+) {
+    if (!rawName || objectId <= 0) return JNI_FALSE;
+    const char* chars = env->GetStringUTFChars(rawName, nullptr);
+    if (!chars) return JNI_FALSE;
+    std::string name(chars);
+    env->ReleaseStringUTFChars(rawName, chars);
+    if (name.empty() || name.size() > 128) return JNI_FALSE;
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized) return JNI_FALSE;
+    nova::SceneObject* object = gScene.find(static_cast<uint32_t>(objectId));
+    if (!object) return JNI_FALSE;
+    object->name = name;
+    return JNI_TRUE;
+}
+
 JNIEXPORT jfloatArray JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeGetSelectedTransform(
     JNIEnv* env, jclass
@@ -1490,6 +1532,23 @@ Java_com_novaingine_v2_NativeBridge_nativeSetSelectedTransform(
     );
 }
 
+
+JNIEXPORT jboolean JNICALL
+Java_com_novaingine_v2_NativeBridge_nativeSetSelectedMaterialColor(
+    JNIEnv*, jclass, jfloat redValue, jfloat greenValue, jfloat blueValue
+) {
+    std::lock_guard<std::mutex> lock(engineMutex);
+    if (!gInitialized) return JNI_FALSE;
+    nova::SceneObject* object = gScene.selected();
+    if (!object) return JNI_FALSE;
+    const float red = std::clamp(static_cast<float>(redValue), 0.0f, 1.0f);
+    const float green = std::clamp(static_cast<float>(greenValue), 0.0f, 1.0f);
+    const float blue = std::clamp(static_cast<float>(blueValue), 0.0f, 1.0f);
+    recordUndo();
+    object->color = nova::Color(red, green, blue, 1.0f);
+    object->material.baseColor = nova::Vec3(red, green, blue);
+    return JNI_TRUE;
+}
 
 JNIEXPORT void JNICALL
 Java_com_novaingine_v2_NativeBridge_nativeBeginTransformEdit(JNIEnv*, jclass) {
@@ -2566,6 +2625,41 @@ Java_com_novaingine_v2_NativeBridge_nativeCreateEmptyScene(
     gSculptMeshId = 0;
     gRenderer.setSculptCursor(false, nova::Vec3(), nova::Vec3(0,1,0), 0.18f);
     gScene.clear();
+    // A new level is an empty, lit editor environment rather than a black screen:
+    // keep the procedural sky visible and provide a neutral ground surface.
+    RendererSettings emptyLevelSettings = gRenderer.getSettings();
+    emptyLevelSettings.showSky = true;
+    emptyLevelSettings.showGrid = false;
+    emptyLevelSettings.showShadows = true;
+    gRenderer.setSettings(emptyLevelSettings);
+    gRenderer.setViewMode(0);
+    nova::Transform groundTransform;
+    groundTransform.position = nova::Vec3(0.0f, -0.12f, 0.0f);
+    groundTransform.scale = nova::Vec3(100.0f, 0.20f, 100.0f);
+    const nova::Color groundColor(0.27f, 0.29f, 0.32f, 1.0f);
+    const uint32_t groundId = gScene.addObject(
+        "Ground", nova::PrimitiveType::Cube, groundTransform, groundColor
+    );
+    if (nova::SceneObject* ground = gScene.find(groundId)) {
+        ground->material.baseColor = nova::Vec3(groundColor.r, groundColor.g, groundColor.b);
+        ground->material.roughness = 0.94f;
+        ground->material.metallic = 0.0f;
+    }
+
+    // Meshy3D starts each new project with a visible, selectable default cube.
+    nova::Transform cubeTransform;
+    cubeTransform.position = nova::Vec3(0.0f, 1.0f, 0.0f);
+    cubeTransform.scale = nova::Vec3(1.0f, 1.0f, 1.0f);
+    const nova::Color cubeColor(0.72f, 0.76f, 0.82f, 1.0f);
+    const uint32_t cubeId = gScene.addObject(
+        "Cube", nova::PrimitiveType::Cube, cubeTransform, cubeColor
+    );
+    if (nova::SceneObject* cube = gScene.find(cubeId)) {
+        cube->material.baseColor = nova::Vec3(cubeColor.r, cubeColor.g, cubeColor.b);
+        cube->material.roughness = 0.72f;
+        cube->material.metallic = 0.0f;
+    }
+
     gCustomMeshes.clear();
     gSculptMasks.clear();
     gVisualScript = nova::VisualScript();

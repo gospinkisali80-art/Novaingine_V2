@@ -1574,6 +1574,12 @@ void Renderer::renderScenePass(
     glBindFramebuffer(GL_FRAMEBUFFER, sceneTarget_.framebuffer);
     glViewport(0, 0, width_, height_);
 
+    // Clear the off-screen level viewport before drawing the sky and scene.
+    // Without this, a failed/partial sky pass can leave the scene texture black
+    // or containing undefined pixels that are then composited to the screen.
+    glClearColor(clearR_, clearG_, clearB_, clearA_);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
     glEnable(GL_DEPTH_TEST);
     glDepthMask(GL_TRUE);
     glEnable(GL_CULL_FACE);

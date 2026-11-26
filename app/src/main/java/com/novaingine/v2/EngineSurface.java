@@ -346,8 +346,27 @@ public final class EngineSurface extends GLSurfaceView
         return NativeBridge.nativeProjectSelectedGizmo();
     }
 
+    public void renameSelectedObject(String name, java.util.function.Consumer<Boolean> callback) {
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeRenameSelectedObject(name);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
+    }
+
+    public void renameObject(int objectId, String name, java.util.function.Consumer<Boolean> callback) {
+        queueEvent(() -> {
+            boolean ok = NativeBridge.nativeRenameObject(objectId, name);
+            if (callback != null) post(() -> callback.accept(ok));
+        });
+    }
+
     public void selectObjectById(int objectId) {
         queueEvent(() -> NativeBridge.nativeSelectObjectById(objectId));
+    }
+
+    public void setSelectedMaterialColor(float red, float green, float blue) {
+        queueEvent(() -> NativeBridge.nativeSetSelectedMaterialColor(red, green, blue));
+        requestRender();
     }
 
     public void setSelectedTransform(float[] values) {
@@ -457,6 +476,13 @@ public final class EngineSurface extends GLSurfaceView
     public void resetScene() {
 
         queueEvent(NativeBridge::nativeResetScene);
+    }
+
+    public void modelSelectedMesh(int operation, int elementIndex, float amount, java.util.function.IntConsumer callback) {
+        queueEvent(() -> {
+            int result = NativeBridge.nativeModelSelectedMesh(operation, elementIndex, amount);
+            if (callback != null) post(() -> callback.accept(result));
+        });
     }
 
     public void undoScene() {

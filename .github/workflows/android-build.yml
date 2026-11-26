@@ -1,11 +1,14 @@
 name: Novaingine V2 Android Build
 
 on:
+  pull_request:
   workflow_dispatch:
   push:
     branches:
       - main
       - master
+      - integration/chatgpt-bridge-foundation
+      - integration/chatgpt-bridge-foundation
 
 permissions:
   contents: read

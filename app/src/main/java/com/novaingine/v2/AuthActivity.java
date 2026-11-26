@@ -110,38 +110,32 @@ public final class AuthActivity extends Activity {
         words.setGravity(Gravity.CENTER);
         TextView brand = text("NOVA ENGINE", 25, Color.WHITE, true);
         brand.setLetterSpacing(0.16f);
+        brand.setGravity(Gravity.CENTER);
         TextView line = text("CONNECT YOU AND GAMES", 12, cyan, true);
         line.setLetterSpacing(0.18f);
+        line.setGravity(Gravity.CENTER);
         TextView creator = text("CREATED BY  M E S H", 11, 0xFF9AAAC5, true);
         creator.setLetterSpacing(0.18f);
-        words.addView(brand);
+        creator.setGravity(Gravity.CENTER);
+        words.addView(brand, new LinearLayout.LayoutParams(-1, -2));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
         lp.topMargin = dp(10);
-        words.addView(line, lp);
+        words.addView(line, new LinearLayout.LayoutParams(-1, -2));
         LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(-2, -2);
         cp.topMargin = dp(38);
-        words.addView(creator, cp);
+        words.addView(creator, new LinearLayout.LayoutParams(-1, -2));
         FrameLayout.LayoutParams wordsP = new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER);
         wordsP.topMargin = dp(160);
         root.addView(words, wordsP);
 
-        TextView loading = text("INITIALIZING EXPERIENCE", 9, 0xFF7185A5, true);
-        loading.setLetterSpacing(0.2f);
-        loading.setGravity(Gravity.CENTER);
-        FrameLayout.LayoutParams loadP = new FrameLayout.LayoutParams(-1, dp(40), Gravity.BOTTOM);
-        loadP.bottomMargin = dp(36);
-        root.addView(loading, loadP);
-
-        View track = new View(this);
-        track.setBackground(rounded(0xFF202B42, 8, 0, 0));
-        FrameLayout.LayoutParams trackP = new FrameLayout.LayoutParams(dp(180), dp(3), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        trackP.bottomMargin = dp(28);
-        root.addView(track, trackP);
-        View progress = new View(this);
-        progress.setBackground(rounded(cyan, 8, 0, 0));
-        FrameLayout.LayoutParams progressP = new FrameLayout.LayoutParams(dp(24), dp(3), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        progressP.bottomMargin = dp(28);
-        root.addView(progress, progressP);
+        TextView loadingN = text("N", 17, cyan, true);
+        loadingN.setGravity(Gravity.CENTER);
+        loadingN.setBackground(rounded(0xFF142A49, 14, cyan, 1));
+        loadingN.setElevation(dp(6));
+        FrameLayout.LayoutParams loadingNP = new FrameLayout.LayoutParams(
+                dp(34), dp(34), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        loadingNP.bottomMargin = dp(34);
+        root.addView(loadingN, loadingNP);
 
         setContentView(root);
 
@@ -156,10 +150,10 @@ public final class AuthActivity extends Activity {
         pulse.playTogether(sx, sy, rotate, glowScale);
         pulse.start();
 
-        ObjectAnimator progressAnim = ObjectAnimator.ofFloat(progress, View.SCALE_X, 1f, 7.2f);
-        progressAnim.setDuration(2400);
-        progressAnim.setInterpolator(new DecelerateInterpolator());
-        progressAnim.start();
+        ObjectAnimator loadingNSpin = ObjectAnimator.ofFloat(loadingN, View.ROTATION, 0f, 360f);
+        loadingNSpin.setDuration(1200);
+        loadingNSpin.setRepeatCount(ObjectAnimator.INFINITE);
+        loadingNSpin.start();
 
         handler.postDelayed(() -> {
             if (isFinishing()) return;
