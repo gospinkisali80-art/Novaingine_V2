@@ -729,7 +729,7 @@ public final class MainActivity extends Activity
     public void performMeshyFileAction(String action) {
         switch (action) {
             case "New":
-                createNewMeshyProject();
+                startNewMeshyProject();
                 break;
             case "Open":
                 new AlertDialog.Builder(this).setTitle("Open")
@@ -793,8 +793,12 @@ public final class MainActivity extends Activity
                 restoreMeshyDefaults();
                 break;
             case "Quit":
-                if (manualSculptWorkspace != null) closeManualSculpting();
-                else finish();
+                if (manualSculptWorkspace != null) {
+                    confirmMeshySwitch("leaving Meshy3D", () -> {
+                        activeMeshyDocument = null;
+                        activeMeshyProjectDirectory = null;
+                    });
+                } else finish();
                 break;
         }
     }
@@ -1585,11 +1589,28 @@ public final class MainActivity extends Activity
     }
 
     private void showSceneDataPreview() {
+        StringBuilder preview = new StringBuilder();
+        preview.append("Document: ").append(activeMeshyDocument == null ? "Unsaved Meshy3D session"
+                : activeMeshyDocument.getName()).append("\n");
+        if (activeMeshyDocument != null && activeMeshyDocument.isFile()) {
+            preview.append("File size: ").append(activeMeshyDocument.length()).append(" bytes\n")
+                    .append("Last saved: ").append(new java.text.SimpleDateFormat(
+                            "yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+                            .format(new java.util.Date(activeMeshyDocument.lastModified()))).append("\n");
+        }
+        preview.append("Format: Meshy3D document\n\n");
+        if (manualSculptWorkspace != null) preview.append(manualSculptWorkspace.getDocumentDataPreview());
+        else preview.append("The Meshy3D workspace is closed.");
+        TextView content = new TextView(this);
+        content.setText(preview.toString());
+        content.setTextColor(0xFFE4EAF0);
+        content.setTextSize(12);
+        content.setTextIsSelectable(true);
+        content.setPadding(dp(16), dp(12), dp(16), dp(12));
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(content);
         new AlertDialog.Builder(this).setTitle("Meshy3D Data Preview")
-                .setMessage(activeMeshyDocument == null
-                        ? "Meshy3D document: no file open.\nDefault viewport object: Cube"
-                        : "Document: " + activeMeshyDocument.getName() + "\nObjects: Cube (Mesh)\nFormat: .meshy3d")
-                .setPositiveButton("Close", null).show();
+                .setView(scroll).setPositiveButton("Close", null).show();
     }
 
     private void cleanMeshyTemporaryFiles() {
@@ -2275,6 +2296,46 @@ public final class MainActivity extends Activity
                 }).setNegativeButton("CANCEL", null).show();
     }
 
+    private void startNewMeshyProject() {
+        if (manualSculptWorkspace != null) {
+            confirmMeshySwitch("creating a new Meshy3D project", () -> {
+                activeMeshyDocument = null;
+                activeMeshyProjectDirectory = null;
+                createNewMeshyProject();
+            });
+        } else {
+            activeMeshyDocument = null;
+            activeMeshyProjectDirectory = null;
+            createNewMeshyProject();
+        }
+    }
+
+    private void confirmMeshySwitch(String action, Runnable proceed) {
+        if (manualSculptWorkspace == null) {
+            if (proceed != null) proceed.run();
+            return;
+        }
+        AlertDialog.Builder dialog = new AlertDialog.Builder(this)
+                .setTitle("Save current Meshy3D document?")
+                .setMessage("Save the current Meshy3D work before " + action + "?")
+                .setNegativeButton("Discard", (d, w) -> {
+                    closeManualSculpting();
+                    if (proceed != null) proceed.run();
+                })
+                .setNeutralButton("Cancel", null);
+        if (activeMeshyDocument != null) {
+            dialog.setPositiveButton("Save", (d, w) -> {
+                if (saveMeshyDocument()) {
+                    closeManualSculpting();
+                    if (proceed != null) proceed.run();
+                }
+            });
+        } else {
+            dialog.setMessage("This session has no saved Meshy3D document. Discard it and continue?");
+        }
+        dialog.show();
+    }
+
     private void createNewMeshyProject() {
         EditText input = new EditText(this);
         input.setSingleLine(true);
@@ -2378,6 +2439,16 @@ public final class MainActivity extends Activity
     }
 
     private void openMeshyDocument(File document) {
+        if (document == null || !document.isFile()) {
+            android.widget.Toast.makeText(this,"The selected Meshy3D document is unavailable.",android.widget.Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (manualSculptWorkspace != null) {
+            confirmMeshySwitch("opening another Meshy3D project", () -> openMeshyDocumentNow(document));
+        } else openMeshyDocumentNow(document);
+    }
+
+    private void openMeshyDocumentNow(File document) {
         if (document == null || !document.isFile()) {
             android.widget.Toast.makeText(this,"The selected Meshy3D document is unavailable.",android.widget.Toast.LENGTH_LONG).show();
             return;
@@ -2564,16 +2635,19 @@ public final class MainActivity extends Activity
         }
     }
 
-    private void saveMeshyDocument() {
-        if(activeMeshyDocument==null){
-            android.widget.Toast.makeText(this,"Create or open a Meshy3D project first.",android.widget.Toast.LENGTH_SHORT).show();return;
+    private boolean saveMeshyDocument() {
+        if(activeMeshyDocument==null || manualSculptWorkspace==null){
+            android.widget.Toast.makeText(this,"Create or open a Meshy3D project first.",android.widget.Toast.LENGTH_SHORT).show();
+            return false;
         }
         try{
             writeMeshyDocumentFile(activeMeshyDocument,true);
             recordRecentMeshyDocument(activeMeshyDocument);
             android.widget.Toast.makeText(this,"Meshy3D mesh and workspace saved; previous save backed up.",android.widget.Toast.LENGTH_SHORT).show();
+            return true;
         }catch(Exception error){
             android.widget.Toast.makeText(this,"Meshy3D save failed: "+error.getMessage(),android.widget.Toast.LENGTH_LONG).show();
+            return false;
         }
     }
 
