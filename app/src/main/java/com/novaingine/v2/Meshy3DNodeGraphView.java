@@ -10,6 +10,7 @@ import android.view.View;
 /** Draggable node canvas with editable output-to-input links. */
 public final class Meshy3DNodeGraphView extends View {
     public interface OnLinkListener { void onLink(int from,int to); }
+    public interface OnNodeClickListener { void onNodeClick(int index); }
     private final Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);
     private String[] nodes=new String[0];
     private int[][] links=new int[0][];
@@ -17,8 +18,12 @@ public final class Meshy3DNodeGraphView extends View {
     private int active=-1,linkStart=-1;
     private float lastX,lastY,pointerX,pointerY;
     private OnLinkListener linkListener;
+    private OnNodeClickListener nodeClickListener;
+    private float downX,downY;
+    private boolean dragged;
     public Meshy3DNodeGraphView(Context context){super(context);setBackgroundColor(0xFF171C23);}
     public void setOnLinkListener(OnLinkListener listener){linkListener=listener;}
+    public void setOnNodeClickListener(OnNodeClickListener listener){nodeClickListener=listener;}
     public void setNodes(String[] value){
         nodes=value==null?new String[0]:value.clone();xs=new float[nodes.length];ys=new float[nodes.length];
         for(int i=0;i<nodes.length;i++){xs[i]=24+(i%3)*190;ys[i]=35+(i/3)*125;}invalidate();
@@ -52,17 +57,18 @@ public final class Meshy3DNodeGraphView extends View {
     }
     @Override public boolean onTouchEvent(MotionEvent e){
         if(e.getActionMasked()==MotionEvent.ACTION_DOWN){
-            pointerX=e.getX();pointerY=e.getY();linkStart=outputHit(e.getX(),e.getY());
+            pointerX=e.getX();pointerY=e.getY();downX=e.getX();downY=e.getY();dragged=false;linkStart=outputHit(e.getX(),e.getY());
             if(linkStart<0){active=hit(e.getX(),e.getY());lastX=e.getX();lastY=e.getY();}
             invalidate();return true;
         }
         if(e.getActionMasked()==MotionEvent.ACTION_MOVE){
             pointerX=e.getX();pointerY=e.getY();
-            if(linkStart<0&&active>=0){xs[active]+=e.getX()-lastX;ys[active]+=e.getY()-lastY;lastX=e.getX();lastY=e.getY();}
+            if(linkStart<0&&active>=0){if(Math.abs(e.getX()-downX)+Math.abs(e.getY()-downY)>6)dragged=true;xs[active]+=e.getX()-lastX;ys[active]+=e.getY()-lastY;lastX=e.getX();lastY=e.getY();}
             invalidate();return true;
         }
         if(e.getActionMasked()==MotionEvent.ACTION_UP){
             if(linkStart>=0){int target=inputHit(e.getX(),e.getY());if(target>=0&&linkListener!=null)linkListener.onLink(linkStart,target);}
+            else if(active>=0&&!dragged&&nodeClickListener!=null)nodeClickListener.onNodeClick(active);
             linkStart=-1;active=-1;invalidate();return true;
         }
         if(e.getActionMasked()==MotionEvent.ACTION_CANCEL){linkStart=-1;active=-1;return true;}
