@@ -1077,13 +1077,16 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     int count=0;for(Meshy3DObjectScene.Object3D object:scene.getObjects())
                         if(object.type.equalsIgnoreCase(types[w]))count++;
                     if(count==0){Toast.makeText(activity,"No "+labels[w].toLowerCase(java.util.Locale.ROOT)+" in the scene.",Toast.LENGTH_SHORT).show();return;}
+                    final int deleteCount=count;
+                    final String typeLabel=labels[w].toLowerCase(java.util.Locale.ROOT);
+                    final String objectType=types[w];
                     new android.app.AlertDialog.Builder(activity).setTitle("Confirm Delete")
-                            .setMessage("Delete "+count+" "+labels[w].toLowerCase(java.util.Locale.ROOT)+"?")
+                            .setMessage("Delete "+deleteCount+" "+typeLabel+"?")
                             .setPositiveButton("Delete",(dialog,button)->{
                                 try{
-                                    checkpointMeshEdit();meshyViewport.selectObjectsByType(types[w],false);
+                                    checkpointMeshEdit();meshyViewport.selectObjectsByType(objectType,false);
                                     meshyViewport.deleteSelectedObjects();refreshModelingOutliner();
-                                    status.setText("Modeling | Deleted "+count+" "+labels[w].toLowerCase(java.util.Locale.ROOT));
+                                    status.setText("Modeling | Deleted "+deleteCount+" "+typeLabel);
                                 }catch(Exception error){showObjectOperationError(error);}
                             }).setNegativeButton("Cancel",null).show();
                 }).setNegativeButton("Cancel",null).show();
