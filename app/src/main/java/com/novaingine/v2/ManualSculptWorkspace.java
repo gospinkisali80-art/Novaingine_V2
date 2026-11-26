@@ -618,10 +618,13 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     catch (RuntimeException error) { status.setText("Layout | "+error.getMessage()); }
                 } else if ("Hide / Show Objects".equals(item)) {
                     checkpointMeshEdit(); meshyViewport.toggleMeshVisible();
-                    status.setText("Layout | Cube visibility toggled");
-                } else if ("Camera View".equals(item)) {
-                    meshyViewport.resetView();
-                    status.setText("Layout | View framed on Cube");
+                    status.setText("Layout | Active object visibility toggled");
+                } else if ("Frame Selected".equals(item)) {
+                    meshyViewport.frameSelectedObjects();
+                    status.setText("Layout | View framed on selected objects");
+                } else if ("Frame All".equals(item)) {
+                    meshyViewport.frameAllObjects();
+                    status.setText("Layout | View framed on all visible objects");
                 } else if ("Show Grid".equals(item) || "Grid".equals(item)) {
                     checkpointMeshEdit(); meshyViewport.toggleFloorGrid();
                 } else if ("Move".equals(item) || "Rotate".equals(item) || "Scale".equals(item)
