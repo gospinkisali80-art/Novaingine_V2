@@ -475,7 +475,20 @@ public final class ManualSculptWorkspace extends FrameLayout {
         }
         switch (activeWorkspaceIndex) {
             case 0:
-                if ("Hide / Show Objects".equals(item)) {
+                if ("Select Box".equals(item) || "Select".equals(item)) {
+                    meshyViewport.setObjectSelectionEnabled(true);
+                    meshyViewport.setObjectBoxSelectEnabled(true);
+                    meshyViewport.setObjectTransformTool(-1);
+                    status.setText("Layout | Box selection active");
+                } else if ("Move".equals(item) || "Rotate".equals(item) || "Scale".equals(item)) {
+                    meshyViewport.setObjectSelectionEnabled(true);
+                    meshyViewport.setObjectBoxSelectEnabled(false);
+                    meshyViewport.setObjectTransformTool("Move".equals(item)?0:"Rotate".equals(item)?1:2);
+                    status.setText("Layout | "+item+" gizmo active — drag an axis handle");
+                } else if ("Camera View".equals(item)) {
+                    try { meshyViewport.toggleActiveCameraView(); }
+                    catch (RuntimeException error) { status.setText("Layout | "+error.getMessage()); }
+                } else if ("Hide / Show Objects".equals(item)) {
                     checkpointMeshEdit(); meshyViewport.toggleMeshVisible();
                     status.setText("Layout | Cube visibility toggled");
                 } else if ("Camera View".equals(item)) {
@@ -2471,8 +2484,15 @@ public final class ManualSculptWorkspace extends FrameLayout {
         workspaceLayoutLayer.removeAllViews();
         viewportFocusMode = false;
         if (meshyViewport != null) {
-            meshyViewport.setMeshEditMode(index == 1 && "Edit Mode".equals(activeEditorMode));
-            meshyViewport.setObjectSelectionEnabled(index == 1 && "Object Mode".equals(activeEditorMode));
+            boolean sculptWorkspace = index == 2;
+            boolean editWorkspace = index == 1 && "Edit Mode".equals(activeEditorMode);
+            meshyViewport.setMeshEditMode(editWorkspace);
+            // Layout and Modeling must both allow selecting the starter cube and scene objects.
+            meshyViewport.setObjectSelectionEnabled(!sculptWorkspace && !editWorkspace);
+            meshyViewport.setSculptSettings(sculptWorkspace, selectedSculptBrush,
+                    sculptRadiusUi, sculptStrengthUi, sculptFalloffUi,
+                    sculptSymmetryUi, sculptSubtractUi, sculptPressureUi);
+            meshyViewport.setSculptStrokeMethod(sculptStrokeMethodUi);
         }
         workspaceToolbar = new LinearLayout(activity);
         workspaceToolbar.setGravity(Gravity.CENTER_VERTICAL);
