@@ -346,7 +346,7 @@ public final class Meshy3DCore {
     public void evaluateGraph(int graph){
         if(graph==0)evaluateGeometryNodes();
         else if(graph==1)evaluateShaderGraph();
-        else evaluateCompositorTexture();
+        else revision++;
     }
     public int getShaderNodeCount(){return shaderNodes.size();}
     public void addGeometryNode(String type,float x,float y,float z,float value){Node n=new Node(type);n.x=x;n.y=y;n.z=z;n.value=value;geometryNodes.add(n);revision++;}
