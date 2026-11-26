@@ -77,6 +77,7 @@ public final class Meshy3DViewport extends View {
     public void triangulateSelectedFaces(){document.triangulateSelectedFaces();syncViewportFromCore();}
     public void recalculateNormals(){document.recalculateNormals();syncViewportFromCore();}
     public void deleteSelectedFaces(){document.deleteSelectedFaces();syncViewportFromCore();}
+    public void deleteSelectedVertices(){document.deleteSelectedVertices();syncViewportFromCore();}
     public void smoothTopology(float amount,int iterations){document.smooth(amount,iterations);syncViewportFromCore();}
     public void markSeams(boolean clear){document.markSelectedSeams(clear);invalidate();}
     public void pinSelectedUvs(boolean pin){document.pinSelectedUvs(pin);invalidate();}
