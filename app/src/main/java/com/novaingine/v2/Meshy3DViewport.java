@@ -18,6 +18,8 @@ public final class Meshy3DViewport extends View {
     private float lastX, lastY, lastPinchDistance;
     private float zoom = 1.0f;
     private float viewTargetX,viewTargetY,viewTargetZ;
+    private boolean cameraViewActive;
+    private float savedViewYaw,savedViewPitch,savedViewZoom,savedTargetX,savedTargetY,savedTargetZ;
     // Each cube side is subdivided into a 24 x 24 quad grid.
     // Six independent side grids give 3,750 editable vertices and 3,456 quads.
     // Matching border vertices receive the same screen-space brush dabs.
@@ -754,8 +756,34 @@ public final class Meshy3DViewport extends View {
         return new float[]{cx+q[0]*unit*perspective,cy-q[1]*unit*perspective,q[2]};
     }
 
-    public void frameSelectedObjects(){frameObjects(false);}
-    public void frameAllObjects(){frameObjects(true);}
+    public void frameSelectedObjects(){cameraViewActive=false;frameObjects(false);}
+    public void frameAllObjects(){cameraViewActive=false;frameObjects(true);}
+
+    public boolean isCameraViewActive(){return cameraViewActive;}
+    public void toggleActiveCameraView() {
+        if(cameraViewActive) {
+            yaw=savedViewYaw;pitch=savedViewPitch;zoom=savedViewZoom;
+            viewTargetX=savedTargetX;viewTargetY=savedTargetY;viewTargetZ=savedTargetZ;
+            cameraViewActive=false;invalidate();return;
+        }
+        Meshy3DObjectScene.Object3D camera=objectScene.getActiveCamera();
+        if(camera==null)throw new IllegalStateException("Create or set an active Camera object first");
+        float[] position=objectScene.transformPoint(camera.id,0,0,0);
+        float[] forwardPoint=objectScene.transformPoint(camera.id,0,0,-1);
+        float fx=forwardPoint[0]-position[0],fy=forwardPoint[1]-position[1],fz=forwardPoint[2]-position[2];
+        float length=(float)Math.sqrt(fx*fx+fy*fy+fz*fz);
+        if(length<1e-6f)throw new IllegalStateException("Camera orientation is invalid");
+        fx/=length;fy/=length;fz/=length;
+        savedViewYaw=yaw;savedViewPitch=pitch;savedViewZoom=zoom;
+        savedTargetX=viewTargetX;savedTargetY=viewTargetY;savedTargetZ=viewTargetZ;
+        pitch=(float)Math.asin(Math.max(-1f,Math.min(1f,-fy)));
+        yaw=(float)Math.atan2(-fx,-fz);
+        viewTargetX=position[0]+fx*5.2f;
+        viewTargetY=position[1]+fy*5.2f;
+        viewTargetZ=position[2]+fz*5.2f;
+        zoom=Math.max(.35f,Math.min(3.4f,camera.cameraLens/50f));
+        cameraViewActive=true;invalidate();
+    }
     private void frameObjects(boolean all) {
         java.util.ArrayList<Meshy3DObjectScene.Object3D> targets=new java.util.ArrayList<>();
         if(all) {
@@ -1511,6 +1539,7 @@ public final class Meshy3DViewport extends View {
             case MotionEvent.ACTION_DOWN:
                 downX=lastX=event.getX(); downY=lastY=event.getY();
                 moved=false; lastPinchDistance=0;
+                if(cameraViewActive&&(Math.abs(event.getX()-lastX)>2||Math.abs(event.getY()-lastY)>2))cameraViewActive=false;
                 if(!sculpting&&!meshEditMode&&objectSelectionEnabled&&objectBoxSelectEnabled){
                     objectBoxSelecting=true;objectBoxEndX=downX;objectBoxEndY=downY;invalidate();return true;
                 }
