@@ -956,6 +956,10 @@ public final class Meshy3DViewport extends View {
     public void pinSelectedUvs(boolean pin){document.pinSelectedUvs(pin);invalidate();}
     public void packUvIslands(){document.packUvIslands();invalidate();}
     public void packUvIslands(float margin){document.packUvIslands(margin);invalidate();}
+    public void snapSelectedUvToPixels(int width,int height){document.snapSelectedUvToPixels(width,height);invalidate();}
+    public boolean snapSelectedUvToNearestVertex(float maxDistance){
+        boolean snapped=document.snapSelectedUvToNearestVertex(maxDistance);invalidate();return snapped;
+    }
     public void removeUvMap(){document.clearUvMap();invalidate();}
     public boolean hasUvMap(){return document.hasUvMap();}
     public boolean selectPinnedUvIsland(){boolean found=document.selectPinnedUvIsland();invalidate();return found;}
