@@ -622,6 +622,16 @@ public final class Meshy3DObjectScene {
         revision++;
     }
 
+    public int getObjectHierarchyDepth(String objectId) {
+        Object3D object=requireObject(objectId);
+        int depth=0,guard=0;String parent=object.parentId;
+        while(parent!=null&&guard++<objects.size()){
+            Object3D ancestor=objects.get(parent);if(ancestor==null)break;
+            depth++;parent=ancestor.parentId;
+        }
+        return depth;
+    }
+
     public float[] worldLocation(String objectId) {
         double[] m=worldMatrix(objectId);
         return new float[]{(float)m[3],(float)m[7],(float)m[11]};
