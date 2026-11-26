@@ -97,7 +97,7 @@ public final class Meshy3DViewport extends View {
     public void slideSelected(float factor,boolean edgeMode){document.slideSelected(factor,edgeMode);syncViewportFromCore();}
     public void decimatePlanar(float angle,int targetFaces){document.decimatePlanar(angle,targetFaces);syncViewportFromCore();}
     public void unSubdividePlanar(){document.decimatePlanar(.5f,4);syncViewportFromCore();}
-    public void startPolyBuild(){polyBuildPoints.clear();polyBuildMode=true;knifeMode=false;meshEditMode=true;invalidate();}
+    public void startPolyBuild(){polyBuildPoints.clear();polyBuildMode=true;meshEditMode=true;invalidate();}
     private float[] worldPointFromScreen(float x,float y){
         float cx=getWidth()*.5f,cy=getHeight()*.49f,unit=Math.max(1,Math.min(getWidth(),getHeight())*.235f*zoom);
         return cameraVectorToWorld((x-cx)/unit,(cy-y)/unit,0);
