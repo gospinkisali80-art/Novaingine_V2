@@ -975,6 +975,21 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 }).setNegativeButton("Cancel",null).show();
     }
 
+    private void showObjectPropertiesDialog() {
+        Meshy3DObjectScene.Object3D o=meshyViewport.getObjectScene().getActiveObject();if(o==null)return;
+        String parentName="None";
+        if(o.parentId!=null){Meshy3DObjectScene.Object3D parent=meshyViewport.getObjectScene().getObject(o.parentId);if(parent!=null)parentName=parent.name;}
+        String message="Name: "+o.name+"\nType: "+o.type+"\nParent: "+parentName
+                +"\nLocation: "+fmt(o.transform.x)+", "+fmt(o.transform.y)+", "+fmt(o.transform.z)
+                +"\nRotation: "+fmt(o.transform.rotationX)+", "+fmt(o.transform.rotationY)+", "+fmt(o.transform.rotationZ)
+                +"\nScale: "+fmt(o.transform.scaleX)+", "+fmt(o.transform.scaleY)+", "+fmt(o.transform.scaleZ)
+                +"\nVisible: "+o.visible+"\nSelectable: "+o.selectable
+                +"\nVertices: "+o.mesh.getVertexCount()+"\nEdges: "+o.mesh.getEdgeCount()+"\nFaces: "+o.mesh.getFaceCount();
+        new android.app.AlertDialog.Builder(activity).setTitle("Object Properties").setMessage(message)
+                .setPositiveButton("Close",null).show();
+    }
+    private String fmt(float value){return String.format(java.util.Locale.US,"%.3f",value);}
+
     private void showObjectRenameDialog() {
         Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();if(active==null)return;
         EditText input=new EditText(activity);input.setSingleLine(true);input.setText(active.name);
@@ -1211,7 +1226,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         "Remesh", "Weld", "Triangulate", "Wireframe"
                 };
                 rightTitle = "Tool Properties";
-                rightItems = new String[]{"Active Tool", "Selection Mode", "Operation Amount", "Offset",
+                rightItems = new String[]{"Object Properties", "Active Tool", "Selection Mode", "Operation Amount", "Offset",
                         "Segments", "Profile", "Loop Cut Count", "Merge Threshold", "Mesh Statistics",
                         "Vertices", "Edges", "Faces", "Normals", "Transform Orientation", "Pivot Point"};
                 bottomTitle = "Mesh Information";
