@@ -991,14 +991,29 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 break;
             case 4:
                 if ("New Texture".equals(item)) {
+                    checkpointMeshEdit();
                     meshyViewport.createPaintTexture(1024,1024,0xFFFFFFFF);
-                    showUvEditor(true);
+                    showUvEditor(true,"Draw");
                     status.setText("Texture Paint | Created 1024 × 1024 RGBA image");
                 } else if ("Brush Color".equals(item)) showPaintColorDialog();
-                else if ("Active Texture".equals(item) || "Draw".equals(item) || "Texture Canvas".equals(item)) {
+                else if ("Brush Radius".equals(item)) showAmountDialog("Texture Brush Radius",1f,256f,
+                        value->meshyViewport.setPaintBrush(meshyViewport.getDocumentCore().getBrushColor(),value,
+                                meshyViewport.getDocumentCore().getBrushOpacity()));
+                else if ("Strength".equals(item)) showAmountDialog("Texture Brush Strength",.01f,1f,
+                        value->meshyViewport.setPaintBrush(meshyViewport.getDocumentCore().getBrushColor(),
+                                meshyViewport.getDocumentCore().getBrushRadius(),value));
+                else if ("Active Texture".equals(item) || "Texture Canvas".equals(item)
+                        || "Canvas".equals(item)) {
                     if(meshyViewport.getDocumentCore().getTexturePixels()==null)
                         meshyViewport.createPaintTexture(1024,1024,0xFFFFFFFF);
-                    showUvEditor(true);
+                    showUvEditor(true,"Draw");
+                } else if (java.util.Arrays.asList("Draw","Soften","Smear","Clone","Fill","Mask",
+                        "Erase Alpha","Line","Polyline","Airbrush","Gradient","Sample Color","Set Clone").contains(item)) {
+                    if(meshyViewport.getDocumentCore().getTexturePixels()==null)
+                        meshyViewport.createPaintTexture(1024,1024,0xFFFFFFFF);
+                    showUvEditor(true,item);
+                } else if ("Save Image".equals(item) || "Image Save / Reload".equals(item)) {
+                    showTextureImageSaveDialog();
                 } else showWorkspaceActionInfo(item);
                 break;
             case 5:
@@ -1056,40 +1071,81 @@ public final class ManualSculptWorkspace extends FrameLayout {
     }
 
     private void showUvEditor(boolean paintMode) {
-        Meshy3DUvEditorView editor=new Meshy3DUvEditorView(activity,meshyViewport.getDocumentCore(),paintMode);
+        showUvEditor(paintMode,paintMode?"Draw":"");
+    }
+
+    private void showUvEditor(boolean paintMode,String initialTool) {
+        Meshy3DCore core=meshyViewport.getDocumentCore();
+        if(paintMode&&core.getTexturePixelsUnsafe()==null)
+            meshyViewport.createPaintTexture(1024,1024,0xFFFFFFFF);
+        Meshy3DUvEditorView editor=new Meshy3DUvEditorView(activity,core,paintMode,this::checkpointMeshEdit);
+        if(paintMode)editor.setPaintTool(initialTool);
         LinearLayout root=new LinearLayout(activity);root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(0xFF20252C);
         HorizontalScrollView tools=new HorizontalScrollView(activity);tools.setHorizontalScrollBarEnabled(false);
         LinearLayout buttons=new LinearLayout(activity);buttons.setOrientation(LinearLayout.HORIZONTAL);
-        String[] actions=paintMode?new String[]{"Orange","Blue","White","Smaller Brush","Larger Brush","Opacity +","Opacity -"}
-                :new String[]{"Move +","Move -","Rotate 15°","Rotate -15°","Scale Up","Scale Down"};
-        for(String action:actions){TextView b=dockItem(action,false);buttons.addView(b);
+        String[] actions=paintMode
+                ?new String[]{"Draw","Soften","Smear","Clone","Set Clone","Fill","Mask","Erase Alpha",
+                    "Line","Polyline","Airbrush","Gradient","Sample Color","Orange","Blue","White",
+                    "Brush -","Brush +","Opacity +","Opacity -"}
+                :new String[]{"Select Linked","Move +","Move -","Rotate +","Rotate -","Scale +","Scale -",
+                    "Pin","Unpin","Mark Seam","Clear Seam","Pack Islands","Unwrap","Export UV"};
+        for(String action:actions){
+            TextView b=dockItem(action,false);
+            buttons.addView(b);
             b.setOnClickListener(v->{
-                Meshy3DCore core=meshyViewport.getDocumentCore();
                 if(paintMode){
                     if(action.equals("Orange"))editor.setBrush(0xFFFF6B35,core.getBrushRadius(),core.getBrushOpacity());
                     else if(action.equals("Blue"))editor.setBrush(0xFF368BFF,core.getBrushRadius(),core.getBrushOpacity());
                     else if(action.equals("White"))editor.setBrush(0xFFFFFFFF,core.getBrushRadius(),core.getBrushOpacity());
-                    else if(action.equals("Smaller Brush"))editor.setBrush(core.getBrushColor(),Math.max(1,core.getBrushRadius()-4),core.getBrushOpacity());
-                    else if(action.equals("Larger Brush"))editor.setBrush(core.getBrushColor(),Math.min(128,core.getBrushRadius()+4),core.getBrushOpacity());
+                    else if(action.equals("Brush -"))editor.setBrush(core.getBrushColor(),Math.max(1,core.getBrushRadius()-4),core.getBrushOpacity());
+                    else if(action.equals("Brush +"))editor.setBrush(core.getBrushColor(),Math.min(256,core.getBrushRadius()+4),core.getBrushOpacity());
                     else if(action.equals("Opacity +"))editor.setBrush(core.getBrushColor(),core.getBrushRadius(),Math.min(1,core.getBrushOpacity()+.1f));
-                    else editor.setBrush(core.getBrushColor(),core.getBrushRadius(),Math.max(.05f,core.getBrushOpacity()-.1f));
+                    else if(action.equals("Opacity -"))editor.setBrush(core.getBrushColor(),core.getBrushRadius(),Math.max(.05f,core.getBrushOpacity()-.1f));
+                    else {
+                        editor.setPaintTool(action);
+                        status.setText("Texture Paint | "+action+" tool selected");
+                    }
                 }else{
-                    if(action.equals("Move +"))core.transformSelectedUv(.05f,0,1,0);
-                    else if(action.equals("Move -"))core.transformSelectedUv(-.05f,0,1,0);
-                    else if(action.equals("Rotate 15°"))core.transformSelectedUv(0,0,1,(float)Math.toRadians(15));
-                    else if(action.equals("Rotate -15°"))core.transformSelectedUv(0,0,1,(float)Math.toRadians(-15));
-                    else if(action.equals("Scale Up"))core.transformSelectedUv(0,0,1.1f,0);
-                    else core.transformSelectedUv(0,0,.9f,0);
+                    switch(action){
+                        case "Select Linked": meshyViewport.selectLinkedUvIsland();break;
+                        case "Move +": checkpointMeshEdit();core.transformSelectedUv(.05f,0,1,0);break;
+                        case "Move -": checkpointMeshEdit();core.transformSelectedUv(-.05f,0,1,0);break;
+                        case "Rotate +": checkpointMeshEdit();core.transformSelectedUv(0,0,1,(float)Math.toRadians(15));break;
+                        case "Rotate -": checkpointMeshEdit();core.transformSelectedUv(0,0,1,(float)Math.toRadians(-15));break;
+                        case "Scale +": checkpointMeshEdit();core.transformSelectedUv(0,0,1.1f,0);break;
+                        case "Scale -": checkpointMeshEdit();core.transformSelectedUv(0,0,.9f,0);break;
+                        case "Pin": checkpointMeshEdit();meshyViewport.pinSelectedUvs(true);break;
+                        case "Unpin": checkpointMeshEdit();meshyViewport.pinSelectedUvs(false);break;
+                        case "Mark Seam": checkpointMeshEdit();meshyViewport.markSeams(false);break;
+                        case "Clear Seam": checkpointMeshEdit();meshyViewport.markSeams(true);break;
+                        case "Pack Islands": checkpointMeshEdit();meshyViewport.packUvIslands();break;
+                        case "Unwrap": checkpointMeshEdit();meshyViewport.unwrapMesh();break;
+                        case "Export UV":
+                            android.content.ClipboardManager clipboard=(android.content.ClipboardManager)
+                                    activity.getSystemService(Activity.CLIPBOARD_SERVICE);
+                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Meshy3D UV Layout",meshyViewport.exportUvCsv()));
+                            Toast.makeText(activity,"UV CSV copied",Toast.LENGTH_SHORT).show();break;
+                    }
                     editor.invalidate();
                 }
             });
         }
-        tools.addView(buttons);root.addView(tools,new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT,dp(44)));
-        root.addView(editor,new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT,dp(420)));
-        new android.app.AlertDialog.Builder(activity).setTitle(paintMode?"Texture Paint Image":"UV Editor")
-                .setView(root).setPositiveButton("Done",(d,w)->status.setText(paintMode
-                        ?"Texture Paint | Pixel image updated":"UV Editing | UV island changes applied"))
-                .setNegativeButton("Close",null).show();
+        tools.addView(buttons);
+        root.addView(tools,new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT,dp(42)));
+        root.addView(editor,new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT,0,1f));
+        android.app.AlertDialog dialog=new android.app.AlertDialog.Builder(activity)
+                .setTitle(paintMode?"Texture Paint Image":"UV Editing")
+                .setView(root)
+                .setPositiveButton("Done",(d,w)->status.setText(paintMode
+                        ?"Texture Paint | Texture changes applied":"UV Editing | UV changes applied"))
+                .setNegativeButton("Close",null).create();
+        dialog.show();
+        if(dialog.getWindow()!=null){
+            dialog.getWindow().setBackgroundDrawableResource(android.R.color.black);
+            dialog.getWindow().setLayout(android.view.WindowManager.LayoutParams.MATCH_PARENT,
+                    android.view.WindowManager.LayoutParams.MATCH_PARENT);
+        }
     }
 
     private void showAnimationTimeline() {
