@@ -392,6 +392,14 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         meshyViewport.setObjectTransformTool(mode);
                         status.setText("Meshy3D | "+(mode==0?"Move":mode==1?"Rotate":"Scale")+" gizmo active");
                     }
+                    @Override public void manualScale() {
+                        Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
+                        if(active==null){Toast.makeText(activity,"Select an object first.",Toast.LENGTH_SHORT).show();return;}
+                        if(activeWorkspaceIndex==2)setActiveWorkspaceIndex(0);
+                        meshyViewport.setObjectSelectionEnabled(true);
+                        meshyViewport.setObjectTransformTool(-1);
+                        showObjectTransformDialog("Scale");
+                    }
                     @Override public void sculpt() { setActiveWorkspaceIndex(2); }
                     @Override public void measure() {
                         meshyViewport.setMeasureMode(true);
