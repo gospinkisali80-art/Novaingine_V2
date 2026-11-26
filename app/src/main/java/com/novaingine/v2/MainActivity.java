@@ -678,10 +678,13 @@ public final class MainActivity extends Activity
     private static final int REQUEST_IMPORT_MESHY_DOCUMENT = 7419;
     private static final int REQUEST_SAVE_MESHY_SYSTEM_INFO = 7420;
     private static final int REQUEST_IMPORT_MESHY_GLB = 7421;
+    private static final int REQUEST_EXPORT_MESHY_OBJ = 7422;
+    private static final int REQUEST_EXPORT_MESHY_STL = 7423;
 
     private android.graphics.Bitmap pendingMeshyImage;
     private String pendingMeshyExportJson;
     private String pendingMeshySystemInfo;
+    private String pendingMeshyGeometryExport;
     private boolean meshyStatusBarVisible = true;
 
     public void showMeshyApplicationMenu(View anchor) {
@@ -809,6 +812,8 @@ public final class MainActivity extends Activity
                 showSceneDataPreview();
                 break;
             case "Export":
+                showMeshyExportMenu();
+                break;
             case "Export All Collections":
                 exportMeshyDocumentToPicker();
                 break;
@@ -1703,6 +1708,8 @@ public final class MainActivity extends Activity
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if ((requestCode == REQUEST_EXPORT_MESHY_OBJ || requestCode == REQUEST_EXPORT_MESHY_STL)
+                && resultCode != RESULT_OK) pendingMeshyGeometryExport = null;
         if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
         Uri uri = data.getData();
         if (requestCode == REQUEST_SAVE_MESHY_SYSTEM_INFO) {
@@ -1781,6 +1788,25 @@ public final class MainActivity extends Activity
                             "Meshy3D import failed: " + error.getMessage(), android.widget.Toast.LENGTH_LONG).show());
                 }
             }, "Meshy-Import-Document").start();
+            return;
+        }
+        if (requestCode == REQUEST_EXPORT_MESHY_OBJ || requestCode == REQUEST_EXPORT_MESHY_STL) {
+            String content = pendingMeshyGeometryExport;
+            pendingMeshyGeometryExport = null;
+            if (content == null) return;
+            new Thread(() -> {
+                try (java.io.OutputStream output = getContentResolver().openOutputStream(uri)) {
+                    if (output == null) throw new IllegalStateException("Could not open the selected export destination.");
+                    output.write(content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    output.flush();
+                    runOnUiThread(() -> android.widget.Toast.makeText(this,
+                            requestCode == REQUEST_EXPORT_MESHY_OBJ ? "Wavefront OBJ exported." : "ASCII STL exported.",
+                            android.widget.Toast.LENGTH_LONG).show());
+                } catch (Exception error) {
+                    runOnUiThread(() -> android.widget.Toast.makeText(this,
+                            "Meshy3D geometry export failed: " + error.getMessage(), android.widget.Toast.LENGTH_LONG).show());
+                }
+            }, "Meshy3D-Geometry-Export").start();
             return;
         }
         if (requestCode == REQUEST_IMPORT_MESHY_GLB) {
@@ -2709,6 +2735,55 @@ public final class MainActivity extends Activity
                     meshyWindowFullscreen=true;applyMeshyWindowFullscreen();
                     android.widget.Toast.makeText(this,"Factory editor defaults restored; project data was preserved.",android.widget.Toast.LENGTH_LONG).show();
                 }).show();
+    }
+
+    private void showMeshyExportMenu() {
+        if (manualSculptWorkspace == null) {
+            android.widget.Toast.makeText(this, "Open Meshy3D before exporting mesh geometry.",
+                    android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        new AlertDialog.Builder(this).setTitle("Export Meshy3D")
+                .setItems(new String[]{"Meshy3D document (.meshy3d)", "Wavefront OBJ (.obj)", "STL mesh (.stl)"},
+                        (dialog, which) -> {
+                            if (which == 0) exportMeshyDocumentToPicker();
+                            else startMeshyGeometryExport(which == 2);
+                        }).setNegativeButton("Cancel", null).show();
+    }
+
+    private void startMeshyGeometryExport(boolean stl) {
+        if (manualSculptWorkspace == null) {
+            android.widget.Toast.makeText(this, "Open Meshy3D before exporting geometry.",
+                    android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        final java.util.List<Meshy3DGeometryExporter.ObjectSnapshot> snapshot;
+        try {
+            snapshot = manualSculptWorkspace.snapshotGeometryForExport();
+        } catch (Exception error) {
+            android.widget.Toast.makeText(this, "Could not prepare geometry export: " + error.getMessage(),
+                    android.widget.Toast.LENGTH_LONG).show();
+            return;
+        }
+        android.widget.Toast.makeText(this, stl ? "Preparing STL export…" : "Preparing OBJ export…",
+                android.widget.Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            try {
+                String content = stl ? Meshy3DGeometryExporter.exportAsciiStl(snapshot)
+                        : Meshy3DGeometryExporter.exportObj(snapshot);
+                runOnUiThread(() -> {
+                    pendingMeshyGeometryExport = content;
+                    Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);
+                    intent.setType("text/plain");
+                    intent.putExtra(Intent.EXTRA_TITLE, stl ? "Meshy3D_Export.stl" : "Meshy3D_Export.obj");
+                    startActivityForResult(intent, stl ? REQUEST_EXPORT_MESHY_STL : REQUEST_EXPORT_MESHY_OBJ);
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> android.widget.Toast.makeText(this,
+                        "Meshy3D geometry export failed: " + error.getMessage(), android.widget.Toast.LENGTH_LONG).show());
+            }
+        }, "Meshy3D-Prepare-Export").start();
     }
 
     private void exportMeshyDocumentToPicker() {
