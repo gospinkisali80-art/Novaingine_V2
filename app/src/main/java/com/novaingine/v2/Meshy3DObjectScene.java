@@ -818,6 +818,11 @@ public final class Meshy3DObjectScene {
         double sx=Math.sqrt(m[0]*m[0]+m[4]*m[4]+m[8]*m[8]);
         double sy=Math.sqrt(m[1]*m[1]+m[5]*m[5]+m[9]*m[9]);
         double sz=Math.sqrt(m[2]*m[2]+m[6]*m[6]+m[10]*m[10]);
+        double determinant=m[0]*(m[5]*m[10]-m[6]*m[9])
+                -m[1]*(m[4]*m[10]-m[6]*m[8])
+                +m[2]*(m[4]*m[9]-m[5]*m[8]);
+        // Store reflection in X scale so the extracted rotation remains right-handed.
+        if(determinant<0)sx=-sx;
         if(sx<1e-8||sy<1e-8||sz<1e-8)throw new IllegalArgumentException("Transform cannot be decomposed");
         double r00=m[0]/sx,r10=m[4]/sx,r20=m[8]/sx;
         double r21=m[9]/sy,r22=m[10]/sz,r01=m[1]/sy,r11=m[5]/sy;
