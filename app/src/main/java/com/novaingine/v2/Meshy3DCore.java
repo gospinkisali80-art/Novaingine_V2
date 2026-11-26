@@ -781,6 +781,21 @@ public final class Meshy3DCore {
         if(loop.size()!=adjacency.size())return;int[] ids=new int[loop.size()];for(int i=0;i<ids.length;i++)ids[i]=loop.get(i);
         faces.add(new Face(ids));clearSelection();rebuildEdges();revision++;
     }
+    public void slideSelected(float factor,boolean edgeMode){
+        factor=Math.max(0,Math.min(1,factor));BitSet targets=(BitSet)selectedVertices.clone();if(targets.isEmpty())return;
+        float[][] normals=calculateNormals();float[][] next=copyVertices();
+        for(int id=targets.nextSetBit(0);id>=0;id=targets.nextSetBit(id+1)){
+            ArrayList<Integer> linked=new ArrayList<>();for(Edge e:edges)if(e.a==id||e.b==id)linked.add(e.a==id?e.b:e.a);
+            if(linked.size()<2)continue;float[] avg={0,0,0};for(int other:linked)for(int k=0;k<3;k++)avg[k]+=vertices.get(other)[k]/linked.size();
+            float dx=avg[0]-vertices.get(id)[0],dy=avg[1]-vertices.get(id)[1],dz=avg[2]-vertices.get(id)[2];
+            float dot=dx*normals[id][0]+dy*normals[id][1]+dz*normals[id][2];
+            dx-=normals[id][0]*dot;dy-=normals[id][1]*dot;dz-=normals[id][2]*dot;
+            float factorScale=edgeMode?.12f:.18f;
+            next[id][0]+=dx*factor*factorScale;next[id][1]+=dy*factor*factorScale;next[id][2]+=dz*factor*factorScale;
+        }
+        for(int id=targets.nextSetBit(0);id>=0;id=targets.nextSetBit(id+1))System.arraycopy(next[id],0,vertices.get(id),0,3);
+        revision++;
+    }
     public void loopCutSelected(float factor){
         if(selectedEdges.isEmpty())return;
         HashMap<Long,Edge> edgeMap=new HashMap<>();for(Edge e:edges)edgeMap.put(edgeKey(e.a,e.b),e);
