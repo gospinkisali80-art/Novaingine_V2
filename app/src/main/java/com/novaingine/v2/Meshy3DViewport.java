@@ -315,21 +315,15 @@ public final class Meshy3DViewport extends View {
             }
         } else {
             float[] median=getObjectTransformPivot();
-            double[] mirror=identityMatrix4();
-            mirror[axis*4+axis]=-1.0;
-            mirror[axis*4+3]=2.0*median[axis];
-            java.util.ArrayList<double[]> initialMatrices=new java.util.ArrayList<>();
-            for(Meshy3DObjectScene.Object3D object:targets)
-                initialMatrices.add(objectScene.getWorldMatrixCopy(object.id));
-            targets.sort((a,b)->Integer.compare(objectScene.getObjectHierarchyDepth(a.id),objectScene.getObjectHierarchyDepth(b.id)));
             java.util.HashMap<String,double[]> matrices=new java.util.HashMap<>();
-            for(int i=0;i<targets.size();i++) {
-                Meshy3DObjectScene.Object3D object=targets.get(i);
-                double[] initial=objectScene.getWorldMatrixCopy(object.id);
-                // The initial matrices are captured before the first hierarchy transform.
-                matrices.put(object.id,initial);
-            }
+            for(Meshy3DObjectScene.Object3D object:targets)
+                matrices.put(object.id,objectScene.getWorldMatrixCopy(object.id));
+            targets.sort((a,b)->Integer.compare(objectScene.getObjectHierarchyDepth(a.id),objectScene.getObjectHierarchyDepth(b.id)));
             for(Meshy3DObjectScene.Object3D object:targets) {
+                float[] pivot=objectPivotMode==3?objectScene.worldLocation(object.id):median;
+                double[] mirror=identityMatrix4();
+                mirror[axis*4+axis]=-1.0;
+                mirror[axis*4+3]=2.0*pivot[axis];
                 double[] original=matrices.get(object.id);
                 objectScene.setWorldMatrix(object.id,multiplyMatrix4(mirror,original));
             }
