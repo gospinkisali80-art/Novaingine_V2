@@ -71,6 +71,7 @@ public final class Meshy3DCore {
     private final ArrayList<UvIsland> islands = new ArrayList<>();
     private int[] texturePixels;
     private int textureWidth, textureHeight;
+    private float[] sculptMask=new float[0];
     private int textureColor=0xFFFFFFFF;
     private float brushRadius=16f, brushOpacity=1f;
     private final HashMap<String,AnimationChannel> animation = new HashMap<>();
@@ -97,13 +98,15 @@ public final class Meshy3DCore {
     public boolean isVertexSelected(int i){return selectedVertices.get(i);}
     public boolean isEdgeSelected(int i){return selectedEdges.get(i);}
     public boolean isFaceSelected(int i){return selectedFaces.get(i);}
+    public float[] getSculptMask(){return sculptMask.clone();}
+    public void setSculptMask(float[] mask){if(mask==null)return;if(mask.length!=vertices.size())return;sculptMask=mask.clone();}
     public int getSelectedCount(){
         return selectMode==SelectMode.VERTEX?selectedVertices.cardinality():
                selectMode==SelectMode.EDGE?selectedEdges.cardinality():selectedFaces.cardinality();
     }
     private static long edgeKey(int a,int b){int lo=Math.min(a,b),hi=Math.max(a,b);return (((long)lo)<<32)|(hi&0xffffffffL);}
     private void createDenseCube(int subdivisions){
-        vertices.clear();faces.clear();edges.clear();
+        vertices.clear();faces.clear();edges.clear();sculptMask=new float[0];
         HashMap<String,Integer> welded=new HashMap<>();
         int n=subdivisions+1;
         int[][] side={{0,1,2,1},{0,2,1,-1},{1,2,0,1},{1,0,2,-1},{2,0,1,1},{2,1,0,-1}};
@@ -130,9 +133,10 @@ public final class Meshy3DCore {
             for(int v=0;v<subdivisions;v++)for(int u=0;u<subdivisions;u++)
                 faces.add(new Face(ids[v][u],ids[v][u+1],ids[v+1][u+1],ids[v+1][u]));
         }
-        rebuildEdges();revision++;
+        sculptMask=new float[vertices.size()];rebuildEdges();revision++;
     }
     private void rebuildEdges(){
+        if(sculptMask.length!=vertices.size())sculptMask=Arrays.copyOf(sculptMask,vertices.size());
         edges.clear();HashMap<Long,Integer> map=new HashMap<>();
         for(int fi=0;fi<faces.size();fi++){
             int[] f=faces.get(fi).vertices;
@@ -722,6 +726,7 @@ public final class Meshy3DCore {
             for(long s:seams)ss.put(Long.toString(s));for(long pin:pins)ps.put(Long.toString(pin));
             o.put("vertices",vs);o.put("faces",fs);o.put("seams",ss);o.put("pins",ps);o.put("selectMode",selectMode.name());
             o.put("textureColor",textureColor);o.put("brushRadius",brushRadius);o.put("brushOpacity",brushOpacity);
+            JSONArray masks=new JSONArray();for(float value:sculptMask)masks.put(value);o.put("sculptMask",masks);
             o.put("baseColor",baseColor);o.put("metallic",metallic);o.put("roughness",roughness);
             if(faceUvs!=null){JSONArray uvFaces=new JSONArray();for(float[][] face:faceUvs){JSONArray corners=new JSONArray();for(float[] uv:face){JSONArray pair=new JSONArray();pair.put(uv[0]);pair.put(uv[1]);corners.put(pair);}uvFaces.put(corners);}o.put("faceUvs",uvFaces);}
             o.put("geometryNodes",writeNodes(geometryNodes));o.put("shaderNodes",writeNodes(shaderNodes));o.put("compositorNodes",writeNodes(compositorNodes));
@@ -756,6 +761,7 @@ public final class Meshy3DCore {
             JSONArray sm=o.optJSONArray("seams");if(sm!=null)for(int i=0;i<sm.length();i++)seams.add(Long.parseLong(sm.getString(i)));
             pins.clear();JSONArray pn=o.optJSONArray("pins");if(pn!=null)for(int i=0;i<pn.length();i++)pins.add(Long.parseLong(pn.getString(i)));
             textureColor=o.optInt("textureColor",textureColor);brushRadius=(float)o.optDouble("brushRadius",brushRadius);brushOpacity=(float)o.optDouble("brushOpacity",brushOpacity);
+            JSONArray masks=o.optJSONArray("sculptMask");sculptMask=new float[nv.size()];if(masks!=null&&masks.length()==sculptMask.length)for(int i=0;i<masks.length();i++)sculptMask[i]=Math.max(0,Math.min(1,(float)masks.optDouble(i,0)));
             selectMode=SelectMode.valueOf(o.optString("selectMode","FACE"));
             baseColor=o.optInt("baseColor",baseColor);metallic=(float)o.optDouble("metallic",metallic);roughness=(float)o.optDouble("roughness",roughness);
             clearSelection();rebuildEdges();
