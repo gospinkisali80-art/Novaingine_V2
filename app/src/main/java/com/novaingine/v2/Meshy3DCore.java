@@ -279,10 +279,12 @@ public final class Meshy3DCore {
         selectedUvIsland=index>=0&&index<islands.size()?index:-1;selectedFaces.clear();selectedVertices.clear();
         if(selectedUvIsland>=0)for(int fi:islands.get(selectedUvIsland).faces){selectedFaces.set(fi);for(int id:faces.get(fi).vertices)selectedVertices.set(id);}
     }
-    public void packUvIslands(){
+    public void packUvIslands(){packUvIslands(.025f);}
+    public void packUvIslands(float requestedMargin){
         if(faceUvs==null||islands.isEmpty())return;
         int cols=Math.max(1,(int)Math.ceil(Math.sqrt(islands.size()))),rows=(int)Math.ceil(islands.size()/(float)cols);
-        float tw=1f/cols,th=1f/rows,margin=.025f;
+        float tw=1f/cols,th=1f/rows;
+        float margin=Math.max(0f,Math.min(Math.min(tw,th)*.45f,requestedMargin));
         for(int i=0;i<islands.size();i++){
             UvIsland island=islands.get(i);boolean hasPinned=false;
             for(int fi:island.faces)for(int vertex:faces.get(fi).vertices)if(pins.contains((long)vertex))hasPinned=true;
@@ -296,6 +298,11 @@ public final class Meshy3DCore {
             for(int fi:island.faces)for(float[] uv:faceUvs[fi]){uv[0]=ox+(uv[0]-minU)*scale;uv[1]=oy+(uv[1]-minV)*scale;}
             island.minU=ox;island.minV=oy;island.maxU=ox+usedW;island.maxV=oy+usedH;
         }revision++;
+    }
+    public boolean hasUvMap(){return faceUvs!=null;}
+    public void clearUvMap(){
+        faceUvs=null;islands.clear();selectedUvIsland=-1;
+        selectedFaces.clear();selectedVertices.clear();revision++;
     }
     public int getSelectedUvIsland(){return selectedUvIsland;}
     public void transformSelectedUv(float du,float dv,float scale,float angle){
