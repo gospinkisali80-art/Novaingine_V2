@@ -324,6 +324,54 @@ public final class Meshy3DObjectScene {
         return true;
     }
 
+    /** Bake local translation into mesh coordinates without changing the visible object. */
+    public void applyLocation(String objectId) {
+        Object3D o=requireObject(objectId);float x=o.transform.x,y=o.transform.y,z=o.transform.z;
+        float[][] vertices=o.mesh.copyVertices();
+        for(float[] p:vertices){p[0]+=x;p[1]+=y;p[2]+=z;}
+        o.mesh.replaceGeometry(vertices,o.mesh.copyFaces());
+        o.transform.x=o.transform.y=o.transform.z=0f;revision++;
+    }
+
+    /** Move the origin to the local mesh bounds center while preserving world geometry. */
+    public void setOriginToGeometry(String objectId) {
+        Object3D o=requireObject(objectId);float[][] vertices=o.mesh.copyVertices();
+        if(vertices.length==0)return;
+        float minX=Float.MAX_VALUE,minY=Float.MAX_VALUE,minZ=Float.MAX_VALUE;
+        float maxX=-Float.MAX_VALUE,maxY=-Float.MAX_VALUE,maxZ=-Float.MAX_VALUE;
+        for(float[] p:vertices){minX=Math.min(minX,p[0]);minY=Math.min(minY,p[1]);minZ=Math.min(minZ,p[2]);
+            maxX=Math.max(maxX,p[0]);maxY=Math.max(maxY,p[1]);maxZ=Math.max(maxZ,p[2]);}
+        float cx=(minX+maxX)*.5f,cy=(minY+maxY)*.5f,cz=(minZ+maxZ)*.5f;
+        float[] offset=transformVector(o.transform,cx,cy,cz);
+        for(float[] p:vertices){p[0]-=cx;p[1]-=cy;p[2]-=cz;}
+        o.mesh.replaceGeometry(vertices,o.mesh.copyFaces());
+        o.transform.x+=offset[0];o.transform.y+=offset[1];o.transform.z+=offset[2];revision++;
+    }
+
+    /** Place the origin at the world-space 3D cursor (the world origin in this editor). */
+    public void setOriginToCursor(String objectId) {
+        Object3D o=requireObject(objectId);double[] inverse=invertAffine(worldMatrix(objectId));
+        float cx=(float)inverse[3],cy=(float)inverse[7],cz=(float)inverse[11];
+        float[][] vertices=o.mesh.copyVertices();
+        float[] offset=transformVector(o.transform,cx,cy,cz);
+        for(float[] p:vertices){p[0]-=cx;p[1]-=cy;p[2]-=cz;}
+        o.mesh.replaceGeometry(vertices,o.mesh.copyFaces());
+        o.transform.x+=offset[0];o.transform.y+=offset[1];o.transform.z+=offset[2];revision++;
+    }
+
+    public void clearLocation(String objectId) {Object3D o=requireObject(objectId);o.transform.x=o.transform.y=o.transform.z=0f;revision++;}
+    public void clearRotation(String objectId) {Object3D o=requireObject(objectId);o.transform.rotationX=o.transform.rotationY=o.transform.rotationZ=0f;revision++;}
+    public void clearScale(String objectId) {Object3D o=requireObject(objectId);o.transform.scaleX=o.transform.scaleY=o.transform.scaleZ=1f;revision++;}
+
+    private static float[] transformVector(Transform t,float x,float y,float z) {
+        x*=t.scaleX;y*=t.scaleY;z*=t.scaleZ;
+        double rx=Math.toRadians(t.rotationX),ry=Math.toRadians(t.rotationY),rz=Math.toRadians(t.rotationZ);
+        float y1=(float)(y*Math.cos(rx)-z*Math.sin(rx)),z1=(float)(y*Math.sin(rx)+z*Math.cos(rx));
+        float x2=(float)(x*Math.cos(ry)+z1*Math.sin(ry)),z2=(float)(-x*Math.sin(ry)+z1*Math.cos(ry));
+        return new float[]{(float)(x2*Math.cos(rz)-y1*Math.sin(rz)),
+                (float)(x2*Math.sin(rz)+y1*Math.cos(rz)),z2};
+    }
+
     /** Applies local scale and Euler rotation to mesh vertices, then resets those channels. */
     public void applyRotationAndScale(String objectId) {
         Object3D o=requireObject(objectId);
