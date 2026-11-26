@@ -2657,6 +2657,73 @@ public final class ManualSculptWorkspace extends FrameLayout {
 
     public int getMeshUndoCount() { return meshUndoStack.size(); }
 
+    public String getActiveObjectName() {
+        if (meshyViewport == null) return null;
+        Meshy3DObjectScene.Object3D active = meshyViewport.getObjectScene().getActiveObject();
+        return active == null ? null : active.name;
+    }
+
+    public int getSelectedObjectCount() {
+        if (meshyViewport == null) return 0;
+        return meshyViewport.getObjectScene().getSelectedObjects().size();
+    }
+
+    public boolean renameActiveMeshyObject(String name) {
+        if (meshyViewport == null || meshyViewport.getObjectScene().getActiveObject() == null) return false;
+        if (name == null || name.trim().isEmpty()) return false;
+        checkpointMeshEdit();
+        meshyViewport.renameActiveObject(name.trim());
+        refreshModelingOutliner();
+        status.setText("Meshy3D | Active object renamed");
+        return true;
+    }
+
+    public int renameSelectedMeshyObjects(String prefix, int firstNumber) {
+        if (meshyViewport == null) return 0;
+        String clean = prefix == null ? "" : prefix.trim();
+        if (clean.isEmpty()) clean = "Object";
+        java.util.ArrayList<Meshy3DObjectScene.Object3D> selected =
+                new java.util.ArrayList<>(meshyViewport.getObjectScene().getSelectedObjects());
+        if (selected.isEmpty()) return 0;
+        checkpointMeshEdit();
+        int number = firstNumber;
+        for (Meshy3DObjectScene.Object3D object : selected) {
+            meshyViewport.getObjectScene().rename(object.id,
+                    clean + String.format(java.util.Locale.US, "_%03d", number++));
+        }
+        meshyViewport.invalidate();
+        refreshModelingOutliner();
+        status.setText("Meshy3D | Renamed " + selected.size() + " selected objects");
+        return selected.size();
+    }
+
+    public boolean executeEditMenuMeshOperation(int operation, float amount) {
+        if (meshyViewport == null || !"Edit Mode".equals(activeEditorMode)
+                || !meshyViewport.isMeshEditMode()) return false;
+        if (meshyViewport.getSelectedElementCount() <= 0) return false;
+        checkpointMeshEdit();
+        try {
+            switch (operation) {
+                case 0: meshyViewport.extrudeSelected(amount); break;
+                case 1: meshyViewport.insetSelected(amount); break;
+                case 2: meshyViewport.bevelSelected(amount); break;
+                case 3: meshyViewport.loopCutSelected(amount); break;
+                case 4: meshyViewport.subdivideSelected(); break;
+                case 5: meshyViewport.mergeSelected(Math.max(0.0001f, amount)); break;
+                default:
+                    undoMeshEdit();
+                    return false;
+            }
+            status.setText("Meshy3D | " + new String[]{
+                    "Extrude", "Inset", "Bevel", "Loop Cut", "Subdivide", "Merge by Distance"
+            }[operation] + " completed");
+            return true;
+        } catch (RuntimeException error) {
+            undoMeshEdit();
+            throw error;
+        }
+    }
+
     /** Return the live document state owned by this Meshy3D workspace. */
     public org.json.JSONObject exportMeshyDocumentState() {
         org.json.JSONObject document = new org.json.JSONObject();
