@@ -580,8 +580,11 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 else if ("Object Statistics".equals(item)) {
                     Meshy3DObjectScene scene=meshyViewport.getObjectScene();
                     status.setText("Scene | "+scene.getObjectCount()+" objects | "+scene.getCollectionCount()+" collections");
+                } else if ("Select Box".equals(item)) {
+                    meshyViewport.setObjectBoxSelectEnabled(true);status.setText("Modeling | Box Select active — drag a rectangle around objects");
                 } else if ("Select".equals(item)) {
-                    meshyViewport.setObjectTransformTool(-1);status.setText("Modeling | Selection tool active");
+                    meshyViewport.setObjectBoxSelectEnabled(false);
+                    meshyViewport.setObjectTransformTool(-1);status.setText("Modeling | Click Select active");
                 } else if (("Move".equals(item)||"Rotate".equals(item)||"Scale".equals(item))
                         && !"Edit Mode".equals(activeEditorMode)) {
                     meshyViewport.setObjectTransformTool("Move".equals(item)?0:"Rotate".equals(item)?1:2);
@@ -1625,13 +1628,13 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         "End Frame: 250", "Keyframes"};
                 break;
             case 1:
-                tools = new String[]{"Select", "Move", "Rotate", "Scale", "Add Cube", "Duplicate",
+                tools = new String[]{"Select", "Select Box", "Move", "Rotate", "Scale", "Add Cube", "Duplicate",
                         "Duplicate Linked", "Delete Object", "Rename Object", "Apply Rotation & Scale",
                         "Vertex", "Edge", "Face", "Extrude", "Inset", "Bevel", "Loop Cut", "Plane Cut",
                         "Bisect", "Bridge", "Fill", "Subdivide", "Merge", "Dissolve", "Separate"};
                 leftTitle = "Modeling Tools";
                 leftItems = new String[]{
-                        "OBJECT MODE", "Add Primitive", "Add Camera", "Add Light", "Add Empty", "Add Cube",
+                        "OBJECT MODE", "Select", "Select Box", "Add Primitive", "Add Camera", "Add Light", "Add Empty", "Add Cube",
                         "Duplicate", "Duplicate Linked", "Delete Object", "Delete Selected Objects", "Join Selected Meshes",
                         "Select All Objects", "Deselect Objects", "Invert Selection", "Select Object", "Select By Type",
                         "Select Hierarchy", "Select by Name", "Select Linked Data", "Rename Object", "Hide / Show Object",
