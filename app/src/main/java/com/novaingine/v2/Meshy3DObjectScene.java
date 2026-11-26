@@ -112,6 +112,25 @@ public final class Meshy3DObjectScene {
         if(!"CAMERA".equals(camera.type))throw new IllegalArgumentException("Active camera must be a Camera object");
         activeCameraId=objectId;revision++;
     }
+    public void setCameraSettings(String objectId,float lens,float clipStart,float clipEnd){
+        Object3D camera=requireObject(objectId);
+        if(!"CAMERA".equals(camera.type))throw new IllegalArgumentException("Select a Camera object");
+        if(!Float.isFinite(lens)||!Float.isFinite(clipStart)||!Float.isFinite(clipEnd)
+                ||lens<1f||lens>500f||clipStart<=0f||clipEnd<=clipStart)
+            throw new IllegalArgumentException("Camera lens or clipping range is invalid");
+        camera.cameraLens=lens;camera.cameraClipStart=clipStart;camera.cameraClipEnd=clipEnd;revision++;
+    }
+    public void setLightSettings(String objectId,String type,float power,float angle,int color){
+        Object3D light=requireObject(objectId);
+        if(!"LIGHT".equals(light.type))throw new IllegalArgumentException("Select a Light object");
+        String clean=type==null?"POINT":type.trim().toUpperCase(java.util.Locale.ROOT);
+        if(!"POINT".equals(clean)&&!"SUN".equals(clean)&&!"SPOT".equals(clean)&&!"AREA".equals(clean))
+            throw new IllegalArgumentException("Unsupported light type");
+        if(!Float.isFinite(power)||power<0f||power>10000000f
+                ||!Float.isFinite(angle)||angle<0f||angle>180f)
+            throw new IllegalArgumentException("Light power or angle is invalid");
+        light.lightType=clean;light.lightPower=power;light.lightAngle=angle;light.lightColor=color;revision++;
+    }
 
     public Object3D createMeshObject(String name,Meshy3DCore mesh) {
         if(mesh==null)throw new IllegalArgumentException("Mesh data is required");
@@ -503,7 +522,18 @@ public final class Meshy3DObjectScene {
         Object3D o=requireObject(objectId);if(o.mesh==null)throw new IllegalStateException("This object type has no editable mesh data");
         float x=o.transform.x,y=o.transform.y,z=o.transform.z;
         float[][] vertices=o.mesh.copyVertices();
-        for(float[] p:vertices){p[0]+=x;p[1]+=y;p[2]+=z;}
+        float sx=o.transform.scaleX,sy=o.transform.scaleY,sz=o.transform.scaleZ;
+        double rx=Math.toRadians(o.transform.rotationX),ry=Math.toRadians(o.transform.rotationY),rz=Math.toRadians(o.transform.rotationZ);
+        // Invert Rz * Ry * Rx * Scale so the object-local translation can be baked without changing world geometry.
+        for(float[] p:vertices){
+            float tx=(float)(x*Math.cos(ry)*Math.cos(rz)+y*Math.cos(ry)*Math.sin(rz)-z*Math.sin(ry));
+            float ty=(float)(-x*Math.sin(rz)+y*Math.cos(rz));
+            float tz=(float)(x*Math.sin(ry)*Math.cos(rz)+y*Math.sin(ry)*Math.sin(rz)+z*Math.cos(ry));
+            float ux=(float)(tx/sx);
+            float uy=(float)((ty*Math.cos(rx)+tz*Math.sin(rx))/sy);
+            float uz=(float)((-ty*Math.sin(rx)+tz*Math.cos(rx))/sz);
+            p[0]+=ux;p[1]+=uy;p[2]+=uz;
+        }
         o.mesh.replaceGeometry(vertices,o.mesh.copyFaces());
         o.transform.x=o.transform.y=o.transform.z=0f;revision++;
     }
@@ -761,17 +791,29 @@ public final class Meshy3DObjectScene {
             for(int[] face:sourceFaces){int[] mapped=face.clone();for(int i=0;i<mapped.length;i++)mapped[i]+=offset;mergedFaces.add(mapped);}
         }
         if(mergedVertices.isEmpty()||mergedFaces.isEmpty())throw new IllegalStateException("Selected meshes contain no joinable geometry");
-        // If the active object was parented to an object being removed, reparent it before deletion.
-        for(Object3D source:selected)if(source!=active&&source.id.equals(active.parentId))setParent(active.id,source.parentId);
+        java.util.HashSet<String> deletingIds=new java.util.HashSet<>();
+        for(Object3D source:selected)if(source!=active)deletingIds.add(source.id);
+        // Reparent active before deleting any selected ancestor, preserving its world matrix.
+        String ancestor=active.parentId;
+        int ancestorGuard=0;
+        while(ancestor!=null&&deletingIds.contains(ancestor)&&ancestorGuard++<objects.size()){
+            Object3D parent=objects.get(ancestor);
+            String next=parent==null?null:parent.parentId;
+            setParent(active.id,next);
+            ancestor=next;
+        }
         for(Object3D source:selected)if(source!=active){
             ArrayList<String> children=new ArrayList<>();
-            for(Object3D candidate:objects.values())if(source.id.equals(candidate.parentId)&&!candidate.selected)children.add(candidate.id);
+            for(Object3D candidate:objects.values())
+                if(source.id.equals(candidate.parentId)&&!candidate.selected)children.add(candidate.id);
             for(String child:children)setParent(child,active.id);
         }
         float[][] v=mergedVertices.toArray(new float[0][]);int[][] f=mergedFaces.toArray(new int[0][]);
         active.mesh.replaceGeometry(v,f);
-        for(Object3D source:selected)if(source!=active)objects.remove(source.id);
-        active.parentId=active.parentId!=null&&selected.stream().anyMatch(o->o.id.equals(active.parentId))?null:active.parentId;
+        for(Object3D source:selected)if(source!=active){
+            if(source.id.equals(activeCameraId))activeCameraId=null;
+            objects.remove(source.id);
+        }
         replaceSelection(java.util.Collections.singletonList(active));
         return active;
     }
@@ -782,10 +824,11 @@ public final class Meshy3DObjectScene {
         float[][] vertices=object.mesh.copyVertices();
         if(vertices.length==0)return new float[]{0f,0f,0f};
         float[] min={Float.MAX_VALUE,Float.MAX_VALUE,Float.MAX_VALUE},max={-Float.MAX_VALUE,-Float.MAX_VALUE,-Float.MAX_VALUE};
-        for(float[] p:vertices)for(int axis=0;axis<3;axis++){min[axis]=Math.min(min[axis],p[axis]);max[axis]=Math.max(max[axis],p[axis]);}
-        return new float[]{(max[0]-min[0])*Math.abs(object.transform.scaleX),
-                (max[1]-min[1])*Math.abs(object.transform.scaleY),
-                (max[2]-min[2])*Math.abs(object.transform.scaleZ)};
+        for(float[] p:vertices){
+            float[] world=transformPoint(objectId,p[0],p[1],p[2]);
+            for(int axis=0;axis<3;axis++){min[axis]=Math.min(min[axis],world[axis]);max[axis]=Math.max(max[axis],world[axis]);}
+        }
+        return new float[]{max[0]-min[0],max[1]-min[1],max[2]-min[2]};
     }
 
     public void setTransform(String objectId,Transform transform) {
