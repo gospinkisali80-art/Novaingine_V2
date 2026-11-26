@@ -250,6 +250,13 @@ public final class Meshy3DObjectScene {
         revision++;
     }
 
+    public void removeModifiersThrough(String objectId,int index){
+        Object3D object=requireObject(objectId);
+        if(index<0||index>=object.modifiers.size())
+            throw new IllegalArgumentException("Modifier index is outside the stack.");
+        object.modifiers.subList(0,index+1).clear();revision++;
+    }
+
     public void moveModifier(String objectId,String modifierId,int direction){
         Object3D object=requireObject(objectId);
         int index=-1;for(int i=0;i<object.modifiers.size();i++)
