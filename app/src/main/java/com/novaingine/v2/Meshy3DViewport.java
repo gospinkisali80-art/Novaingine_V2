@@ -1891,6 +1891,33 @@ public final class Meshy3DViewport extends View {
         return copied;
     }
 
+    /** Duplicate all keyed scene/mesh states reflected around the supplied frame. */
+    public int mirrorMeshKeyframesAround(int centerFrame) {
+        java.util.HashMap<Integer,float[][]> meshCopies=new java.util.HashMap<>();
+        java.util.HashMap<Integer,java.util.HashMap<String,Meshy3DObjectScene.Transform>> transformCopies=new java.util.HashMap<>();
+        for(Integer source:new java.util.ArrayList<>(meshKeyframes.keySet())){
+            int target=2*centerFrame-source;
+            if(target<1||target>250||target==source)continue;
+            float[][] data=meshKeyframes.get(source);
+            float[][] copy=new float[data.length][3];
+            for(int i=0;i<data.length;i++)System.arraycopy(data[i],0,copy[i],0,3);
+            meshCopies.put(target,copy);
+        }
+        for(java.util.Map.Entry<Integer,java.util.HashMap<String,Meshy3DObjectScene.Transform>> entry:
+                new java.util.ArrayList<>(sceneTransformKeyframes.entrySet())){
+            int target=2*centerFrame-entry.getKey();
+            if(target<1||target>250||target==entry.getKey())continue;
+            java.util.HashMap<String,Meshy3DObjectScene.Transform> copy=new java.util.HashMap<>();
+            for(java.util.Map.Entry<String,Meshy3DObjectScene.Transform> object:entry.getValue().entrySet())
+                copy.put(object.getKey(),object.getValue().copy());
+            transformCopies.put(target,copy);
+        }
+        meshKeyframes.putAll(meshCopies);
+        sceneTransformKeyframes.putAll(transformCopies);
+        invalidate();
+        return Math.max(meshCopies.size(),transformCopies.size());
+    }
+
     /** Interpolates mesh shape and location/rotation/scale for every keyed object. */
     public void applyAnimationFrame(float frame){
         java.util.ArrayList<Integer> keys=getMeshKeyframeFrames();
