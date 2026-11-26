@@ -771,6 +771,79 @@ public final class Meshy3DCore {
         }
         faces.clear();faces.addAll(out);clearSelection();rebuildEdges();revision++;
     }
+    public void splitSelectedFaces(){
+        if(selectedFaces.isEmpty())return;
+        HashMap<Integer,Integer> duplicates=new HashMap<>();
+        for(int fi=selectedFaces.nextSetBit(0);fi>=0;fi=selectedFaces.nextSetBit(fi+1)){
+            Face face=faces.get(fi);for(int j=0;j<face.vertices.length;j++){int old=face.vertices[j];Integer id=duplicates.get(old);
+                if(id==null){id=vertices.size();vertices.add(vertices.get(old).clone());duplicates.put(old,id);}face.vertices[j]=id;}
+        }clearSelection();rebuildEdges();revision++;
+    }
+    public void bisect(float nx,float ny,float nz,float offset){
+        float len=(float)Math.sqrt(nx*nx+ny*ny+nz*nz);if(len<1e-8)return;nx/=len;ny/=len;nz/=len;
+        BitSet targets=(BitSet)selectedFaces.clone();boolean all=targets.isEmpty();
+        HashMap<Long,Integer> intersections=new HashMap<>();ArrayList<Face> output=new ArrayList<>();
+        for(int fi=0;fi<faces.size();fi++){Face face=faces.get(fi);if(!all&&!targets.get(fi)){output.add(face);continue;}
+            boolean positive=false,negative=false;for(int id:face.vertices){float[] p=vertices.get(id);float d=p[0]*nx+p[1]*ny+p[2]*nz-offset;if(d>1e-6)positive=true;if(d< -1e-6)negative=true;}
+            if(!positive||!negative){output.add(face);continue;}
+            int[] a=clipPolygon(face.vertices,nx,ny,nz,offset,1,intersections);
+            int[] b=clipPolygon(face.vertices,nx,ny,nz,offset,-1,intersections);
+            if(a.length>=3)output.add(new Face(a));if(b.length>=3)output.add(new Face(b));
+        }
+        faces.clear();faces.addAll(output);clearSelection();rebuildEdges();revision++;
+    }
+    private int[] clipPolygon(int[] polygon,float nx,float ny,float nz,float offset,int sign,HashMap<Long,Integer> cache){
+        ArrayList<Integer> out=new ArrayList<>();
+        for(int i=0;i<polygon.length;i++){int current=polygon[i],previous=polygon[(i+polygon.length-1)%polygon.length];
+            float[] a=vertices.get(previous),b=vertices.get(current);
+            float da=(a[0]*nx+a[1]*ny+a[2]*nz-offset)*sign,db=(b[0]*nx+b[1]*ny+b[2]*nz-offset)*sign;
+            boolean ina=da>=-1e-6f,inb=db>=-1e-6f;
+            if(ina!=inb){long key=edgeKey(previous,current);Integer id=cache.get(key);
+                if(id==null){float t=da/(da-db);id=vertices.size();vertices.add(new float[]{a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t});cache.put(key,id);}out.add(id);}
+            if(inb)out.add(current);
+        }
+        LinkedHashSet<Integer> unique=new LinkedHashSet<>(out);int[] result=new int[unique.size()];int i=0;for(int id:unique)result[i++]=id;return result;
+    }
+    public void bridgeSelectedBoundaryLoops(){
+        HashMap<Integer,ArrayList<Integer>> adjacency=new HashMap<>();
+        for(int i=selectedEdges.nextSetBit(0);i>=0;i=selectedEdges.nextSetBit(i+1)){Edge e=edges.get(i);if(e.faces.size()!=1)continue;
+            adjacency.computeIfAbsent(e.a,k->new ArrayList<>()).add(e.b);adjacency.computeIfAbsent(e.b,k->new ArrayList<>()).add(e.a);}
+        ArrayList<ArrayList<Integer>> loops=new ArrayList<>();HashSet<Integer> visited=new HashSet<>();
+        for(int start:adjacency.keySet())if(!visited.contains(start)){
+            ArrayList<Integer> loop=new ArrayList<>();int previous=-1,current=start;
+            do{if(!visited.add(current))break;loop.add(current);ArrayList<Integer> links=adjacency.get(current);if(links==null||links.size()!=2){loop.clear();break;}
+                int next=links.get(0)==previous?links.get(1):links.get(0);previous=current;current=next;
+            }while(current!=start&&loop.size()<=adjacency.size());
+            if(current==start&&loop.size()>=3)loops.add(loop);
+        }
+        if(loops.size()!=2||loops.get(0).size()!=loops.get(1).size())return;
+        ArrayList<Integer> a=loops.get(0),b=loops.get(1);int n=a.size(),best=0;boolean reverse=false;double score=Double.MAX_VALUE;
+        for(int offset=0;offset<n;offset++)for(int rev=0;rev<2;rev++){double sum=0;for(int i=0;i<n;i++){float[] p=vertices.get(a.get(i)),q=vertices.get(b.get((offset+(rev==1?n-i:i))%n));sum+=(p[0]-q[0])*(p[0]-q[0])+(p[1]-q[1])*(p[1]-q[1])+(p[2]-q[2])*(p[2]-q[2]);}
+            if(sum<score){score=sum;best=offset;reverse=rev==1;}}
+        for(int i=0;i<n;i++){int ai=a.get(i),an=a.get((i+1)%n),bi=b.get((best+(reverse?n-i:i))%n),bn=b.get((best+(reverse?n-(i+1):(i+1)))%n);faces.add(new Face(ai,an,bn,bi));}
+        clearSelection();rebuildEdges();revision++;
+    }
+    public void solidifySelected(float thickness){
+        BitSet selected=(BitSet)selectedFaces.clone();if(selected.isEmpty())selected.set(0,faces.size());
+        float[][] normals=calculateNormals();HashSet<Integer> ids=new HashSet<>();for(int fi=selected.nextSetBit(0);fi>=0;fi=selected.nextSetBit(fi+1))for(int id:faces.get(fi).vertices)ids.add(id);
+        HashMap<Integer,Integer> duplicate=new HashMap<>();for(int id:ids){float[] p=vertices.get(id),n=normals[id];int next=vertices.size();vertices.add(new float[]{p[0]-n[0]*thickness,p[1]-n[1]*thickness,p[2]-n[2]*thickness});duplicate.put(id,next);}
+        ArrayList<Face> out=new ArrayList<>(faces);for(int fi=selected.nextSetBit(0);fi>=0;fi=selected.nextSetBit(fi+1)){int[] f=faces.get(fi).vertices,inner=new int[f.length];for(int j=0;j<f.length;j++)inner[j]=duplicate.get(f[f.length-1-j]);out.add(new Face(inner));}
+        for(Edge edge:edges){int count=0;for(int fi:edge.faces)if(selected.get(fi))count++;if(count==1)out.add(new Face(edge.a,edge.b,duplicate.get(edge.b),duplicate.get(edge.a)));}
+        faces.clear();faces.addAll(out);clearSelection();rebuildEdges();revision++;
+    }
+    public void spinSelectedFaces(float angle,int steps,float screwDistance){
+        if(selectedFaces.isEmpty())return;steps=Math.max(1,Math.min(64,steps));
+        ArrayList<int[]> source=new ArrayList<>();for(int fi=selectedFaces.nextSetBit(0);fi>=0;fi=selectedFaces.nextSetBit(fi+1))source.add(faces.get(fi).vertices.clone());
+        float[] center=new float[3];HashSet<Integer> ids=new HashSet<>();for(int[] f:source)for(int id:f)ids.add(id);
+        for(int id:ids)for(int k=0;k<3;k++)center[k]+=vertices.get(id)[k]/ids.size();
+        HashMap<Integer,Integer> previous=new HashMap<>();for(int id:ids)previous.put(id,id);
+        for(int step=1;step<=steps;step++){float theta=angle*step/steps,co=(float)Math.cos(theta),si=(float)Math.sin(theta);HashMap<Integer,Integer> current=new HashMap<>();
+            for(int id:ids){float[] p=vertices.get(id);float x=p[0]-center[0],z=p[2]-center[2];int next=vertices.size();vertices.add(new float[]{center[0]+x*co-z*si,p[1]+screwDistance*step/steps,center[2]+x*si+z*co});current.put(id,next);}
+            for(int[] f:source){int[] top=new int[f.length];for(int j=0;j<f.length;j++)top[j]=current.get(f[j]);faces.add(new Face(top));
+                for(int j=0;j<f.length;j++){int a=f[j],b=f[(j+1)%f.length];faces.add(new Face(previous.get(a),previous.get(b),current.get(b),current.get(a)));}}
+            previous=current;
+        }clearSelection();rebuildEdges();revision++;
+    }
     public void fillSelectedBoundary(){
         ArrayList<Integer> loop=new ArrayList<>();HashMap<Integer,ArrayList<Integer>> adjacency=new HashMap<>();
         for(int i=selectedEdges.nextSetBit(0);i>=0;i=selectedEdges.nextSetBit(i+1)){Edge e=edges.get(i);if(e.faces.size()!=1)continue;
