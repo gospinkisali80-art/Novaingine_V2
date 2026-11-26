@@ -2722,6 +2722,11 @@ public final class ManualSculptWorkspace extends FrameLayout {
         return active == null ? null : active.name;
     }
 
+    public java.util.List<Meshy3DGeometryExporter.ObjectSnapshot> snapshotGeometryForExport() {
+        if (meshyViewport == null) throw new IllegalStateException("The Meshy3D viewport is not open.");
+        return Meshy3DGeometryExporter.snapshot(meshyViewport.getObjectScene());
+    }
+
     public int getSelectedObjectCount() {
         if (meshyViewport == null) return 0;
         return meshyViewport.getObjectScene().getSelectedObjects().size();
