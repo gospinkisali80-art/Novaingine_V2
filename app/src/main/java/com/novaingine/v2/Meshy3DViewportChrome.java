@@ -39,6 +39,7 @@ final class Meshy3DViewportChrome extends FrameLayout {
     private final LinearLayout navigationPanel;
     private final ScrollView navigationScroll;
     private final LinearLayout leftTools;
+    private final ScrollView leftToolScroll;
     private final LinearLayout bottomTools;
     private final LinearLayout transformTools;
     private boolean navigationVisible = true;
@@ -55,14 +56,14 @@ final class Meshy3DViewportChrome extends FrameLayout {
         setBackgroundColor(Color.TRANSPARENT);
 
         // Left-hand vertical tool rail.
-        ScrollView leftScroll = new ScrollView(context);
-        leftScroll.setFillViewport(false);
-        leftScroll.setVerticalScrollBarEnabled(false);
+        leftToolScroll = new ScrollView(context);
+        leftToolScroll.setFillViewport(false);
+        leftToolScroll.setVerticalScrollBarEnabled(false);
         leftTools = new LinearLayout(context);
         leftTools.setOrientation(LinearLayout.VERTICAL);
         leftTools.setPadding(dp(3), dp(3), dp(3), dp(3));
         leftTools.setBackground(panelBackground(0xE81A2028, 8f));
-        leftScroll.addView(leftTools);
+        leftToolScroll.addView(leftTools);
         addTool(leftTools, "▣", "Select", 0, () -> actions.select());
         addTool(leftTools, "⊕", "3D Cursor", 1, () -> actions.cursor());
         addTool(leftTools, "✥", "Move", 2, () -> setTransform(0));
@@ -74,7 +75,7 @@ final class Meshy3DViewportChrome extends FrameLayout {
         LayoutParams leftParams = new LayoutParams(dp(42), dp(260), Gravity.LEFT | Gravity.TOP);
         leftParams.leftMargin = dp(6);
         leftParams.topMargin = dp(12);
-        addView(leftScroll, leftParams);
+        addView(leftToolScroll, leftParams);
 
         // Floating transform strip above the bottom shortcut bar.
         transformTools = new LinearLayout(context);
@@ -272,6 +273,50 @@ final class Meshy3DViewportChrome extends FrameLayout {
 
     void toggleNavigationVisible() { setNavigationVisible(!navigationVisible); }
     boolean isNavigationVisible() { return navigationVisible; }
+
+    /**
+     * Sculpting uses one consolidated touch dock instead of three overlapping
+     * control groups (left rail, floating transform strip, and bottom shortcuts).
+     * Every entry routes to the same viewport/workspace actions as the desktop-style controls.
+     */
+    void setSculptWorkspace(boolean sculpt) {
+        leftToolScroll.setVisibility(sculpt ? GONE : VISIBLE);
+        transformTools.setVisibility(sculpt ? GONE : VISIBLE);
+        bottomTools.removeAllViews();
+        if (sculpt) {
+            addBottom("Select", actions::select, true);
+            addBottom("3D Cursor", actions::cursor, false);
+            addBottom("Move", () -> setTransform(0), false);
+            addBottom("Rotate", () -> setTransform(1), false);
+            addBottom("Scale", () -> setTransform(2), false);
+            addBottom("Sculpt", actions::sculpt, false);
+            addBottom("Measure", actions::measure, false);
+            addBottom("Add", actions::add, false);
+            addBottom("Snap", actions::snap, false);
+            addBottom("X", () -> viewport.setKeyboardAxisConstraint(0), false);
+            addBottom("Y", () -> viewport.setKeyboardAxisConstraint(1), false);
+            addBottom("Z", () -> viewport.setKeyboardAxisConstraint(2), false);
+            addBottom("Tab", actions::toggleMode, false);
+            addBottom("Esc", actions::escape, false);
+            addBottom("Keyboard", actions::keyboard, false);
+            addBottom("Settings", actions::settings, false);
+            addBottom("More", actions::more, false);
+        } else {
+            addBottom("▣  Select", actions::select, true);
+            addBottom("✥  Move", () -> setTransform(0), false);
+            addBottom("⟳  Rotate", () -> setTransform(1), false);
+            addBottom("□  Scale", () -> setTransform(2), false);
+            addBottom("♧  Sculpt", actions::sculpt, false);
+            addBottom("X", () -> viewport.setKeyboardAxisConstraint(0), false);
+            addBottom("Y", () -> viewport.setKeyboardAxisConstraint(1), false);
+            addBottom("Z", () -> viewport.setKeyboardAxisConstraint(2), false);
+            addBottom("Tab", actions::toggleMode, false);
+            addBottom("Esc", actions::escape, false);
+            addBottom("⌨", actions::keyboard, false);
+            addBottom("⚙", actions::settings, false);
+            addBottom("More  ⋮", actions::more, false);
+        }
+    }
 
     void setCompact(boolean compact) {
         transformTools.setVisibility(compact ? GONE : VISIBLE);
