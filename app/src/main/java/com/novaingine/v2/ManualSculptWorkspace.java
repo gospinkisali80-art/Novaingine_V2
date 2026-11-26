@@ -134,6 +134,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
         meshyViewport.setObjectSelectionListener(()->{
             if(activeWorkspaceIndex==1)refreshModelingOutliner();
         });
+        meshyViewport.setObjectTransformStartListener(this::checkpointMeshEdit);
         addView(meshyViewport, new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
         // Meshy3D is being rebuilt from the Blender reference one section at a time.
@@ -446,7 +447,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 break;
             case 1:
                 if ("Object Properties".equals(item)) showObjectPropertiesDialog();
-                else if ("Object Transform".equals(item)) showObjectTransformDialog("Move");
+                else if ("Object Transform".equals(item) || "Numeric Transform".equals(item)) showObjectTransformTypeDialog();
                 else if ("Dimensions".equals(item)) {
                     Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
                     if(active!=null){float[] size=meshyViewport.getObjectScene().dimensions(active.id);
@@ -572,9 +573,12 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 else if ("Object Statistics".equals(item)) {
                     Meshy3DObjectScene scene=meshyViewport.getObjectScene();
                     status.setText("Scene | "+scene.getObjectCount()+" objects | "+scene.getCollectionCount()+" collections");
+                } else if ("Select".equals(item)) {
+                    meshyViewport.setObjectTransformTool(-1);status.setText("Modeling | Selection tool active");
                 } else if (("Move".equals(item)||"Rotate".equals(item)||"Scale".equals(item))
                         && !"Edit Mode".equals(activeEditorMode)) {
-                    showObjectTransformDialog(item);
+                    meshyViewport.setObjectTransformTool("Move".equals(item)?0:"Rotate".equals(item)?1:2);
+                    status.setText("Modeling | "+item+" gizmo active — drag the X, Y or Z handle");
                 } else if ("Vertex".equalsIgnoreCase(item) || "Vertex Select".equalsIgnoreCase(item)) {
                     meshyViewport.setMeshEditMode(true);meshyViewport.setSelectionMode("Vertex");
                     status.setText("Modeling | Vertex selection | Tap vertices to select");
@@ -1143,6 +1147,13 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 }).setNegativeButton("Cancel",null).show();
     }
 
+    private void showObjectTransformTypeDialog() {
+        String[] operations={"Move","Rotate","Scale"};
+        new android.app.AlertDialog.Builder(activity).setTitle("Numeric Object Transform")
+                .setItems(operations,(d,w)->showObjectTransformDialog(operations[w]))
+                .setNegativeButton("Cancel",null).show();
+    }
+
     private void showObjectTransformDialog(String operation) {
         Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
         if(active==null)return;
@@ -1446,7 +1457,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         "Remesh", "Weld", "Triangulate", "Wireframe"
                 };
                 rightTitle = "Tool Properties";
-                rightItems = new String[]{"Object Properties", "Object Transform", "Dimensions", "Parent", "Collections",
+                rightItems = new String[]{"Object Properties", "Object Transform", "Numeric Transform", "Dimensions", "Parent", "Collections",
                         "Visibility", "Selectable", "Render Visibility", "Active Camera", "Camera Settings", "Light Settings",
                         "Active Tool", "Selection Mode", "Operation Amount", "Offset", "Segments", "Profile",
                         "Loop Cut Count", "Merge Threshold", "Mesh Statistics", "Vertices", "Edges", "Faces",
