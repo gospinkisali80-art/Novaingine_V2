@@ -50,7 +50,7 @@ public final class Meshy3DUvEditorView extends View {
         c.drawText(paintMode?"TEXTURE IMAGE • pixel painting":"UV EDITOR • drag islands to move",12,22,paint);
     }
     private void drawTexture(Canvas c,float l,float t,float s){
-        int[] pixels=core.getTexturePixels();int w=core.getTextureWidth(),h=core.getTextureHeight();
+        int[] pixels=core.getTexturePixelsUnsafe();int w=core.getTextureWidth(),h=core.getTextureHeight();
         if(pixels==null){paint.setStyle(Paint.Style.FILL);paint.setColor(0xFF777777);c.drawRect(l,t,l+s,t+s,paint);return;}
         try{if(textureBitmap==null||textureBitmap.getWidth()!=w||textureBitmap.getHeight()!=h)
             textureBitmap=Bitmap.createBitmap(pixels,w,h,Bitmap.Config.ARGB_8888);
