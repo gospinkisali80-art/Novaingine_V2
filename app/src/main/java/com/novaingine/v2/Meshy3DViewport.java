@@ -56,7 +56,9 @@ public final class Meshy3DViewport extends View {
         return copy;
     }
 
-    private void activateSceneObject(String id) {
+    private void activateSceneObject(String id) { activateSceneObject(id,true); }
+
+    private void activateSceneObject(String id,boolean exclusiveSelection) {
         Meshy3DObjectScene.Object3D target=objectScene.getObject(id);
         if(target==null)return;
         Meshy3DObjectScene.Object3D previous=objectScene.getObject(objectSceneActiveId);
@@ -65,7 +67,7 @@ public final class Meshy3DViewport extends View {
         if(target.mesh!=document && !document.importState(target.mesh.exportState()))
             throw new IllegalStateException("Could not activate object mesh");
         target.mesh=document;
-        objectScene.selectOnly(id);
+        if(exclusiveSelection)objectScene.selectOnly(id);else objectScene.setActiveObject(id);
         objectSceneActiveId=id;
         syncViewportFromCore();
         meshVisible=target.visible;
@@ -89,8 +91,9 @@ public final class Meshy3DViewport extends View {
     }
 
     public void selectSceneObject(String id) { activateSceneObject(id); }
+    public void selectSceneObject(String id,boolean additive) { activateSceneObject(id,!additive); }
     public void setObjectSelectionEnabled(boolean enabled){objectSelectionEnabled=enabled;}
-    private void selectObjectAt(float x,float y) {
+    private void selectObjectAt(float x,float y,boolean additive) {
         float cx=getWidth()*.5f,cy=getHeight()*.49f,unit=Math.min(getWidth(),getHeight())*.235f*zoom;
         Meshy3DObjectScene.Object3D best=null;float bestDistance=Float.MAX_VALUE;
         for(Meshy3DObjectScene.Object3D object:objectScene.getObjects()) {
@@ -103,7 +106,34 @@ public final class Meshy3DViewport extends View {
             float distance=(screen[0]-x)*(screen[0]-x)+(screen[1]-y)*(screen[1]-y);
             if(distance<=radius*radius&&distance<bestDistance){best=object;bestDistance=distance;}
         }
-        if(best!=null)activateSceneObject(best.id);
+        if(best!=null)activateSceneObject(best.id,!additive);
+    }
+
+    public void selectAllSceneObjects() {
+        objectScene.selectAllObjects();
+        String id=objectScene.getActiveObjectId();
+        if(id!=null)activateSceneObject(id,false);
+        invalidate();
+    }
+    public void deselectAllSceneObjects() {
+        objectScene.deselectAllObjects();objectSceneActiveId=null;invalidate();
+    }
+    public void invertSceneSelection() {
+        objectScene.invertObjectSelection();
+        String id=objectScene.getActiveObjectId();
+        if(id!=null)activateSceneObject(id,false);else objectSceneActiveId=null;
+        invalidate();
+    }
+    public void deleteSelectedObjects() {
+        java.util.ArrayList<Meshy3DObjectScene.Object3D> selected=new java.util.ArrayList<>(objectScene.getSelectedObjects());
+        if(selected.isEmpty()&&objectSceneActiveId!=null)selected.add(objectScene.getObject(objectSceneActiveId));
+        for(Meshy3DObjectScene.Object3D o:selected)if(o!=null)objectScene.delete(o.id);
+        objectSceneActiveId=null;
+        Meshy3DObjectScene.Object3D next=null;
+        for(Meshy3DObjectScene.Object3D o:objectScene.getObjects())if(o.selected){next=o;break;}
+        if(next==null)for(Meshy3DObjectScene.Object3D o:objectScene.getObjects()){next=o;break;}
+        if(next==null)next=objectScene.createMeshObject("Cube",new Meshy3DCore());
+        activateSceneObject(next.id);
     }
 
     public void deleteActiveObject() {
@@ -958,7 +988,8 @@ public final class Meshy3DViewport extends View {
                     if(dx*dx+dy*dy<=radius*radius){
                         snapToNearestAxis(dx,dy);
                     } else if(meshEditMode){selectAt(event.getX(),event.getY(),(event.getMetaState()&android.view.KeyEvent.META_SHIFT_ON)!=0);}
-                    else if(objectSelectionEnabled)selectObjectAt(event.getX(),event.getY());
+                    else if(objectSelectionEnabled)selectObjectAt(event.getX(),event.getY(),
+                            (event.getMetaState()&android.view.KeyEvent.META_SHIFT_ON)!=0);
                     else if(onViewportTap!=null) onViewportTap.run();
                 }
                 lastPinchDistance=0; performClick(); return true;
