@@ -454,6 +454,15 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 } else if ("Delete Object".equals(item)) {
                     checkpointMeshEdit();meshyViewport.deleteActiveObject();
                     status.setText("Modeling | Active object deleted");
+                } else if ("Delete Selected Objects".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.deleteSelectedObjects();
+                    status.setText("Modeling | Selected objects deleted");
+                } else if ("Select All Objects".equals(item)) {
+                    meshyViewport.selectAllSceneObjects();status.setText("Modeling | All scene objects selected");
+                } else if ("Deselect Objects".equals(item)) {
+                    meshyViewport.deselectAllSceneObjects();status.setText("Modeling | Object selection cleared");
+                } else if ("Invert Selection".equals(item)) {
+                    meshyViewport.invertSceneSelection();status.setText("Modeling | Object selection inverted");
                 } else if ("Rename Object".equals(item)) showObjectRenameDialog();
                 else if ("Select Object".equals(item)) showObjectPickerDialog(false);
                 else if ("Hide / Show Object".equals(item)) {
@@ -1206,6 +1215,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 leftTitle = "Modeling Tools";
                 leftItems = new String[]{
                         "OBJECT MODE", "Add Primitive", "Add Cube", "Duplicate", "Duplicate Linked", "Delete Object",
+                        "Delete Selected Objects", "Select All Objects", "Deselect Objects", "Invert Selection",
                         "Rename Object", "Select Object", "Hide / Show Object", "Apply Location", "Apply Rotation & Scale",
                         "Apply All Transforms", "Clear Location", "Clear Rotation", "Clear Scale",
                         "Set Origin to Geometry", "Set Origin to 3D Cursor",
