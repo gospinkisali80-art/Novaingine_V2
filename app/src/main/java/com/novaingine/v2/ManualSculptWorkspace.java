@@ -466,6 +466,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 else if ("Constraints".equals(item)) showObjectConstraintsDialog();
                 else if ("Modifiers".equals(item)) showObjectModifiersDialog();
                 else if ("Custom Properties".equals(item)) showObjectCustomPropertiesDialog();
+                else if ("Viewport Display".equals(item)) showObjectViewportDisplayDialog();
                 else if ("Object Transform".equals(item) || "Numeric Transform".equals(item)) showObjectTransformTypeDialog();
                 else if ("Dimensions".equals(item)) {
                     Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
@@ -1562,6 +1563,41 @@ public final class ManualSculptWorkspace extends FrameLayout {
         dialog.show();
     }
 
+    private void showObjectViewportDisplayDialog() {
+        Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
+        if(active==null)return;
+        LinearLayout panel=new LinearLayout(activity);panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(16),dp(8),dp(16),dp(8));
+        TextView modeLabel=new TextView(activity);modeLabel.setText("Display As");
+        panel.addView(modeLabel);
+        String[] modes={"SOLID","WIRE","BOUNDS"};
+        String[] modeLabels={"Solid","Wire","Bounds"};
+        android.widget.Spinner displaySpinner=new android.widget.Spinner(activity);
+        android.widget.ArrayAdapter<String> adapter=new android.widget.ArrayAdapter<>(activity,
+                android.R.layout.simple_spinner_item,modeLabels);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        displaySpinner.setAdapter(adapter);
+        for(int i=0;i<modes.length;i++)if(modes[i].equals(active.viewportDisplayType))displaySpinner.setSelection(i);
+        panel.addView(displaySpinner);
+        TextView colorLabel=new TextView(activity);colorLabel.setText("Viewport Display Color (RRGGBB)");
+        panel.addView(colorLabel);
+        EditText colorField=new EditText(activity);colorField.setSingleLine(true);
+        colorField.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
+        colorField.setText(String.format(java.util.Locale.US,"%06X",active.viewportDisplayColor&0xFFFFFF));
+        panel.addView(colorField);
+        new android.app.AlertDialog.Builder(activity).setTitle(active.name+" | Viewport Display")
+                .setView(panel).setPositiveButton("Apply",(dialog,which)->{
+                    try{
+                        String hex=colorField.getText().toString().trim().replace("#","");
+                        int color=0xFF000000|(Integer.parseInt(hex,16)&0xFFFFFF);
+                        checkpointMeshEdit();
+                        meshyViewport.getObjectScene().setViewportDisplay(active.id,
+                                modes[displaySpinner.getSelectedItemPosition()],color);
+                        meshyViewport.invalidate();status.setText("Modeling | Viewport display updated");
+                    }catch(Exception error){showObjectOperationError(error);}
+                }).setNegativeButton("Cancel",null).show();
+    }
+
     private void showObjectCustomPropertiesDialog() {
         Meshy3DObjectScene scene=meshyViewport.getObjectScene();
         Meshy3DObjectScene.Object3D active=scene.getActiveObject();
@@ -2467,7 +2503,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 rightItems = new String[]{"Object Properties", "Object Transform", "Numeric Transform", "Dimensions",
                         "Set 3D Cursor", "Snap to Grid", "Snap to 3D Cursor", "Snap to Active Geometry",
                         "Frame Selected", "Frame All",
-                        "Parent", "Constraints", "Modifiers", "Custom Properties", "Collections", "Manage Collections",
+                        "Parent", "Constraints", "Modifiers", "Custom Properties", "Viewport Display", "Collections", "Manage Collections",
                         "Visibility", "Selectable", "Render Visibility", "Active Camera", "Camera Settings", "Light Settings",
                         "Active Tool", "Selection Mode", "Operation Amount", "Offset", "Segments", "Profile",
                         "Loop Cut Count", "Merge Threshold", "Mesh Statistics", "Vertices", "Edges", "Faces",
