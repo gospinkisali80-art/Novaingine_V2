@@ -673,6 +673,13 @@ public final class MainActivity extends Activity
     private static final int REQUEST_SAVE_NOVA = 7414;
     private static final int REQUEST_SAVE_COPY_NOVA = 7415;
     private static final int REQUEST_EXPORT_NOVA = 7416;
+    private static final int REQUEST_SAVE_MESHY_RENDER = 7417;
+    private static final int REQUEST_EXPORT_MESHY_DOCUMENT = 7418;
+    private static final int REQUEST_IMPORT_MESHY_DOCUMENT = 7419;
+
+    private android.graphics.Bitmap pendingMeshyImage;
+    private String pendingMeshyExportJson;
+    private boolean meshyStatusBarVisible = true;
 
     public void showMeshyFileMenu(View anchor) {
         android.widget.PopupMenu popup = new android.widget.PopupMenu(this, anchor);
@@ -682,9 +689,36 @@ public final class MainActivity extends Activity
                 "Link", "Append", "Data Previews", "Import", "Export",
                 "External Data", "Clean Up", "Defaults", "Quit"
         };
-        for (int i = 0; i < entries.length; i++) popup.getMenu().add(0, i, i, entries[i]);
+        for (int i = 0; i < entries.length; i++) {
+            android.view.MenuItem menuItem = popup.getMenu().add(0, i, i, entries[i]);
+            if ("Link".equals(entries[i]) || "Append".equals(entries[i])) {
+                menuItem.setEnabled(false);
+            }
+        }
         popup.setOnMenuItemClickListener(item -> {
             performMeshyFileAction(item.getTitle().toString());
+            return true;
+        });
+        popup.show();
+    }
+
+    public void showMeshyRenderMenu(View anchor) {
+        android.widget.PopupMenu popup = new android.widget.PopupMenu(this, anchor);
+        String[] entries = {
+                "Render Image", "Render Animation", "Render Sequencer Image",
+                "Render Sequencer Animation", "Render Audio", "View Render",
+                "View Animation", "Lock Interface"
+        };
+        for (String entry : entries) {
+            android.view.MenuItem item = popup.getMenu().add(entry);
+            if (!"Render Image".equals(entry) && !"View Render".equals(entry)) {
+                item.setEnabled(false);
+            }
+        }
+        popup.setOnMenuItemClickListener(item -> {
+            String action = item.getTitle().toString();
+            if ("Render Image".equals(action)) renderMeshyImage();
+            else if ("View Render".equals(action)) viewLastMeshyRender();
             return true;
         });
         popup.show();
@@ -702,7 +736,7 @@ public final class MainActivity extends Activity
                         }).setNegativeButton("Cancel", null).show();
                 break;
             case "Open Recent":
-                chooseMeshyProject();
+                chooseRecentMeshyProject();
                 break;
             case "Revert":
                 new AlertDialog.Builder(this).setTitle("Revert Meshy3D document?")
@@ -715,43 +749,34 @@ public final class MainActivity extends Activity
                         }).show();
                 break;
             case "Recover":
-                android.widget.Toast.makeText(this, "Meshy3D recovery snapshots are not implemented yet.", android.widget.Toast.LENGTH_LONG).show();
+                recoverMeshyDocument();
                 break;
             case "Save":
                 saveMeshyDocument();
                 break;
             case "Save As":
-                saveMeshyDocument();
+                saveMeshyDocumentAs();
                 break;
             case "Save Copy":
-                if (activeMeshyDocument != null) {
-                    File copy = new File(activeMeshyDocument.getParentFile(),
-                            activeMeshyDocument.getName().replace(".meshy3d", "_Copy.meshy3d"));
-                    try (java.io.FileInputStream in = new java.io.FileInputStream(activeMeshyDocument);
-                         java.io.FileOutputStream out = new java.io.FileOutputStream(copy)) {
-                        byte[] buffer = new byte[4096]; int count;
-                        while ((count = in.read(buffer)) != -1) out.write(buffer, 0, count);
-                        android.widget.Toast.makeText(this, "Meshy3D copy saved.", android.widget.Toast.LENGTH_SHORT).show();
-                    } catch (Exception e) {
-                        android.widget.Toast.makeText(this, "Copy failed: " + e.getMessage(), android.widget.Toast.LENGTH_LONG).show();
-                    }
-                } else saveMeshyDocument();
+                saveMeshyDocumentCopy();
                 break;
             case "Save Incremental":
                 saveMeshyIncremental();
                 break;
             case "Link":
             case "Append":
-            case "Import":
                 android.widget.Toast.makeText(this,
-                        "GLB import/linking for the independent Meshy3D document is not implemented yet. The Novaingine scene will not be modified.",
+                        "External .blend library linking and appending are not supported by the Meshy3D document format.",
                         android.widget.Toast.LENGTH_LONG).show();
+                break;
+            case "Import":
+                importMeshyDocumentFromPicker();
                 break;
             case "Data Previews":
                 showSceneDataPreview();
                 break;
             case "Export":
-                saveMeshyDocument();
+                exportMeshyDocumentToPicker();
                 break;
             case "External Data":
                 new AlertDialog.Builder(this).setTitle("External Data")
@@ -762,12 +787,7 @@ public final class MainActivity extends Activity
                 cleanMeshyTemporaryFiles();
                 break;
             case "Defaults":
-                new AlertDialog.Builder(this).setTitle("Restore Meshy3D Defaults?")
-                        .setMessage("Reset the Meshy3D document to its default cube? Novaingine will not be changed.")
-                        .setNegativeButton("Cancel", null)
-                        .setPositiveButton("Restore", (d, w) -> {
-                            if (activeMeshyDocument != null) saveMeshyDocument();
-                        }).show();
+                restoreMeshyDefaults();
                 break;
             case "Quit":
                 if (manualSculptWorkspace != null) closeManualSculpting();
