@@ -50,6 +50,7 @@ public final class Meshy3DViewport extends View {
     private final java.util.HashMap<Integer, float[][]> meshKeyframes = new java.util.HashMap<>();
     private final java.util.TreeMap<Integer, java.util.HashMap<String, Meshy3DObjectScene.Transform>>
             sceneTransformKeyframes = new java.util.TreeMap<>();
+    private int animationInterpolationMode = 0; // 0 smooth, 1 linear, 2 constant
 
 
     private String objectSceneActiveId;
@@ -1849,14 +1850,44 @@ public final class Meshy3DViewport extends View {
         return new java.util.ArrayList<>(unique);
     }
 
-    /** Smoothly interpolates mesh shape and location/rotation/scale for every keyed object. */
+    public void setAnimationInterpolationMode(int mode) {
+        animationInterpolationMode = Math.max(0, Math.min(2, mode));
+    }
+    public int getAnimationInterpolationMode() { return animationInterpolationMode; }
+
+    /** Duplicate a stored shape-and-transform keyframe to another frame. */
+    public boolean duplicateMeshKeyframe(int sourceFrame,int targetFrame) {
+        int source=Math.max(0,sourceFrame),target=Math.max(0,targetFrame);
+        if(source==target)return false;
+        boolean copied=false;
+        float[][] geometry=meshKeyframes.get(source);
+        if(geometry!=null){
+            float[][] snapshot=new float[geometry.length][3];
+            for(int i=0;i<geometry.length;i++)System.arraycopy(geometry[i],0,snapshot[i],0,3);
+            meshKeyframes.put(target,snapshot);copied=true;
+        }
+        java.util.HashMap<String,Meshy3DObjectScene.Transform> sourceTransforms=sceneTransformKeyframes.get(source);
+        if(sourceTransforms!=null){
+            java.util.HashMap<String,Meshy3DObjectScene.Transform> transforms=new java.util.HashMap<>();
+            for(java.util.Map.Entry<String,Meshy3DObjectScene.Transform> entry:sourceTransforms.entrySet())
+                transforms.put(entry.getKey(),entry.getValue().copy());
+            sceneTransformKeyframes.put(target,transforms);copied=true;
+        }
+        invalidate();
+        return copied;
+    }
+
+    /** Interpolates mesh shape and location/rotation/scale for every keyed object. */
     public void applyAnimationFrame(float frame){
         java.util.ArrayList<Integer> keys=getMeshKeyframeFrames();
         if(keys.isEmpty())return;
         int before=keys.get(0),after=keys.get(keys.size()-1);
         for(int k:keys){if(k<=frame)before=k;if(k>=frame){after=k;break;}}
-        float t=after==before?0f:Math.max(0f,Math.min(1f,(frame-before)/(float)(after-before)));
-        t=t*t*(3f-2f*t);
+        float raw=after==before?0f:Math.max(0f,Math.min(1f,(frame-before)/(float)(after-before)));
+        float t;
+        if(animationInterpolationMode==1)t=raw;
+        else if(animationInterpolationMode==2)t=raw>=1f?1f:0f;
+        else t=raw*raw*(3f-2f*raw);
 
         float[][] a=meshKeyframes.get(before),b=meshKeyframes.get(after);
         if(a!=null&&b!=null&&a.length==vertices.length&&b.length==vertices.length){
@@ -2353,6 +2384,7 @@ public final class Meshy3DViewport extends View {
                 sceneKeys.put(frameData);
             }
             state.put("sceneTransformKeyframes", sceneKeys);
+            state.put("animationInterpolationMode", animationInterpolationMode);
             return state;
         } catch (org.json.JSONException error) {
             throw new IllegalStateException("Could not serialize Meshy3D mesh", error);
@@ -2402,6 +2434,7 @@ public final class Meshy3DViewport extends View {
             viewTargetY=(float)state.optDouble("viewTargetY",viewTargetY);
             viewTargetZ=(float)state.optDouble("viewTargetZ",viewTargetZ);
             meshTint = state.optInt("meshTint", meshTint);
+            animationInterpolationMode = Math.max(0,Math.min(2,state.optInt("animationInterpolationMode",animationInterpolationMode)));
             metallic = (float) state.optDouble("metallic", metallic);
             roughness = (float) state.optDouble("roughness", roughness);
             meshVisible = state.optBoolean("meshVisible", meshVisible);
