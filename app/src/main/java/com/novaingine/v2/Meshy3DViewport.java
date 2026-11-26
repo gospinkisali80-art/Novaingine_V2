@@ -198,7 +198,11 @@ public final class Meshy3DViewport extends View {
                 document.getTexturePixels(),document.getTextureWidth(),document.getTextureHeight(),document.copyFaceUvs());
     }
     public void refreshFromDocument(){syncViewportFromCore();}
-    private void syncCoreFromViewport(){document.replaceGeometry(vertices,faces);document.setSculptMask(vertexMask);}
+    private void syncCoreFromViewport(){
+        document.replaceGeometry(vertices,faces);document.setSculptMask(vertexMask);
+        Meshy3DObjectScene.Object3D active=objectScene.getObject(objectSceneActiveId);
+        if(active!=null)active.mesh=document;
+    }
     private void syncViewportFromCore(){
         vertices=document.copyVertices();faces=document.copyFaces();vertexMask=document.getSculptMask();if(vertexMask.length!=vertices.length)vertexMask=new float[vertices.length];
         uvCoordinates=null;invalidate();
@@ -946,6 +950,7 @@ public final class Meshy3DViewport extends View {
             syncCoreFromViewport();
             org.json.JSONObject state = new org.json.JSONObject();
             state.put("core",document.exportState());
+            state.put("objectScene",objectScene.exportState());
             int[] texture=document.getTexturePixels();
             if(texture!=null){
                 android.graphics.Bitmap image=android.graphics.Bitmap.createBitmap(texture,
@@ -1062,7 +1067,20 @@ public final class Meshy3DViewport extends View {
                 }
                 meshKeyframes.put(frame.optInt("frame",i),snapshot);
             }
-            if(coreState==null)syncCoreFromViewport();
+            org.json.JSONObject savedScene=state.optJSONObject("objectScene");
+            if(savedScene!=null){
+                if(!objectScene.importState(savedScene))return false;
+                objectSceneActiveId=objectScene.getActiveObjectId();
+                if(objectSceneActiveId==null&&!objectScene.getObjects().isEmpty())
+                    objectSceneActiveId=objectScene.getObjects().get(0).id;
+                if(objectSceneActiveId!=null)activateSceneObject(objectSceneActiveId);
+            }else{
+                if(objectScene.getObjects().isEmpty()){
+                    Meshy3DObjectScene.Object3D starter=objectScene.createMeshObject("Cube",document);
+                    objectSceneActiveId=starter.id;
+                }
+                syncCoreFromViewport();
+            }
             invalidate();
             return true;
         } catch (Exception error) {
