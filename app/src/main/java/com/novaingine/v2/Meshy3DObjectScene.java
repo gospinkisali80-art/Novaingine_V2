@@ -176,6 +176,11 @@ public final class Meshy3DObjectScene {
         return targets.size();
     }
 
+    private static long edgeKey(int a,int b){
+        int min=Math.min(a,b),max=Math.max(a,b);
+        return (((long)min)<<32)|(max&0xffffffffL);
+    }
+
     public int snapSelectedToActiveGeometry(int mode){
         if(mode<0||mode>2)throw new IllegalArgumentException("Snap mode must be Vertex, Edge or Face.");
         Object3D target=getActiveObject();
