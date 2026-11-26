@@ -178,6 +178,9 @@ public final class Meshy3DViewport extends View {
     private int sculptBrush;
     private float sculptRadius = 0.18f, sculptStrength = 0.40f, sculptFalloff = 0.5f, sculptPressure = 1.0f;
     private int sculptSymmetry;
+    private int sculptStrokeMethod;
+    private float sculptCursorX,sculptCursorY;
+    private boolean sculptCursorVisible;
     private boolean sculptSubtract;
     private float strokeX, strokeY, previousStrokeX, previousStrokeY;
     private boolean strokeActive;
@@ -317,6 +320,15 @@ public final class Meshy3DViewport extends View {
             }
         }
         paint.setStyle(Paint.Style.FILL);
+        if(sculpting&&sculptCursorVisible){
+            float d=getResources().getDisplayMetrics().density;
+            float radius=Math.max(4f,Math.min(width,height)*sculptRadius*.55f);
+            paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(1.5f*d);paint.setColor(0xFFF2F4F7);
+            canvas.drawCircle(sculptCursorX,sculptCursorY,radius,paint);
+            paint.setStrokeWidth(1f*d);paint.setColor(0x887E8792);
+            canvas.drawCircle(sculptCursorX,sculptCursorY,radius*(1f-sculptStrength*.35f),paint);
+            paint.setStyle(Paint.Style.FILL);
+        }
         drawNavigationGizmo(canvas, width, 18f*getResources().getDisplayMetrics().density);
     }
 
@@ -479,6 +491,8 @@ public final class Meshy3DViewport extends View {
         syncCoreFromViewport();invalidate();
     }
 
+    public void setSculptStrokeMethod(int method){sculptStrokeMethod=Math.max(0,Math.min(2,method));}
+
     public void setSculptSettings(boolean enabled, int brush, float radius, float strength,
                                    float falloff, int symmetry, boolean subtract, float pressure) {
         sculpting = enabled;
@@ -530,12 +544,15 @@ public final class Meshy3DViewport extends View {
         return new float[]{(float)(x*cy+rz*sy),ry,(float)(-x*sy+rz*cy)};
     }
     private void applySculptSegment(float x,float y,float dx,float dy,float pressure){
-        float step=Math.max(2f,Math.min(getWidth(),getHeight())*sculptRadius*.55f*.22f);
+        if(sculptStrokeMethod==1){applySculptDab(x,y,dx,dy,pressure);return;}
+        float spacing=sculptStrokeMethod==0?.12f:.25f;
+        float step=Math.max(2f,Math.min(getWidth(),getHeight())*sculptRadius*.55f*spacing);
         int count=Math.max(1,(int)Math.ceil(Math.hypot(dx,dy)/step));
         for(int i=1;i<=count;i++)applySculptDab(x-dx+dx*i/count,y-dy+dy*i/count,dx/count,dy/count,pressure);
     }
     private void applySculptDab(float x,float y,float dragX,float dragY,float eventPressure){
         if(vertices.length==0||getWidth()<=0||getHeight()<=0)return;
+        sculptCursorX=x;sculptCursorY=y;sculptCursorVisible=true;
         float cx=getWidth()*.5f,cy=getHeight()*.49f;
         float unit=Math.max(1,Math.min(getWidth(),getHeight())*.235f*zoom);
         float brushPx=Math.max(4f,Math.min(getWidth(),getHeight())*sculptRadius*.55f);
