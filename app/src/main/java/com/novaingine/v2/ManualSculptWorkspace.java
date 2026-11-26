@@ -442,7 +442,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 else showWorkspaceActionInfo(item);
                 break;
             case 1:
-                if ("Add Cube".equals(item)) {
+                if ("Add Primitive".equals(item)) showPrimitiveDialog();
+                else if ("Add Cube".equals(item)) {
                     checkpointMeshEdit();meshyViewport.addCubeObject();
                     activeEditorMode="Object Mode";if(modeButton!=null)modeButton.setText(activeEditorMode);
                     meshyViewport.setMeshEditMode(false);
@@ -913,6 +914,19 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 }).setNegativeButton("Cancel", null).show();
     }
 
+    private void showPrimitiveDialog() {
+        String[] primitives={"Cube","Plane","UV Sphere","Icosphere","Cylinder","Cone","Torus"};
+        new android.app.AlertDialog.Builder(activity).setTitle("Add Mesh Primitive")
+                .setItems(primitives,(dialog,which)->{
+                    checkpointMeshEdit();
+                    String primitive=primitives[which];
+                    meshyViewport.addPrimitiveObject(primitive);
+                    activeEditorMode="Object Mode";if(modeButton!=null)modeButton.setText(activeEditorMode);
+                    meshyViewport.setMeshEditMode(false);meshyViewport.setObjectSelectionEnabled(true);
+                    status.setText("Modeling | "+primitive+" object added");
+                }).setNegativeButton("Cancel",null).show();
+    }
+
     private void showObjectTransformDialog(String operation) {
         Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
         if(active==null)return;
@@ -1150,7 +1164,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         "Bisect", "Bridge", "Fill", "Subdivide", "Merge", "Dissolve", "Separate"};
                 leftTitle = "Modeling Tools";
                 leftItems = new String[]{
-                        "OBJECT MODE", "Add Cube", "Duplicate", "Duplicate Linked", "Delete Object",
+                        "OBJECT MODE", "Add Primitive", "Add Cube", "Duplicate", "Duplicate Linked", "Delete Object",
                         "Rename Object", "Select Object", "Hide / Show Object", "Apply Rotation & Scale",
                         "Parent To", "Clear Parent", "Add Collection", "Move To Collection",
                         "Object Statistics", "EDIT MODE", "Vertex Select", "Edge Select", "Face Select",
