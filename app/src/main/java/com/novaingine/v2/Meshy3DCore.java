@@ -514,17 +514,21 @@ public final class Meshy3DCore {
         faces.clear();faces.addAll(out);clearSelection();rebuildEdges();revision++;
     }
     public void dissolveSelectedEdges(){
-        int edgeIndex=selectedEdges.nextSetBit(0);if(edgeIndex<0||edgeIndex>=edges.size())return;
-        Edge edge=edges.get(edgeIndex);if(edge.faces.size()!=2)return;
-        int fa=edge.faces.get(0),fb=edge.faces.get(1);int[] a=faces.get(fa).vertices,b=faces.get(fb).vertices;
-        long shared=edgeKey(edge.a,edge.b);ArrayList<Integer> pathA=boundaryPath(a,edge.b,edge.a,shared),pathB=boundaryPath(b,edge.a,edge.b,shared);
-        if(pathA.size()<2||pathB.size()<2)return;
-        ArrayList<Integer> merged=new ArrayList<>(pathA);
-        for(int i=1;i<pathB.size()-1;i++)merged.add(pathB.get(i));
-        LinkedHashSet<Integer> unique=new LinkedHashSet<>(merged);if(unique.size()<3)return;
-        int[] polygon=new int[unique.size()];int k=0;for(int id:unique)polygon[k++]=id;
-        int hi=Math.max(fa,fb),lo=Math.min(fa,fb);faces.remove(hi);faces.remove(lo);faces.add(new Face(polygon));
-        clearSelection();rebuildEdges();revision++;
+        if(selectedEdges.isEmpty())return;
+        HashSet<Long> targets=new HashSet<>();
+        for(int i=selectedEdges.nextSetBit(0);i>=0;i=selectedEdges.nextSetBit(i+1)){Edge e=edges.get(i);targets.add(edgeKey(e.a,e.b));}
+        for(long target:targets){
+            Edge edge=null;for(Edge candidate:edges)if(edgeKey(candidate.a,candidate.b)==target){edge=candidate;break;}
+            if(edge==null||edge.faces.size()!=2)continue;
+            int fa=edge.faces.get(0),fb=edge.faces.get(1);int[] a=faces.get(fa).vertices,b=faces.get(fb).vertices;
+            ArrayList<Integer> pathA=boundaryPath(a,edge.b,edge.a,target),pathB=boundaryPath(b,edge.a,edge.b,target);
+            if(pathA.size()<2||pathB.size()<2)continue;
+            ArrayList<Integer> merged=new ArrayList<>(pathA);for(int i=1;i<pathB.size()-1;i++)merged.add(pathB.get(i));
+            LinkedHashSet<Integer> unique=new LinkedHashSet<>(merged);if(unique.size()<3)continue;
+            int[] polygon=new int[unique.size()];int k=0;for(int id:unique)polygon[k++]=id;
+            int hi=Math.max(fa,fb),lo=Math.min(fa,fb);faces.remove(hi);faces.remove(lo);faces.add(new Face(polygon));rebuildEdges();
+        }
+        clearSelection();revision++;
     }
     private ArrayList<Integer> boundaryPath(int[] face,int start,int end,long sharedEdge){
         int startIndex=-1;for(int i=0;i<face.length;i++)if(face[i]==start){startIndex=i;break;}
