@@ -51,6 +51,7 @@ public final class Meshy3DViewport extends View {
     private Runnable onObjectSelectionChanged;
     private String modifierEvaluationWarning;
     private Runnable onObjectTransformStart;
+    private Runnable onSculptStrokeStart;
     private int objectTransformTool=-1;
     private int objectPivotMode=0;
     private boolean objectTransformLocalOrientation;
@@ -93,6 +94,7 @@ public final class Meshy3DViewport extends View {
     public Meshy3DCore getDocumentCore(){return document;}
     public void setObjectSelectionListener(Runnable listener){onObjectSelectionChanged=listener;}
     public void setObjectTransformStartListener(Runnable listener){onObjectTransformStart=listener;}
+    public void setSculptStrokeStartListener(Runnable listener){onSculptStrokeStart=listener;}
     public void setObjectTransformTool(int mode){
         objectTransformTool=mode<0||mode>2?-1:mode;
         objectGizmoDragging=false;objectGizmoAxis=-1;invalidate();
@@ -1810,6 +1812,12 @@ public final class Meshy3DViewport extends View {
     public void setSculptSettings(boolean enabled, int brush, float radius, float strength,
                                    float falloff, int symmetry, boolean subtract, float pressure) {
         sculpting = enabled;
+        if (enabled) {
+            meshEditMode = false;
+            objectSelectionEnabled = false;
+            objectTransformTool = -1;
+            objectGizmoDragging = false;
+        }
         sculptBrush = Math.max(0, Math.min(24, brush));
         sculptRadius = Math.max(0.02f, Math.min(1.0f, radius));
         sculptStrength = Math.max(0f, Math.min(1f, strength));
@@ -2005,6 +2013,7 @@ public final class Meshy3DViewport extends View {
                 if(!sculpting&&!meshEditMode&&objectSelectionEnabled&&objectTransformTool>=0
                         &&beginObjectGizmoDrag(event.getX(),event.getY()))return true;
                 if(sculpting){
+                    if(onSculptStrokeStart!=null)onSculptStrokeStart.run();
                     strokeActive=true;
                     strokeX=previousStrokeX=event.getX();
                     strokeY=previousStrokeY=event.getY();
