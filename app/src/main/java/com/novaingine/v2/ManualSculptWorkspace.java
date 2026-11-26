@@ -490,7 +490,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
             case 3:
                 if ("Unwrap".equals(item) || "Smart UV Project".equals(item) || "Lightmap Pack".equals(item)) {
                     checkpointMeshEdit();meshyViewport.unwrapMesh();
-                    status.setText("UV Editing | Unwrap generated | " + meshyViewport.getUvIslandCount() + " UV islands");
+                    status.setText("UV Editing | LSCM conformal unwrap | " + meshyViewport.getUvIslandCount() + " UV islands");
                 } else if ("Mark Seam".equals(item)) {
                     checkpointMeshEdit();meshyViewport.markSeams(false);status.setText("UV Editing | Seams marked on selected edges");
                 } else if ("Clear Seam".equals(item)) {
