@@ -125,8 +125,8 @@ final class Meshy3DPhoneControls extends LinearLayout {
         addLetterRow(value, "QWERTYU");
         addLetterRow(value, "IOPASDF");
         addLetterRow(value, "GHJKLZX");
+        addLetterRow(value, "CVBNM");
         LinearLayout finalKeys = row();
-        add(finalKeys, button("CVBNM", () -> value.append("cvbnm")));
         add(finalKeys, button("Space", () -> value.append(" ")));
         add(finalKeys, button("⌫", () -> {
             int end = value.getSelectionStart();
