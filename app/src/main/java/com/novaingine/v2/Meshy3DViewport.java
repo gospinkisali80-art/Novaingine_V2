@@ -95,7 +95,7 @@ public final class Meshy3DViewport extends View {
         objectGizmoDragging=false;objectGizmoAxis=-1;invalidate();
     }
     public int getObjectTransformTool(){return objectTransformTool;}
-    public void setObjectPivotMode(int mode){objectPivotMode=Math.max(0,Math.min(2,mode));invalidate();}
+    public void setObjectPivotMode(int mode){objectPivotMode=Math.max(0,Math.min(3,mode));invalidate();}
     public int getObjectPivotMode(){return objectPivotMode;}
     public void setObjectTransformLocalOrientation(boolean local){objectTransformLocalOrientation=local;invalidate();}
     public boolean isObjectTransformLocalOrientation(){return objectTransformLocalOrientation;}
@@ -1317,7 +1317,13 @@ public final class Meshy3DViewport extends View {
             for(int i=0;i<gizmoObjectIds.size();i++){
                 String id=gizmoObjectIds.get(i);
                 double[] initial=gizmoInitialWorldMatrices.get(i);
-                objectScene.setWorldMatrix(id,multiplyMatrix4(delta,initial));
+                double[] objectDelta=delta;
+                if(objectPivotMode==3){
+                    float[] origin=gizmoInitialWorldLocations.get(i);
+                    objectDelta=multiplyMatrix4(translationMatrix4(origin[0],origin[1],origin[2]),
+                            multiplyMatrix4(localDelta,translationMatrix4(-origin[0],-origin[1],-origin[2])));
+                }
+                objectScene.setWorldMatrix(id,multiplyMatrix4(objectDelta,initial));
             }
         }
         invalidate();
