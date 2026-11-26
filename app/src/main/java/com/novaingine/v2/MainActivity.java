@@ -734,7 +734,8 @@ public final class MainActivity extends Activity
             case "Open":
                 new AlertDialog.Builder(this).setTitle("Open")
                         .setItems(new String[]{"Open Meshy3D project…", "Open recent Meshy3D project…"}, (d, w) -> {
-                            chooseMeshyProject();
+                            if (w == 0) chooseMeshyProject();
+                            else chooseRecentMeshyProject();
                         }).setNegativeButton("Cancel", null).show();
                 break;
             case "Open Recent":
@@ -2319,22 +2320,12 @@ public final class MainActivity extends Activity
                     .setPositiveButton("OK", null).show();
             return;
         }
+        java.util.Collections.sort(docs, (a,b) -> Long.compare(b.lastModified(), a.lastModified()));
         String[] names = new String[docs.size()];
-        for (int i=0;i<docs.size();i++) names[i]=docs.get(i).getName();
+        for (int i=0;i<docs.size();i++) names[i]=docs.get(i).getParentFile().getName()+" / "+docs.get(i).getName();
         new AlertDialog.Builder(this).setTitle("Open Meshy3D Document")
-                .setItems(names, (dialog, which) -> {
-                    activeMeshyDocument=docs.get(which);
-                    activeMeshyProjectDirectory=activeMeshyDocument.getParentFile();
-                    if (engineSurface != null) engineSurface.setVisibility(View.GONE);
-                    if (editorToolbar != null) editorToolbar.setVisibility(View.GONE);
-                    if (viewportInput != null) viewportInput.setVisibility(View.GONE);
-                    if (statisticsText != null) statisticsText.setVisibility(View.GONE);
-                    if (centeredStatisticsText != null) centeredStatisticsText.setVisibility(View.GONE);
-                    if (editorPanels != null) editorPanels.setVisibility(View.GONE);
-                    openManualSculpting();
-                    loadMeshyDocumentIntoWorkspace(activeMeshyDocument);
-                    android.widget.Toast.makeText(this, "Opened Meshy3D: "+activeMeshyDocument.getName(), android.widget.Toast.LENGTH_SHORT).show();
-                }).setNegativeButton("Cancel", null).show();
+                .setItems(names, (dialog, which) -> openMeshyDocument(docs.get(which)))
+                .setNegativeButton("Cancel", null).show();
     }
 
     private void recordRecentMeshyDocument(File file) {
@@ -2449,11 +2440,15 @@ public final class MainActivity extends Activity
                     if(!root.exists()&&!root.mkdirs()){android.widget.Toast.makeText(this,"Cannot create project storage.",android.widget.Toast.LENGTH_LONG).show();return;}
                     if(!folder.mkdirs()){android.widget.Toast.makeText(this,"Could not create project folder.",android.widget.Toast.LENGTH_LONG).show();return;}
                     File target=new File(folder,name+".meshy3d");
+                    File previousDirectory=activeMeshyProjectDirectory;
+                    File previousDocument=activeMeshyDocument;
                     try{
+                        activeMeshyProjectDirectory=folder;activeMeshyDocument=target;
                         writeMeshyDocumentFile(target,false);
-                        activeMeshyProjectDirectory=folder;activeMeshyDocument=target;recordRecentMeshyDocument(target);
+                        recordRecentMeshyDocument(target);
                         android.widget.Toast.makeText(this,"Saved new Meshy3D document: "+target.getName(),android.widget.Toast.LENGTH_LONG).show();
                     }catch(Exception error){
+                        activeMeshyProjectDirectory=previousDirectory;activeMeshyDocument=previousDocument;
                         target.delete();folder.delete();
                         android.widget.Toast.makeText(this,"Save As failed: "+error.getMessage(),android.widget.Toast.LENGTH_LONG).show();
                     }
