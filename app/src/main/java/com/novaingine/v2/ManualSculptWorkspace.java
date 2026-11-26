@@ -1225,11 +1225,39 @@ public final class ManualSculptWorkspace extends FrameLayout {
             public void onStartTrackingTouch(SeekBar s){}
             public void onStopTrackingTouch(SeekBar s){}
         });
+
+        int initialRed=Color.red(active.lightColor),initialGreen=Color.green(active.lightColor),
+                initialBlue=Color.blue(active.lightColor);
+        TextView colorLabel=new TextView(activity);
+        colorLabel.setText(String.format(java.util.Locale.US,"Light Color: #%02X%02X%02X",
+                initialRed,initialGreen,initialBlue));
+        panel.addView(colorLabel);
+        SeekBar red=new SeekBar(activity);red.setMax(255);red.setProgress(initialRed);
+        SeekBar green=new SeekBar(activity);green.setMax(255);green.setProgress(initialGreen);
+        SeekBar blue=new SeekBar(activity);blue.setMax(255);blue.setProgress(initialBlue);
+        TextView redLabel=new TextView(activity);redLabel.setText("Red");
+        TextView greenLabel=new TextView(activity);greenLabel.setText("Green");
+        TextView blueLabel=new TextView(activity);blueLabel.setText("Blue");
+        android.widget.SeekBar.OnSeekBarChangeListener colorListener=new android.widget.SeekBar.OnSeekBarChangeListener(){
+            public void onProgressChanged(SeekBar bar,int value,boolean user){
+                colorLabel.setText(String.format(java.util.Locale.US,"Light Color: #%02X%02X%02X",
+                        red.getProgress(),green.getProgress(),blue.getProgress()));
+            }
+            public void onStartTrackingTouch(SeekBar bar){}
+            public void onStopTrackingTouch(SeekBar bar){}
+        };
+        red.setOnSeekBarChangeListener(colorListener);
+        green.setOnSeekBarChangeListener(colorListener);
+        blue.setOnSeekBarChangeListener(colorListener);
+
         panel.addView(powerLabel);panel.addView(power);panel.addView(angleLabel);panel.addView(angle);
+        panel.addView(redLabel);panel.addView(red);
+        panel.addView(greenLabel);panel.addView(green);
+        panel.addView(blueLabel);panel.addView(blue);
         new android.app.AlertDialog.Builder(activity).setTitle("Light Settings").setView(panel)
                 .setPositiveButton("Apply",(d,w)->{
                     try{
-                        int color=active.lightColor;
+                        int color=Color.argb(255,red.getProgress(),green.getProgress(),blue.getProgress());
                         checkpointMeshEdit();
                         meshyViewport.setActiveLightSettings(types[typeSpinner.getSelectedItemPosition()],
                                 power.getProgress()*10f,angle.getProgress(),color);
