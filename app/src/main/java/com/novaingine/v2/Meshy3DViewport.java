@@ -155,25 +155,34 @@ public final class Meshy3DViewport extends View {
     }
 
     public void transformActiveObject(int operation,float x,float y,float z) {
-        if(objectSceneActiveId==null)return;
-        Meshy3DObjectScene.Transform t=objectScene.getActiveObject().transform.copy();
-        if(operation==0){t.x+=x;t.y+=y;t.z+=z;}
-        else if(operation==1){t.rotationX+=x;t.rotationY+=y;t.rotationZ+=z;}
-        else {t.scaleX*=x;t.scaleY*=y;t.scaleZ*=z;}
-        objectScene.setTransform(objectSceneActiveId,t);
+        java.util.ArrayList<Meshy3DObjectScene.Object3D> targets=new java.util.ArrayList<>(objectScene.getSelectedObjects());
+        if(targets.isEmpty()&&objectSceneActiveId!=null)targets.add(objectScene.getObject(objectSceneActiveId));
+        for(Meshy3DObjectScene.Object3D target:targets) {
+            Meshy3DObjectScene.Transform t=target.transform.copy();
+            if(operation==0){t.x+=x;t.y+=y;t.z+=z;}
+            else if(operation==1){t.rotationX+=x;t.rotationY+=y;t.rotationZ+=z;}
+            else {t.scaleX*=x;t.scaleY*=y;t.scaleZ*=z;}
+            objectScene.setTransform(target.id,t);
+        }
         invalidate();
     }
 
     public void applyActiveObjectRotationAndScale() {
         if(objectSceneActiveId==null)return;
         syncCoreFromViewport();
-        objectScene.applyRotationAndScale(objectSceneActiveId);
+        java.util.ArrayList<Meshy3DObjectScene.Object3D> targets=new java.util.ArrayList<>(objectScene.getSelectedObjects());
+        if(targets.isEmpty())targets.add(objectScene.getObject(objectSceneActiveId));
+        for(Meshy3DObjectScene.Object3D target:targets)objectScene.applyRotationAndScale(target.id);
         syncViewportFromCore();
     }
 
     public void applyActiveObjectLocation() {
         if(objectSceneActiveId==null)return;
-        syncCoreFromViewport();objectScene.applyLocation(objectSceneActiveId);syncViewportFromCore();invalidate();
+        syncCoreFromViewport();
+        java.util.ArrayList<Meshy3DObjectScene.Object3D> targets=new java.util.ArrayList<>(objectScene.getSelectedObjects());
+        if(targets.isEmpty())targets.add(objectScene.getObject(objectSceneActiveId));
+        for(Meshy3DObjectScene.Object3D target:targets)objectScene.applyLocation(target.id);
+        syncViewportFromCore();invalidate();
     }
     public void setActiveObjectOriginToGeometry() {
         if(objectSceneActiveId==null)return;
@@ -185,9 +194,13 @@ public final class Meshy3DViewport extends View {
     }
     public void clearActiveObjectTransform(int component) {
         if(objectSceneActiveId==null)return;
-        if(component==0)objectScene.clearLocation(objectSceneActiveId);
-        else if(component==1)objectScene.clearRotation(objectSceneActiveId);
-        else objectScene.clearScale(objectSceneActiveId);
+        java.util.ArrayList<Meshy3DObjectScene.Object3D> targets=new java.util.ArrayList<>(objectScene.getSelectedObjects());
+        if(targets.isEmpty())targets.add(objectScene.getObject(objectSceneActiveId));
+        for(Meshy3DObjectScene.Object3D target:targets){
+            if(component==0)objectScene.clearLocation(target.id);
+            else if(component==1)objectScene.clearRotation(target.id);
+            else objectScene.clearScale(target.id);
+        }
         invalidate();
     }
 
