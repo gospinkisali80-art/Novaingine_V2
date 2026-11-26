@@ -523,41 +523,147 @@ public final class Meshy3DObjectScene {
         replaceSelection(targets);
     }
 
+    private static float[][] generatePlanarFaceUvs(float[][] vertices,int[][] faces) {
+        float[][] result=new float[faces.length][];
+        for(int fi=0;fi<faces.length;fi++){
+            int[] face=faces[fi];float[] a=vertices[face[0]],b=vertices[face[1]],d=vertices[face[2]];
+            float ux=b[0]-a[0],uy=b[1]-a[1],uz=b[2]-a[2];
+            float vx=d[0]-a[0],vy=d[1]-a[1],vz=d[2]-a[2];
+            float nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx;
+            int drop=Math.abs(nx)>=Math.abs(ny)&&Math.abs(nx)>=Math.abs(nz)?0:
+                    Math.abs(ny)>=Math.abs(nz)?1:2;
+            float minU=Float.MAX_VALUE,minV=Float.MAX_VALUE,maxU=-Float.MAX_VALUE,maxV=-Float.MAX_VALUE;
+            for(int id:face){
+                float u=drop==0?vertices[id][1]:vertices[id][0];
+                float v=drop==2?vertices[id][1]:vertices[id][2];
+                if(drop==1)v=vertices[id][2];
+                minU=Math.min(minU,u);minV=Math.min(minV,v);maxU=Math.max(maxU,u);maxV=Math.max(maxV,v);
+            }
+            float spanU=Math.max(1e-6f,maxU-minU),spanV=Math.max(1e-6f,maxV-minV);
+            float[] uv=new float[face.length*2];
+            for(int corner=0;corner<face.length;corner++){
+                int id=face[corner];
+                float u=drop==0?vertices[id][1]:vertices[id][0];
+                float v=vertices[id][2];
+                if(drop==2)v=vertices[id][1];
+                uv[corner*2]=(u-minU)/spanU;uv[corner*2+1]=(v-minV)/spanV;
+            }
+            result[fi]=uv;
+        }
+        return result;
+    }
+
+    private static float[][][] toCornerUvArray(float[][] packed) {
+        float[][][] out=new float[packed.length][][];
+        for(int face=0;face<packed.length;face++){
+            int corners=packed[face].length/2;out[face]=new float[corners][2];
+            for(int corner=0;corner<corners;corner++){
+                out[face][corner][0]=packed[face][corner*2];
+                out[face][corner][1]=packed[face][corner*2+1];
+            }
+        }
+        return out;
+    }
+
+    private static double linearDeterminant(double[] m) {
+        return m[0]*(m[5]*m[10]-m[6]*m[9])
+                -m[1]*(m[4]*m[10]-m[6]*m[8])
+                +m[2]*(m[4]*m[9]-m[5]*m[8]);
+    }
+
     /** Join selected mesh objects into the active object's local coordinate space. */
     public Object3D joinSelectedMeshes() {
         Object3D active=getActiveObject();
         if(active==null)throw new IllegalStateException("There is no active object");
         ArrayList<Object3D> selected=new ArrayList<>(getSelectedObjects());
         if(selected.size()<2)throw new IllegalStateException("Select at least two mesh objects to join");
-        for(Object3D o:selected)if(!"MESH".equals(o.type)||o.mesh==null)
+        for(Object3D object:selected)if(!"MESH".equals(object.type)||object.mesh==null)
             throw new IllegalStateException("Join supports mesh objects only");
+
+        Meshy3DCore referenceMesh=active.mesh;
+        int referenceColor=referenceMesh.getBaseColor();
+        float referenceMetallic=referenceMesh.getMetallic(),referenceRoughness=referenceMesh.getRoughness();
+        boolean referenceHasTexture=referenceMesh.hasTexture();
+        int referenceTextureWidth=referenceMesh.getTextureWidth(),referenceTextureHeight=referenceMesh.getTextureHeight();
+        int[] referenceTexture=referenceMesh.getTexturePixels();
+        boolean anyUv=false;
+        for(Object3D object:selected){
+            Meshy3DCore mesh=object.mesh;
+            if(mesh.getBaseColor()!=referenceColor
+                    ||Math.abs(mesh.getMetallic()-referenceMetallic)>1e-6f
+                    ||Math.abs(mesh.getRoughness()-referenceRoughness)>1e-6f)
+                throw new IllegalStateException("Join cannot merge different object materials yet. Assign matching Base Color, Metallic and Roughness first.");
+            if(mesh.hasTexture()!=referenceHasTexture
+                    ||mesh.getTextureWidth()!=referenceTextureWidth||mesh.getTextureHeight()!=referenceTextureHeight
+                    ||!java.util.Arrays.equals(mesh.getTexturePixels(),referenceTexture))
+                throw new IllegalStateException("Join cannot merge different image textures yet. Use the same texture image on the selected meshes first.");
+            if(referenceHasTexture&&!mesh.hasFaceUvs())
+                throw new IllegalStateException("Every textured mesh needs UV coordinates before joining.");
+            anyUv|=mesh.copyFaceUvs()!=null;
+        }
+
         double[] inverseActive=invertAffine(worldMatrix(active.id));
         ArrayList<float[]> mergedVertices=new ArrayList<>();
         ArrayList<int[]> mergedFaces=new ArrayList<>();
+        ArrayList<float[][]> mergedUvFaces=new ArrayList<>();
         for(Object3D source:selected){
             double[] toActive=multiply(inverseActive,worldMatrix(source.id));
             float[][] sourceVertices=source.mesh.copyVertices();
             int[][] sourceFaces=source.mesh.copyFaces();
+            float[][][] sourceUvs=source.mesh.copyFaceUvs();
             int offset=mergedVertices.size();
-            for(float[] p:sourceVertices){
+            for(float[] point:sourceVertices){
                 mergedVertices.add(new float[]{
-                        finite((float)(toActive[0]*p[0]+toActive[1]*p[1]+toActive[2]*p[2]+toActive[3])),
-                        finite((float)(toActive[4]*p[0]+toActive[5]*p[1]+toActive[6]*p[2]+toActive[7])),
-                        finite((float)(toActive[8]*p[0]+toActive[9]*p[1]+toActive[10]*p[2]+toActive[11]))});
+                        finite((float)(toActive[0]*point[0]+toActive[1]*point[1]+toActive[2]*point[2]+toActive[3])),
+                        finite((float)(toActive[4]*point[0]+toActive[5]*point[1]+toActive[6]*point[2]+toActive[7])),
+                        finite((float)(toActive[8]*point[0]+toActive[9]*point[1]+toActive[10]*point[2]+toActive[11]))});
             }
-            for(int[] face:sourceFaces){int[] mapped=face.clone();for(int i=0;i<mapped.length;i++)mapped[i]+=offset;mergedFaces.add(mapped);}
+            float[][] generatedUvs=sourceUvs==null&&anyUv&&!referenceHasTexture
+                    ?generatePlanarFaceUvs(sourceVertices,sourceFaces):null;
+            boolean mirrored=linearDeterminant(toActive)<0;
+            for(int fi=0;fi<sourceFaces.length;fi++){
+                int[] original=sourceFaces[fi];
+                int[] mapped=original.clone();
+                for(int corner=0;corner<mapped.length;corner++)mapped[corner]+=offset;
+                if(mirrored){
+                    for(int left=0,right=mapped.length-1;left<right;left++,right--){
+                        int swap=mapped[left];mapped[left]=mapped[right];mapped[right]=swap;
+                    }
+                }
+                mergedFaces.add(mapped);
+                if(anyUv){
+                    float[][] uvFace=new float[original.length][2];
+                    if(sourceUvs!=null&&fi<sourceUvs.length&&sourceUvs[fi]!=null
+                            &&sourceUvs[fi].length==original.length){
+                        for(int corner=0;corner<original.length;corner++){
+                            int uvCorner=mirrored?original.length-1-corner:corner;
+                            uvFace[corner]=sourceUvs[fi][uvCorner].clone();
+                        }
+                    }else{
+                        for(int corner=0;corner<original.length;corner++){
+                            int uvCorner=mirrored?original.length-1-corner:corner;
+                            uvFace[corner][0]=generatedUvs[fi][uvCorner*2];
+                            uvFace[corner][1]=generatedUvs[fi][uvCorner*2+1];
+                        }
+                    }
+                    mergedUvFaces.add(uvFace);
+                }
+            }
         }
-        if(mergedVertices.isEmpty()||mergedFaces.isEmpty())throw new IllegalStateException("Selected meshes contain no joinable geometry");
+        if(mergedVertices.isEmpty()||mergedFaces.isEmpty())
+            throw new IllegalStateException("Selected meshes contain no joinable geometry");
+
+        // Never mutate a mesh datablock still used by an unselected linked object.
+        if(getMeshDataUserCount(active.id)>1)active.mesh=active.mesh.copy();
+
         java.util.HashSet<String> deletingIds=new java.util.HashSet<>();
         for(Object3D source:selected)if(source!=active)deletingIds.add(source.id);
         // Reparent active before deleting any selected ancestor, preserving its world matrix.
-        String ancestor=active.parentId;
-        int ancestorGuard=0;
+        String ancestor=active.parentId;int ancestorGuard=0;
         while(ancestor!=null&&deletingIds.contains(ancestor)&&ancestorGuard++<objects.size()){
             Object3D parent=objects.get(ancestor);
             String next=parent==null?null:parent.parentId;
-            setParent(active.id,next);
-            ancestor=next;
+            setParent(active.id,next);ancestor=next;
         }
         for(Object3D source:selected)if(source!=active){
             ArrayList<String> children=new ArrayList<>();
@@ -565,8 +671,10 @@ public final class Meshy3DObjectScene {
                 if(source.id.equals(candidate.parentId)&&!candidate.selected)children.add(candidate.id);
             for(String child:children)setParent(child,active.id);
         }
-        float[][] v=mergedVertices.toArray(new float[0][]);int[][] f=mergedFaces.toArray(new int[0][]);
-        active.mesh.replaceGeometry(v,f);
+        float[][] vertices=mergedVertices.toArray(new float[0][]);
+        int[][] faces=mergedFaces.toArray(new int[0][]);
+        float[][][] uvs=anyUv?mergedUvFaces.toArray(new float[0][][]):null;
+        active.mesh.replaceGeometry(vertices,faces,uvs);
         for(Object3D source:selected)if(source!=active){
             if(source.id.equals(activeCameraId))activeCameraId=null;
             objects.remove(source.id);
