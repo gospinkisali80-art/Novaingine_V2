@@ -90,6 +90,7 @@ public final class Meshy3DObjectScene {
     private final LinkedHashMap<String,Collection3D> collections=new LinkedHashMap<>();
     private String activeObjectId;
     private String activeCameraId;
+    private float cursorX,cursorY,cursorZ;
     private long revision;
 
     public Meshy3DObjectScene() {
@@ -107,6 +108,32 @@ public final class Meshy3DObjectScene {
     public String getActiveObjectId(){return activeObjectId;}
     public String getActiveCameraId(){return activeCameraId;}
     public Object3D getActiveCamera(){return activeCameraId==null?null:objects.get(activeCameraId);}
+    public float[] getCursorLocation(){return new float[]{cursorX,cursorY,cursorZ};}
+    public void setCursorLocation(float x,float y,float z){cursorX=finite(x);cursorY=finite(y);cursorZ=finite(z);revision++;}
+    public void setWorldLocation(String objectId,float x,float y,float z){
+        Object3D object=requireObject(objectId);double lx=x,ly=y,lz=z;
+        if(object.parentId!=null){
+            double[] inv=invertAffine(worldMatrix(object.parentId));
+            lx=inv[0]*x+inv[1]*y+inv[2]*z+inv[3];
+            ly=inv[4]*x+inv[5]*y+inv[6]*z+inv[7];
+            lz=inv[8]*x+inv[9]*y+inv[10]*z+inv[11];
+        }
+        object.transform.x=finite((float)lx);object.transform.y=finite((float)ly);object.transform.z=finite((float)lz);revision++;
+    }
+    public int snapSelectedToGrid(float step){
+        if(!Float.isFinite(step)||step<=0f||step>10000f)throw new IllegalArgumentException("Grid step must be positive");
+        ArrayList<Object3D> targets=new ArrayList<>(getSelectedObjects());
+        if(targets.isEmpty()&&activeObjectId!=null)targets.add(requireObject(activeObjectId));
+        for(Object3D object:targets){float[] p=worldLocation(object.id);
+            setWorldLocation(object.id,Math.round(p[0]/step)*step,Math.round(p[1]/step)*step,Math.round(p[2]/step)*step);}
+        return targets.size();
+    }
+    public int snapSelectedToCursor(){
+        ArrayList<Object3D> targets=new ArrayList<>(getSelectedObjects());
+        if(targets.isEmpty()&&activeObjectId!=null)targets.add(requireObject(activeObjectId));
+        for(Object3D object:targets)setWorldLocation(object.id,cursorX,cursorY,cursorZ);
+        return targets.size();
+    }
     public void setActiveCamera(String objectId){
         Object3D camera=requireObject(objectId);
         if(!"CAMERA".equals(camera.type))throw new IllegalArgumentException("Active camera must be a Camera object");
@@ -618,7 +645,9 @@ int flags=caseSensitive?0:java.util.regex.Pattern.CASE_INSENSITIVE;
     }
     public boolean isVisibleInViewport(Object3D o) {
         if(!o.visible)return false;
-        for(String id:o.collectionIds){Collection3D c=collections.get(id);if(c!=null&&!c.visible)return false;}
+        boolean anyVisibleCollection=false;
+        for(String id:o.collectionIds){Collection3D c=collections.get(id);if(c!=null&&c.visible){anyVisibleCollection=true;break;}}
+        if(!anyVisibleCollection)return false;
         String parent=o.parentId;int guard=0;
         while(parent!=null&&guard++<objects.size()){
             Object3D p=objects.get(parent);if(p==null||!p.visible)return false;parent=p.parentId;
@@ -627,7 +656,9 @@ int flags=caseSensitive?0:java.util.regex.Pattern.CASE_INSENSITIVE;
     }
     public boolean isVisibleInRender(Object3D o) {
         if(!o.renderVisible)return false;
-        for(String id:o.collectionIds){Collection3D c=collections.get(id);if(c!=null&&!c.renderVisible)return false;}
+        boolean anyVisibleCollection=false;
+        for(String id:o.collectionIds){Collection3D c=collections.get(id);if(c!=null&&c.renderVisible){anyVisibleCollection=true;break;}}
+        if(!anyVisibleCollection)return false;
         String parent=o.parentId;int guard=0;
         while(parent!=null&&guard++<objects.size()){
             Object3D p=objects.get(parent);if(p==null||!p.renderVisible)return false;parent=p.parentId;
@@ -675,7 +706,9 @@ int flags=caseSensitive?0:java.util.regex.Pattern.CASE_INSENSITIVE;
         Object3D o=requireObject(objectId);
         if(o.mesh==null)throw new IllegalStateException("This object type has no editable mesh origin");
         double[] inverse=invertAffine(worldMatrix(objectId));
-        float cx=(float)inverse[3],cy=(float)inverse[7],cz=(float)inverse[11];
+        float cx=(float)(inverse[0]*cursorX+inverse[1]*cursorY+inverse[2]*cursorZ+inverse[3]);
+        float cy=(float)(inverse[4]*cursorX+inverse[5]*cursorY+inverse[6]*cursorZ+inverse[7]);
+        float cz=(float)(inverse[8]*cursorX+inverse[9]*cursorY+inverse[10]*cursorZ+inverse[11]);
         float[][] vertices=o.mesh.copyVertices();
         float[] offset=transformVector(o.transform,cx,cy,cz);
         for(float[] p:vertices){p[0]-=cx;p[1]-=cy;p[2]-=cz;}
@@ -723,16 +756,23 @@ int flags=caseSensitive?0:java.util.regex.Pattern.CASE_INSENSITIVE;
             int meshSequence=0;
             for(Object3D o:objects.values()){
                 JSONObject item=new JSONObject();item.put("id",o.id);item.put("name",o.name);item.put("type",o.type);
-                String meshId=meshIds.get(o.mesh);
-                if(meshId==null){meshId="mesh-data-"+(meshSequence++);meshIds.put(o.mesh,meshId);item.put("mesh",o.mesh.exportState());}
-                item.put("meshDataId",meshId);
+                if(o.mesh!=null){
+                    String meshId=meshIds.get(o.mesh);
+                    if(meshId==null){meshId="mesh-data-"+(meshSequence++);meshIds.put(o.mesh,meshId);item.put("mesh",o.mesh.exportState());}
+                    item.put("meshDataId",meshId);
+                }
                 item.put("transform",o.transform.toJson());
                 item.put("parentId",o.parentId==null?JSONObject.NULL:o.parentId);
                 item.put("visible",o.visible);item.put("selectable",o.selectable);item.put("renderVisible",o.renderVisible);
+                item.put("cameraLens",o.cameraLens);item.put("cameraClipStart",o.cameraClipStart);item.put("cameraClipEnd",o.cameraClipEnd);
+                item.put("lightType",o.lightType);item.put("lightPower",o.lightPower);item.put("lightAngle",o.lightAngle);
+                item.put("lightColor",o.lightColor);item.put("displaySize",o.displaySize);
                 item.put("selected",o.selected);JSONArray members=new JSONArray();for(String id:o.collectionIds)members.put(id);item.put("collections",members);
                 objectArray.put(item);
             }
             root.put("objects",objectArray);
+            root.put("activeCameraId",activeCameraId==null?JSONObject.NULL:activeCameraId);
+            root.put("cursor",vector(cursorX,cursorY,cursorZ));
             JSONArray collectionArray=new JSONArray();
             for(Collection3D c:collections.values()){
                 JSONObject item=new JSONObject();item.put("id",c.id);item.put("name",c.name);item.put("visible",c.visible);item.put("renderVisible",c.renderVisible);collectionArray.put(item);
@@ -758,17 +798,23 @@ int flags=caseSensitive?0:java.util.regex.Pattern.CASE_INSENSITIVE;
             JSONArray objectArray=root.getJSONArray("objects");
             for(int i=0;i<objectArray.length();i++){
                 JSONObject item=objectArray.getJSONObject(i);String id=item.getString("id");
+                String objectType=item.optString("type","MESH");
                 String meshId=item.optString("meshDataId",id);
                 Meshy3DCore mesh=meshDataMap.get(meshId);
                 if(mesh==null){
-                    JSONObject meshState=item.optJSONObject("mesh");if(meshState==null)return false;
-                    mesh=new Meshy3DCore();if(!mesh.importState(meshState))return false;meshDataMap.put(meshId,mesh);
+                    JSONObject meshState=item.optJSONObject("mesh");
+                    if(meshState!=null){mesh=new Meshy3DCore();if(!mesh.importState(meshState))return false;meshDataMap.put(meshId,mesh);}
+                    else if("MESH".equals(objectType))return false;
                 }
-                Object3D o=new Object3D(id,item.optString("name","Object"),item.optString("type","MESH"),mesh);
+                Object3D o=new Object3D(id,item.optString("name","Object"),objectType,mesh);
                 Transform t=Transform.fromJson(item.optJSONObject("transform"));
                 o.transform.x=t.x;o.transform.y=t.y;o.transform.z=t.z;o.transform.rotationX=t.rotationX;o.transform.rotationY=t.rotationY;o.transform.rotationZ=t.rotationZ;o.transform.scaleX=t.scaleX;o.transform.scaleY=t.scaleY;o.transform.scaleZ=t.scaleZ;
                 Object parent=item.opt("parentId");o.parentId=parent==null||parent==JSONObject.NULL?null:String.valueOf(parent);
                 o.visible=item.optBoolean("visible",true);o.selectable=item.optBoolean("selectable",true);o.renderVisible=item.optBoolean("renderVisible",true);o.selected=item.optBoolean("selected",false);
+                o.cameraLens=(float)item.optDouble("cameraLens",50f);o.cameraClipStart=(float)item.optDouble("cameraClipStart",.1f);o.cameraClipEnd=(float)item.optDouble("cameraClipEnd",1000f);
+                o.lightType=item.optString("lightType","POINT");o.lightPower=(float)item.optDouble("lightPower",1000f);
+                o.lightAngle=(float)item.optDouble("lightAngle",45f);o.lightColor=item.optInt("lightColor",0xFFFFFFFF);
+                o.displaySize=(float)item.optDouble("displaySize",1f);
                 JSONArray memberships=item.optJSONArray("collections");
                 if(memberships!=null)for(int j=0;j<memberships.length();j++){String cid=memberships.getString(j);if(newCollections.containsKey(cid))o.collectionIds.add(cid);}
                 if(o.collectionIds.isEmpty())o.collectionIds.add(newCollections.keySet().iterator().next());
@@ -787,6 +833,10 @@ int flags=caseSensitive?0:java.util.regex.Pattern.CASE_INSENSITIVE;
             objects.clear();objects.putAll(newObjects);collections.clear();collections.putAll(newCollections);
             activeObjectId=root.optString("activeObjectId",null);
             if(!objects.containsKey(activeObjectId))activeObjectId=null;
+            Object camera=root.opt("activeCameraId");
+            activeCameraId=camera==null||camera==JSONObject.NULL?null:String.valueOf(camera);
+            if(activeCameraId!=null&&(!objects.containsKey(activeCameraId)||!"CAMERA".equals(objects.get(activeCameraId).type)))activeCameraId=null;
+            readVector(root.optJSONArray("cursor"),v->{cursorX=finite(v[0]);cursorY=finite(v[1]);cursorZ=finite(v[2]);});
             for(Object3D o:objects.values()){o.active=o.id.equals(activeObjectId);if(o.active)o.selected=true;}
             revision++;return true;
         }catch(Exception e){return false;}
