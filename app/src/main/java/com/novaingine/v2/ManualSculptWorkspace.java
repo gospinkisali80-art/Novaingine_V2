@@ -1447,7 +1447,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 .append("\nWorld dimensions: ").append(fmt(dimensions[0])).append(" × ")
                 .append(fmt(dimensions[1])).append(" × ").append(fmt(dimensions[2]));
         if(object.mesh!=null){
-            details.append("\nMesh data users: ").append(scene.getMeshDataUserCount(object.id))
+            details.append("\nModifiers: ").append(scene.getModifiers(object.id).size())
+                    .append("\nMesh data users: ").append(scene.getMeshDataUserCount(object.id))
                     .append("\nVertices: ").append(object.mesh.getVertexCount())
                     .append("   Edges: ").append(object.mesh.getEdgeCount())
                     .append("   Faces: ").append(object.mesh.getFaceCount());
@@ -1658,16 +1659,39 @@ public final class ManualSculptWorkspace extends FrameLayout {
             return;
         }
         ArrayList<Meshy3DObjectScene.Modifier3D> modifiers=new ArrayList<>(scene.getModifiers(active.id));
-        String[] options=new String[modifiers.size()+1];
+        String[] options=new String[modifiers.size()+3];
         options[0]="+ Add Modifier";
+        options[1]="Apply Entire Stack";
+        options[2]="Remove All Modifiers";
         for(int i=0;i<modifiers.size();i++){
             Meshy3DObjectScene.Modifier3D modifier=modifiers.get(i);
-            options[i+1]=(modifier.enabled?"✓ ":"○ ")+modifier.type.replace('_',' ');
+            options[i+3]=(modifier.enabled?"✓ ":"○ ")+modifier.type.replace('_',' ');
         }
         new android.app.AlertDialog.Builder(activity).setTitle(active.name+" | Modifier Stack")
                 .setItems(options,(dialog,which)->{
-                    if(which==0)showObjectModifierTypeChooser();
-                    else if(which-1<modifiers.size())showObjectModifierEditor(modifiers.get(which-1));
+                    try{
+                        if(which==0)showObjectModifierTypeChooser();
+                        else if(which==1){
+                            if(modifiers.isEmpty()){
+                                Toast.makeText(activity,"The modifier stack is empty.",Toast.LENGTH_SHORT).show();return;
+                            }
+                            checkpointMeshEdit();
+                            meshyViewport.applyActiveObjectModifiersThrough(modifiers.size()-1);
+                            refreshModelingOutliner();
+                            status.setText("Modeling | Entire modifier stack applied to "+active.name);
+                            showObjectModifiersDialog();
+                        }else if(which==2){
+                            if(modifiers.isEmpty())return;
+                            new android.app.AlertDialog.Builder(activity).setTitle("Remove All Modifiers")
+                                    .setMessage("Remove every modifier from "+active.name+"? The source mesh will remain unchanged.")
+                                    .setPositiveButton("Remove All",(confirm,button)->{
+                                        checkpointMeshEdit();scene.clearModifiers(active.id);meshyViewport.invalidate();
+                                        status.setText("Modeling | Modifier stack cleared");showObjectModifiersDialog();
+                                    }).setNegativeButton("Cancel",null).show();
+                        }else if(which-3<modifiers.size()){
+                            showObjectModifierEditor(modifiers.get(which-3));
+                        }
+                    }catch(Exception error){showObjectOperationError(error);}
                 }).setNegativeButton("Close",null).show();
     }
 
@@ -1783,10 +1807,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 int index=-1;for(int i=0;i<stack.size();i++)if(stack.get(i).id.equals(modifier.id)){index=i;break;}
                 if(index<0)throw new IllegalArgumentException("Modifier no longer exists.");
                 checkpointMeshEdit();
-                Meshy3DCore baked=Meshy3DModifierEvaluator.evaluateThrough(active,index);
-                active.mesh=baked;
-                scene.removeModifiersThrough(active.id,index);
-                meshyViewport.invalidate();status.setText("Modeling | "+modifier.type+" modifier applied to mesh");
+                meshyViewport.applyActiveObjectModifiersThrough(index);
+                status.setText("Modeling | Modifier stack applied through "+modifier.type+" on "+active.name);
                 dialog.dismiss();showObjectModifiersDialog();
             }catch(Exception error){showObjectOperationError(error);}
         });
