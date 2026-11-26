@@ -1780,7 +1780,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 checkpointMeshEdit();
                 Meshy3DCore baked=Meshy3DModifierEvaluator.evaluateThrough(active,index);
                 active.mesh=baked;
-                scene.removeModifier(active.id,modifier.id);
+                scene.removeModifiersThrough(active.id,index);
                 meshyViewport.invalidate();status.setText("Modeling | "+modifier.type+" modifier applied to mesh");
                 dialog.dismiss();showObjectModifiersDialog();
             }catch(Exception error){showObjectOperationError(error);}
