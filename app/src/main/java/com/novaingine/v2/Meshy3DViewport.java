@@ -49,7 +49,7 @@ public final class Meshy3DViewport extends View {
         vertices=document.copyVertices();faces=document.copyFaces();vertexMask=new float[vertices.length];
         uvCoordinates=null;invalidate();
     }
-    public void setMeshEditMode(boolean enabled){meshEditMode=enabled;invalidate();}
+    public void setMeshEditMode(boolean enabled){meshEditMode=enabled;if(enabled)showTopology=true;invalidate();}
     public boolean isMeshEditMode(){return meshEditMode;}
     public void setSelectionMode(String mode){
         if("Vertex".equalsIgnoreCase(mode))selectionMode=Meshy3DCore.SelectMode.VERTEX;
@@ -283,9 +283,11 @@ public final class Meshy3DViewport extends View {
                 paint.setColor(0xFFFFA52B);canvas.drawLine(a[0],a[1],b[0],b[1],paint);
             }
             if(selectionMode==Meshy3DCore.SelectMode.VERTEX){
-                paint.setStyle(Paint.Style.FILL);paint.setColor(0xFFFFA52B);
-                for(int i=0;i<vertices.length;i++)if(document.isVertexSelected(i))
-                    canvas.drawCircle(p[i][0],p[i][1],5f*getResources().getDisplayMetrics().density,paint);
+                paint.setStyle(Paint.Style.FILL);float density=getResources().getDisplayMetrics().density;
+                for(int i=0;i<vertices.length;i++){
+                    paint.setColor(document.isVertexSelected(i)?0xFFFFA52B:0xFFDBE2E9);
+                    canvas.drawCircle(p[i][0],p[i][1],(document.isVertexSelected(i)?4.5f:2.1f)*density,paint);
+                }
             }
         }
         paint.setStyle(Paint.Style.FILL);
