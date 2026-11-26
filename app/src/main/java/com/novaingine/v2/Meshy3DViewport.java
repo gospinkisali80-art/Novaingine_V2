@@ -47,6 +47,9 @@ public final class Meshy3DViewport extends View {
     private Runnable onObjectTransformStart;
     private int objectTransformTool=-1;
     private boolean objectGizmoDragging;
+    private boolean objectBoxSelectEnabled;
+    private boolean objectBoxSelecting;
+    private float objectBoxEndX,objectBoxEndY;
     private int objectGizmoAxis=-1;
     private float gizmoStartX,gizmoStartY,gizmoAxisScreenX,gizmoAxisScreenY,gizmoStartWorldX;
     private final java.util.ArrayList<String> gizmoObjectIds=new java.util.ArrayList<>();
@@ -67,6 +70,10 @@ public final class Meshy3DViewport extends View {
         objectGizmoDragging=false;objectGizmoAxis=-1;invalidate();
     }
     public int getObjectTransformTool(){return objectTransformTool;}
+    public void setObjectBoxSelectEnabled(boolean enabled){
+        objectBoxSelectEnabled=enabled;objectBoxSelecting=false;
+        if(enabled)objectTransformTool=-1;invalidate();
+    }
 
     private Meshy3DCore copyMeshCore(Meshy3DCore source) {
         Meshy3DCore copy=new Meshy3DCore();
@@ -238,6 +245,43 @@ public final class Meshy3DViewport extends View {
     public void selectSceneObject(String id) { activateSceneObject(id); }
     public void selectSceneObject(String id,boolean additive) { activateSceneObject(id,!additive); }
     public void setObjectSelectionEnabled(boolean enabled){objectSelectionEnabled=enabled;}
+    private void performObjectBoxSelection(float x0,float y0,float x1,float y1) {
+        float left=Math.min(x0,x1),right=Math.max(x0,x1),top=Math.min(y0,y1),bottom=Math.max(y0,y1);
+        float cx=getWidth()*.5f,cy=getHeight()*.49f,unit=Math.min(getWidth(),getHeight())*.235f*zoom;
+        ArrayList<Meshy3DObjectScene.Object3D> hits=new ArrayList<>();
+        for(Meshy3DObjectScene.Object3D object:objectScene.getObjects()){
+            if(!object.selectable||!objectScene.isVisibleInViewport(object)||!object.renderVisible
+                    ||(localViewActive&&!localViewObjectIds.contains(object.id)))continue;
+            boolean hit=false;
+            if(object.mesh==null){
+                float[] world=objectScene.transformPoint(object.id,0,0,0);
+                float[] screen=project(world[0],world[1],world[2],cx,cy,unit);
+                float radius=Math.max(12f,object.displaySize*12f*getResources().getDisplayMetrics().density);
+                hit=screen[0]+radius>=left&&screen[0]-radius<=right&&screen[1]+radius>=top&&screen[1]-radius<=bottom;
+            }else{
+                float[][] mesh=object.mesh.copyVertices();
+                float minX=Float.MAX_VALUE,minY=Float.MAX_VALUE,maxX=-Float.MAX_VALUE,maxY=-Float.MAX_VALUE;
+                for(float[] vertex:mesh){
+                    float[] world=objectScene.transformPoint(object.id,vertex[0],vertex[1],vertex[2]);
+                    float[] screen=project(world[0],world[1],world[2],cx,cy,unit);
+                    minX=Math.min(minX,screen[0]);minY=Math.min(minY,screen[1]);
+                    maxX=Math.max(maxX,screen[0]);maxY=Math.max(maxY,screen[1]);
+                    if(screen[0]>=left&&screen[0]<=right&&screen[1]>=top&&screen[1]<=bottom)hit=true;
+                }
+                if(!hit)hit=maxX>=left&&minX<=right&&maxY>=top&&minY<=bottom;
+            }
+            if(hit)hits.add(object);
+        }
+        objectScene.deselectAllObjects();
+        objectSceneActiveId=null;
+        for(Meshy3DObjectScene.Object3D object:hits){
+            if(objectSceneActiveId==null)activateSceneObject(object.id,true);
+            else activateSceneObject(object.id,false);
+            objectSceneActiveId=object.id;
+        }
+        if(onObjectSelectionChanged!=null)onObjectSelectionChanged.run();
+    }
+
     private void selectObjectAt(float x,float y,boolean additive) {
         float cx=getWidth()*.5f,cy=getHeight()*.49f,unit=Math.min(getWidth(),getHeight())*.235f*zoom;
         Meshy3DObjectScene.Object3D best=null;
@@ -840,6 +884,13 @@ public final class Meshy3DViewport extends View {
         }
         drawSceneObjectMarkers(canvas,cx,cy,unit);
         drawSceneCursor(canvas,cx,cy,unit);
+        if(objectBoxSelecting){
+            paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(2f*getResources().getDisplayMetrics().density);
+            paint.setColor(0xFF63A9F2);
+            canvas.drawRect(Math.min(downX,objectBoxEndX),Math.min(downY,objectBoxEndY),
+                    Math.max(downX,objectBoxEndX),Math.max(downY,objectBoxEndY),paint);
+            paint.setStyle(Paint.Style.FILL);
+        }
         if(!meshEditMode&&objectSelectionEnabled&&objectTransformTool>=0)drawObjectTransformGizmo(canvas,cx,cy,unit);
         drawNavigationGizmo(canvas, width, 18f*getResources().getDisplayMetrics().density);
     }
@@ -1361,6 +1412,9 @@ public final class Meshy3DViewport extends View {
             case MotionEvent.ACTION_DOWN:
                 downX=lastX=event.getX(); downY=lastY=event.getY();
                 moved=false; lastPinchDistance=0;
+                if(!sculpting&&!meshEditMode&&objectSelectionEnabled&&objectBoxSelectEnabled){
+                    objectBoxSelecting=true;objectBoxEndX=downX;objectBoxEndY=downY;invalidate();return true;
+                }
                 if(!sculpting&&!meshEditMode&&objectSelectionEnabled&&objectTransformTool>=0
                         &&beginObjectGizmoDrag(event.getX(),event.getY()))return true;
                 if(sculpting){
@@ -1374,6 +1428,11 @@ public final class Meshy3DViewport extends View {
             case MotionEvent.ACTION_POINTER_DOWN:
                 lastPinchDistance=pointerDistance(event); moved=true; return true;
             case MotionEvent.ACTION_MOVE:
+                if(objectBoxSelecting&&event.getPointerCount()==1){
+                    objectBoxEndX=event.getX();objectBoxEndY=event.getY();
+                    if(Math.abs(objectBoxEndX-downX)+Math.abs(objectBoxEndY-downY)>4*d)moved=true;
+                    invalidate();return true;
+                }
                 if(objectGizmoDragging&&event.getPointerCount()==1){
                     updateObjectGizmoDrag(event.getX(),event.getY());return true;
                 }
@@ -1408,6 +1467,10 @@ public final class Meshy3DViewport extends View {
                 return true;
             case MotionEvent.ACTION_UP:
                 strokeActive=false;
+                if(objectBoxSelecting){
+                    objectBoxSelecting=false;performObjectBoxSelection(downX,downY,event.getX(),event.getY());
+                    invalidate();performClick();return true;
+                }
                 if(objectGizmoDragging){objectGizmoDragging=false;objectGizmoAxis=-1;
                     gizmoObjectIds.clear();gizmoInitialTransforms.clear();invalidate();performClick();return true;}
                 if(polyBuildMode){if(!moved)addPolyBuildPoint(event.getX(),event.getY());performClick();return true;}
