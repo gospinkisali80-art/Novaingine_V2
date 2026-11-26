@@ -56,6 +56,7 @@ public final class Meshy3DSoftwareRenderer {
                                      int[] faceMaterialIds,int[] materialColors,
                                      float[] materialMetallic,float[] materialRoughness,
                                      int[][] materialTextures,int[] textureWidths,int[] textureHeights,
+                                     float[][] faceLightDirections,float[][] faceLightTints,
                                      float[][][] faceUvs){
         width=Math.max(64,Math.min(2048,width));height=Math.max(64,Math.min(2048,height));
         zoom=Math.max(.2f,Math.min(4f,zoom));
@@ -76,7 +77,7 @@ public final class Meshy3DSoftwareRenderer {
             q.sx=width*.5f+q.x*unit*perspective;q.sy=height*.49f-q.y*unit*perspective;
             projected[i]=q;
         }
-        float[] light=normalize(new float[]{-.45f,.82f,.65f});
+        float[] defaultLight=normalize(new float[]{-.45f,.82f,.65f});
         float[] view=normalize(new float[]{0,0,1});
         for(int fi=0;fi<faces.length;fi++){
             int[] face=faces[fi];if(face.length<3)continue;
@@ -91,6 +92,12 @@ public final class Meshy3DSoftwareRenderer {
             int tw=textureWidths!=null&&material<textureWidths.length?textureWidths[material]:0;
             int th=textureHeights!=null&&material<textureHeights.length?textureHeights[material]:0;
             float[][] uv=faceUvs!=null&&fi<faceUvs.length?faceUvs[fi]:null;
+            float[] light=faceLightDirections!=null&&fi<faceLightDirections.length
+                    ?normalize(faceLightDirections[fi]):defaultLight;
+            if(faceLightTints!=null&&fi<faceLightTints.length&&faceLightTints[fi]!=null){
+                float[] tint=faceLightTints[fi];
+                br*=tint.length>0?tint[0]:1f;bg*=tint.length>1?tint[1]:1f;bb*=tint.length>2?tint[2]:1f;
+            }
             V a=projected[face[0]],b=projected[face[1]],cc=projected[face[2]];
             float[] n=normalize(cross(new float[]{b.x-a.x,b.y-a.y,b.z-a.z},
                     new float[]{cc.x-a.x,cc.y-a.y,cc.z-a.z}));
