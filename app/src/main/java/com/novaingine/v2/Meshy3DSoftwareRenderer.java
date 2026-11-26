@@ -17,6 +17,13 @@ public final class Meshy3DSoftwareRenderer {
     public static Bitmap render(float[][] vertices,int[][] faces,int width,int height,
                                 float yaw,float pitch,float zoom,int color,float metallic,float roughness,
                                 int[] texture,int textureWidth,int textureHeight,float[][][] faceUvs){
+        return render(vertices,faces,width,height,yaw,pitch,0f,zoom,color,metallic,roughness,
+                texture,textureWidth,textureHeight,faceUvs);
+    }
+
+    public static Bitmap render(float[][] vertices,int[][] faces,int width,int height,
+                                float yaw,float pitch,float roll,float zoom,int color,float metallic,float roughness,
+                                int[] texture,int textureWidth,int textureHeight,float[][][] faceUvs){
         width=Math.max(64,Math.min(2048,width));height=Math.max(64,Math.min(2048,height));
         zoom=Math.max(.2f,Math.min(4f,zoom));
         int[] pixels=new int[width*height];float[] depth=new float[width*height];
@@ -28,8 +35,10 @@ public final class Meshy3DSoftwareRenderer {
         for(int i=0;i<vertices.length;i++){
             float x=vertices[i][0],y=vertices[i][1],z=vertices[i][2];
             double rx=x*cy-z*sy,rz=x*sy+z*cy,ry=y*cp-rz*sp,rz2=y*sp+rz*cp;
+            double cr=Math.cos(roll),sr=Math.sin(roll);
+            double rolledX=rx*cr+ry*sr,rolledY=-rx*sr+ry*cr;
             float dep=(float)(5.2-rz2),perspective=(float)(5.2/Math.max(2.0,dep));
-            V q=new V((float)rx,(float)ry,(float)rz2);q.depth=dep;
+            V q=new V((float)rolledX,(float)rolledY,(float)rz2);q.depth=dep;
             q.sx=width*.5f+q.x*unit*perspective;q.sy=height*.49f-q.y*unit*perspective;projected[i]=q;
         }
         float br=((color>>16)&255)/255f,bg=((color>>8)&255)/255f,bb=(color&255)/255f;
@@ -58,6 +67,18 @@ public final class Meshy3DSoftwareRenderer {
                                      int[][] materialTextures,int[] textureWidths,int[] textureHeights,
                                      float[][] faceLightDirections,float[][] faceLightTints,
                                      float[][][] faceUvs){
+        return renderScene(vertices,faces,width,height,yaw,pitch,0f,zoom,
+                faceMaterialIds,materialColors,materialMetallic,materialRoughness,
+                materialTextures,textureWidths,textureHeights,faceLightDirections,faceLightTints,faceUvs);
+    }
+
+    public static Bitmap renderScene(float[][] vertices,int[][] faces,int width,int height,
+                                     float yaw,float pitch,float roll,float zoom,
+                                     int[] faceMaterialIds,int[] materialColors,
+                                     float[] materialMetallic,float[] materialRoughness,
+                                     int[][] materialTextures,int[] textureWidths,int[] textureHeights,
+                                     float[][] faceLightDirections,float[][] faceLightTints,
+                                     float[][][] faceUvs){
         width=Math.max(64,Math.min(2048,width));height=Math.max(64,Math.min(2048,height));
         zoom=Math.max(.2f,Math.min(4f,zoom));
         int[] pixels=new int[width*height];float[] depth=new float[width*height];
@@ -72,8 +93,10 @@ public final class Meshy3DSoftwareRenderer {
         for(int i=0;i<vertices.length;i++){
             float x=vertices[i][0],y=vertices[i][1],z=vertices[i][2];
             double rx=x*cy-z*sy,rz=x*sy+z*cy,ry=y*cp-rz*sp,rz2=y*sp+rz*cp;
+            double cr=Math.cos(roll),sr=Math.sin(roll);
+            double rolledX=rx*cr+ry*sr,rolledY=-rx*sr+ry*cr;
             float dep=(float)(5.2-rz2),perspective=(float)(5.2/Math.max(2.0,dep));
-            V q=new V((float)rx,(float)ry,(float)rz2);q.depth=dep;
+            V q=new V((float)rolledX,(float)rolledY,(float)rz2);q.depth=dep;
             q.sx=width*.5f+q.x*unit*perspective;q.sy=height*.49f-q.y*unit*perspective;
             projected[i]=q;
         }
