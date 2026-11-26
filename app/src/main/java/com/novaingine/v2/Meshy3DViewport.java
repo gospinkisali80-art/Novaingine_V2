@@ -247,7 +247,7 @@ public final class Meshy3DViewport extends View {
             float abx=b[0]-a[0], aby=b[1]-a[1], abz=b[2]-a[2];
             float acx=c[0]-a[0], acy=c[1]-a[1], acz=c[2]-a[2];
             float nx=aby*acz-abz*acy, ny=abz*acx-abx*acz, nz=abx*acy-aby*acx;
-            float centerZ=(a[2]+b[2]+c[2]+cameraPoint(vertices[face[3]][0],vertices[face[3]][1],vertices[face[3]][2])[2])*0.25f;
+            float centerZ=0f;for(int id:face)centerZ+=cameraPoint(vertices[id][0],vertices[id][1],vertices[id][2])[2];centerZ/=face.length;
             // Camera looks toward negative camera-Z; visible outward normals face camera.
             if(nx*0f+ny*0f+nz > 0.0001f) {
                 order[count]=f; depth[f]=centerZ; count++;
@@ -266,7 +266,7 @@ public final class Meshy3DViewport extends View {
             float nx=aby*acz-abz*acy,ny=abz*acx-abx*acz,nz=abx*acy-aby*acx;
             Path path=new Path();
             path.moveTo(p[face[0]][0],p[face[0]][1]);
-            for(int k=1;k<4;k++) path.lineTo(p[face[k]][0],p[face[k]][1]);
+            for(int k=1;k<face.length;k++) path.lineTo(p[face[k]][0],p[face[k]][1]);
             path.close();
             int side = Math.min(FACE_COLORS.length-1,f / (MESH_SUBDIVISIONS * MESH_SUBDIVISIONS));
             int base = FACE_COLORS[side];
