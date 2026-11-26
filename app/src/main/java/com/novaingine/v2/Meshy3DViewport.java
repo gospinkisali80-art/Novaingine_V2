@@ -95,7 +95,7 @@ public final class Meshy3DViewport extends View {
         Meshy3DObjectScene.Object3D best=null;float bestDistance=Float.MAX_VALUE;
         for(Meshy3DObjectScene.Object3D object:objectScene.getObjects()) {
             if(!objectScene.isVisibleInViewport(object)||!object.renderVisible||!object.selectable)continue;
-            float[] center=objectScene.worldLocation(object.id);
+            float[] center=objectScene.transformPoint(object.id,0,0,0);
             float[] screen=project(center[0],center[1],center[2],cx,cy,unit);
             float maxScale=Math.max(Math.abs(object.transform.scaleX),
                     Math.max(Math.abs(object.transform.scaleY),Math.abs(object.transform.scaleZ)));
@@ -139,6 +139,26 @@ public final class Meshy3DViewport extends View {
         syncCoreFromViewport();
         objectScene.applyRotationAndScale(objectSceneActiveId);
         syncViewportFromCore();
+    }
+
+    public void applyActiveObjectLocation() {
+        if(objectSceneActiveId==null)return;
+        syncCoreFromViewport();objectScene.applyLocation(objectSceneActiveId);syncViewportFromCore();invalidate();
+    }
+    public void setActiveObjectOriginToGeometry() {
+        if(objectSceneActiveId==null)return;
+        syncCoreFromViewport();objectScene.setOriginToGeometry(objectSceneActiveId);syncViewportFromCore();invalidate();
+    }
+    public void setActiveObjectOriginToCursor() {
+        if(objectSceneActiveId==null)return;
+        syncCoreFromViewport();objectScene.setOriginToCursor(objectSceneActiveId);syncViewportFromCore();invalidate();
+    }
+    public void clearActiveObjectTransform(int component) {
+        if(objectSceneActiveId==null)return;
+        if(component==0)objectScene.clearLocation(objectSceneActiveId);
+        else if(component==1)objectScene.clearRotation(objectSceneActiveId);
+        else objectScene.clearScale(objectSceneActiveId);
+        invalidate();
     }
 
     public void setActiveObjectVisible(boolean visible) {
@@ -185,16 +205,9 @@ public final class Meshy3DViewport extends View {
             if(!objectScene.isVisibleInViewport(object)||!object.renderVisible)continue;
             float[][] meshVertices=object.mesh==document?vertices:object.mesh.copyVertices();
             int[][] meshFaces=object.mesh==document?faces:object.mesh.copyFaces();
-            float[] world=objectScene.worldLocation(object.id);
-            Meshy3DObjectScene.Transform t=object.transform;
-            double rx=Math.toRadians(t.rotationX),ry=Math.toRadians(t.rotationY),rz=Math.toRadians(t.rotationZ);
             int offset=allVertices.size();
             for(float[] source:meshVertices) {
-                float x=source[0]*t.scaleX,y=source[1]*t.scaleY,z=source[2]*t.scaleZ;
-                float y1=(float)(y*Math.cos(rx)-z*Math.sin(rx)),z1=(float)(y*Math.sin(rx)+z*Math.cos(rx));
-                float x2=(float)(x*Math.cos(ry)+z1*Math.sin(ry)),z2=(float)(-x*Math.sin(ry)+z1*Math.cos(ry));
-                float x3=(float)(x2*Math.cos(rz)-y1*Math.sin(rz)),y3=(float)(x2*Math.sin(rz)+y1*Math.cos(rz));
-                allVertices.add(new float[]{x3+world[0],y3+world[1],z2+world[2]});
+                allVertices.add(objectScene.transformPoint(object.id,source[0],source[1],source[2]));
             }
             for(int[] face:meshFaces) {
                 int[] mapped=face.clone();
