@@ -414,6 +414,12 @@ public final class ManualSculptWorkspace extends FrameLayout {
 
     private void handleWorkspaceItem(String item) {
         if (meshyViewport == null) return;
+        if ("Cube".equalsIgnoreCase(item)) {
+            for(Meshy3DObjectScene.Object3D object:meshyViewport.getObjectScene().getObjects()) {
+                if(object.name.equalsIgnoreCase(item)){meshyViewport.selectSceneObject(object.id);
+                    status.setText(WORKSPACE_NAMES[activeWorkspaceIndex]+" | Active object: "+object.name);return;}
+            }
+        }
         if ("Selected Mesh".equalsIgnoreCase(item) || "Active Tool".equalsIgnoreCase(item)) {
             Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
             status.setText(WORKSPACE_NAMES[activeWorkspaceIndex] + " | Active object: "
@@ -632,10 +638,12 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 }
                 else if ("Object Mode / Edit Mode".equals(item) || "Edit Mode".equals(item)) {
                     activeEditorMode = "Edit Mode";if(modeButton!=null)modeButton.setText(activeEditorMode);
-                    meshyViewport.setMeshEditMode(true);meshyViewport.setShowTopology(true);status.setText("Modeling | Edit Mode");
+                    meshyViewport.setMeshEditMode(true);meshyViewport.setObjectSelectionEnabled(false);
+                    meshyViewport.setShowTopology(true);status.setText("Modeling | Edit Mode");
                 } else if ("Object Mode".equals(item)) {
                     activeEditorMode = "Object Mode";if(modeButton!=null)modeButton.setText(activeEditorMode);
-                    meshyViewport.setMeshEditMode(false);status.setText("Modeling | Object Mode");
+                    meshyViewport.setMeshEditMode(false);meshyViewport.setObjectSelectionEnabled(true);
+                    status.setText("Modeling | Object Mode");
                 } else if ("Wireframe".equals(item)) meshyViewport.toggleTopology();
                 else if ("Reset Mesh".equals(item)) {checkpointMeshEdit();meshyViewport.resetMesh();}
                 else showWorkspaceActionInfo(item);
@@ -1097,7 +1105,10 @@ public final class ManualSculptWorkspace extends FrameLayout {
         if (workspaceLayoutLayer == null) return;
         workspaceLayoutLayer.removeAllViews();
         viewportFocusMode = false;
-        if (meshyViewport != null) meshyViewport.setMeshEditMode(index == 1 && "Edit Mode".equals(activeEditorMode));
+        if (meshyViewport != null) {
+            meshyViewport.setMeshEditMode(index == 1 && "Edit Mode".equals(activeEditorMode));
+            meshyViewport.setObjectSelectionEnabled(index == 1 && "Object Mode".equals(activeEditorMode));
+        }
         workspaceToolbar = new LinearLayout(activity);
         workspaceToolbar.setGravity(Gravity.CENTER_VERTICAL);
         workspaceToolbar.setBackgroundColor(0xE02B333D);
