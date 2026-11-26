@@ -75,6 +75,8 @@ public final class Meshy3DViewport extends View {
         int[][] materialTextures;
         int[] textureWidths;
         int[] textureHeights;
+        float[][] faceLightDirections;
+        float[][] faceLightTints;
         float[][][] faceUvs;
     }
 
@@ -565,6 +567,7 @@ public final class Meshy3DViewport extends View {
         ArrayList<Float> materialMetallic=new ArrayList<>(),materialRoughness=new ArrayList<>();
         ArrayList<int[]> materialTextures=new ArrayList<>();
         ArrayList<Integer> textureWidths=new ArrayList<>(),textureHeights=new ArrayList<>();
+        ArrayList<float[]> faceLightDirections=new ArrayList<>(),faceLightTints=new ArrayList<>();
         java.util.IdentityHashMap<Meshy3DCore,Integer> materialIds=new java.util.IdentityHashMap<>();
         for(Meshy3DObjectScene.Object3D object:objectScene.getObjects()) {
             Meshy3DCore mesh=object.mesh;
@@ -588,6 +591,17 @@ public final class Meshy3DViewport extends View {
                 for(int i=0;i<face.length;i++)face[i]+=offset;
                 sceneFaces.add(face);faceMaterials.add(materialId);
                 faceUvList.add(sourceUvs!=null&&fi<sourceUvs.length?sourceUvs[fi]:null);
+                float centerX=0f,centerY=0f,centerZ=0f;
+                for(int vertexId:sourceFaces[fi]){
+                    float[] local=sourceVertices[vertexId];
+                    float[] world=objectScene.transformPoint(object.id,local[0],local[1],local[2]);
+                    centerX+=world[0]/sourceFaces[fi].length;
+                    centerY+=world[1]/sourceFaces[fi].length;
+                    centerZ+=world[2]/sourceFaces[fi].length;
+                }
+                float[] light=sceneLightForPoint(centerX,centerY,centerZ);
+                faceLightDirections.add(new float[]{light[0],light[1],light[2]});
+                faceLightTints.add(new float[]{light[3],light[4],light[5]});
             }
         }
         SceneRenderData data=new SceneRenderData();
@@ -600,6 +614,8 @@ public final class Meshy3DViewport extends View {
         data.materialRoughness=new float[materialRoughness.size()];
         data.materialTextures=materialTextures.toArray(new int[0][]);
         data.textureWidths=new int[textureWidths.size()];data.textureHeights=new int[textureHeights.size()];
+        data.faceLightDirections=faceLightDirections.toArray(new float[0][]);
+        data.faceLightTints=faceLightTints.toArray(new float[0][]);
         for(int i=0;i<materialColors.size();i++){
             data.materialColors[i]=materialColors.get(i);
             data.materialMetallic[i]=materialMetallic.get(i);
@@ -616,7 +632,8 @@ public final class Meshy3DViewport extends View {
             SceneRenderData scene=buildFinalSceneRenderData();
             return Meshy3DSoftwareRenderer.renderScene(scene.vertices,scene.faces,width,height,yaw,pitch,zoom,
                     scene.faceMaterialIds,scene.materialColors,scene.materialMetallic,scene.materialRoughness,
-                    scene.materialTextures,scene.textureWidths,scene.textureHeights,scene.faceUvs);
+                    scene.materialTextures,scene.textureWidths,scene.textureHeights,
+                    scene.faceLightDirections,scene.faceLightTints,scene.faceUvs);
         }
         return Meshy3DSoftwareRenderer.render(vertices,faces,width,height,yaw,pitch,meshTint,metallic,roughness,
                 document.getTexturePixels(),document.getTextureWidth(),document.getTextureHeight(),document.copyFaceUvs());
