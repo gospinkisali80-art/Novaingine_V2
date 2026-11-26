@@ -20,6 +20,7 @@ public final class Meshy3DViewport extends View {
     // Matching border vertices receive the same screen-space brush dabs.
     private static final int MESH_SUBDIVISIONS = 24;
     private final Meshy3DCore document = new Meshy3DCore();
+    private final Meshy3DObjectScene objectScene = new Meshy3DObjectScene();
     private float[][] vertices = document.copyVertices();
     private int[][] faces = document.copyFaces();
     private float[] vertexMask = new float[vertices.length];
@@ -37,7 +38,160 @@ public final class Meshy3DViewport extends View {
     private final java.util.HashMap<Integer, float[][]> meshKeyframes = new java.util.HashMap<>();
 
 
+    private String objectSceneActiveId;
+
+    private static final class RenderData {
+        float[][] vertices;
+        int[][] faces;
+        boolean[] activeFaces;
+    }
+
+    public Meshy3DObjectScene getObjectScene(){return objectScene;}
     public Meshy3DCore getDocumentCore(){return document;}
+
+    private Meshy3DCore copyMeshCore(Meshy3DCore source) {
+        Meshy3DCore copy=new Meshy3DCore();
+        if(!copy.importState(source.exportState()))throw new IllegalStateException("Could not copy object mesh");
+        return copy;
+    }
+
+    private void activateSceneObject(String id) {
+        Meshy3DObjectScene.Object3D target=objectScene.getObject(id);
+        if(target==null)return;
+        Meshy3DObjectScene.Object3D previous=objectScene.getObject(objectSceneActiveId);
+        if(previous!=null && previous.mesh==document && target.mesh!=document)
+            previous.mesh=copyMeshCore(document);
+        if(target.mesh!=document && !document.importState(target.mesh.exportState()))
+            throw new IllegalStateException("Could not activate object mesh");
+        target.mesh=document;
+        objectScene.selectOnly(id);
+        objectSceneActiveId=id;
+        syncViewportFromCore();
+        meshVisible=target.visible;
+        invalidate();
+    }
+
+    public String addCubeObject() {
+        syncCoreFromViewport();
+        Meshy3DObjectScene.Object3D created=objectScene.createMeshObject("Cube",new Meshy3DCore());
+        activateSceneObject(created.id);
+        return created.id;
+    }
+
+    public String duplicateActiveObject(boolean linked) {
+        Meshy3DObjectScene.Object3D active=objectScene.getObject(objectSceneActiveId);
+        if(active==null)return null;
+        syncCoreFromViewport();
+        Meshy3DObjectScene.Object3D copy=objectScene.duplicate(active.id,linked);
+        activateSceneObject(copy.id);
+        return copy.id;
+    }
+
+    public void selectSceneObject(String id) { activateSceneObject(id); }
+
+    public void deleteActiveObject() {
+        if(objectSceneActiveId==null)return;
+        objectScene.delete(objectSceneActiveId);
+        objectSceneActiveId=null;
+        Meshy3DObjectScene.Object3D next=null;
+        for(Meshy3DObjectScene.Object3D candidate:objectScene.getObjects()){next=candidate;break;}
+        if(next==null) {
+            next=objectScene.createMeshObject("Cube",new Meshy3DCore());
+        }
+        activateSceneObject(next.id);
+    }
+
+    public void renameActiveObject(String name) {
+        if(objectSceneActiveId==null)return;
+        objectScene.rename(objectSceneActiveId,name);
+        invalidate();
+    }
+
+    public void transformActiveObject(int operation,float x,float y,float z) {
+        if(objectSceneActiveId==null)return;
+        Meshy3DObjectScene.Transform t=objectScene.getActiveObject().transform.copy();
+        if(operation==0){t.x+=x;t.y+=y;t.z+=z;}
+        else if(operation==1){t.rotationX+=x;t.rotationY+=y;t.rotationZ+=z;}
+        else {t.scaleX*=x;t.scaleY*=y;t.scaleZ*=z;}
+        objectScene.setTransform(objectSceneActiveId,t);
+        invalidate();
+    }
+
+    public void applyActiveObjectRotationAndScale() {
+        if(objectSceneActiveId==null)return;
+        syncCoreFromViewport();
+        objectScene.applyRotationAndScale(objectSceneActiveId);
+        syncViewportFromCore();
+    }
+
+    public void setActiveObjectVisible(boolean visible) {
+        if(objectSceneActiveId==null)return;
+        objectScene.setVisibility(objectSceneActiveId,visible);
+        meshVisible=visible;
+        invalidate();
+    }
+
+    public void setActiveObjectParent(String parentId) {
+        if(objectSceneActiveId==null)return;
+        objectScene.setParent(objectSceneActiveId,parentId);
+        invalidate();
+    }
+
+    public org.json.JSONObject exportObjectSceneState() {
+        syncCoreFromViewport();
+        return objectScene.exportState();
+    }
+
+    public boolean importObjectSceneState(org.json.JSONObject state) {
+        if(state==null||!objectScene.importState(state))return false;
+        objectSceneActiveId=objectScene.getActiveObjectId();
+        if(objectSceneActiveId==null&&!objectScene.getObjects().isEmpty())
+            objectSceneActiveId=objectScene.getObjects().get(0).id;
+        if(objectSceneActiveId==null)return false;
+        activateSceneObject(objectSceneActiveId);
+        return true;
+    }
+
+    private RenderData buildRenderData() {
+        RenderData data=new RenderData();
+        if(meshEditMode) {
+            data.vertices=vertices;
+            data.faces=faces;
+            data.activeFaces=new boolean[faces.length];
+            java.util.Arrays.fill(data.activeFaces,true);
+            return data;
+        }
+        java.util.ArrayList<float[]> allVertices=new java.util.ArrayList<>();
+        java.util.ArrayList<int[]> allFaces=new java.util.ArrayList<>();
+        java.util.ArrayList<Boolean> active=new java.util.ArrayList<>();
+        for(Meshy3DObjectScene.Object3D object:objectScene.getObjects()) {
+            if(!objectScene.isVisibleInViewport(object)||!object.renderVisible)continue;
+            float[][] meshVertices=object.mesh==document?vertices:object.mesh.copyVertices();
+            int[][] meshFaces=object.mesh==document?faces:object.mesh.copyFaces();
+            float[] world=objectScene.worldLocation(object.id);
+            Meshy3DObjectScene.Transform t=object.transform;
+            double rx=Math.toRadians(t.rotationX),ry=Math.toRadians(t.rotationY),rz=Math.toRadians(t.rotationZ);
+            int offset=allVertices.size();
+            for(float[] source:meshVertices) {
+                float x=source[0]*t.scaleX,y=source[1]*t.scaleY,z=source[2]*t.scaleZ;
+                float y1=(float)(y*Math.cos(rx)-z*Math.sin(rx)),z1=(float)(y*Math.sin(rx)+z*Math.cos(rx));
+                float x2=(float)(x*Math.cos(ry)+z1*Math.sin(ry)),z2=(float)(-x*Math.sin(ry)+z1*Math.cos(ry));
+                float x3=(float)(x2*Math.cos(rz)-y1*Math.sin(rz)),y3=(float)(x2*Math.sin(rz)+y1*Math.cos(rz));
+                allVertices.add(new float[]{x3+world[0],y3+world[1],z2+world[2]});
+            }
+            for(int[] face:meshFaces) {
+                int[] mapped=face.clone();
+                for(int i=0;i<mapped.length;i++)mapped[i]+=offset;
+                allFaces.add(mapped);
+                active.add(object.id.equals(objectSceneActiveId));
+            }
+        }
+        data.vertices=allVertices.toArray(new float[0][]);
+        data.faces=allFaces.toArray(new int[0][]);
+        data.activeFaces=new boolean[active.size()];
+        for(int i=0;i<active.size();i++)data.activeFaces[i]=active.get(i);
+        return data;
+    }
     public android.graphics.Bitmap renderFinalImage(int width,int height){
         syncCoreFromViewport();
         return Meshy3DSoftwareRenderer.render(vertices,faces,width,height,yaw,pitch,meshTint,metallic,roughness,
@@ -222,6 +376,8 @@ public final class Meshy3DViewport extends View {
         setBackgroundColor(0xFF30343B);
         setLayerType(View.LAYER_TYPE_SOFTWARE, null);
         setClickable(true);
+        Meshy3DObjectScene.Object3D starter = objectScene.createMeshObject("Cube", document);
+        objectSceneActiveId = starter.id;
     }
 
     private float[] cameraPoint(float x, float y, float z) {
@@ -270,29 +426,32 @@ public final class Meshy3DViewport extends View {
         canvas.drawLine(y1[0],y1[1],y2[0],y2[1],paint);
         }
 
-        if (!meshVisible) {
+        RenderData renderData=buildRenderData();
+        float[][] drawVertices=renderData.vertices;
+        int[][] drawFaces=renderData.faces;
+        if (meshEditMode && !meshVisible) {
             drawNavigationGizmo(canvas, width, 18f*getResources().getDisplayMetrics().density);
             return;
         }
-        float[][] p=new float[vertices.length][3];
-        for(int i=0;i<vertices.length;i++) p[i]=project(vertices[i][0],vertices[i][1],vertices[i][2],cx,cy,unit);
+        float[][] p=new float[drawVertices.length][3];
+        for(int i=0;i<drawVertices.length;i++) p[i]=project(drawVertices[i][0],drawVertices[i][1],drawVertices[i][2],cx,cy,unit);
 
         float[] viewportLight=cameraPoint(-.45f,.82f,.65f);
-        boolean hasActiveTexture=document.hasTexture()&&document.hasFaceUvs();
+        boolean hasActiveTexture=meshEditMode&&document.hasTexture()&&document.hasFaceUvs();
         // Draw only outward-facing faces, sorted far-to-near. This prevents the
         // previous see-through/inverted-looking cube caused by drawing all six sides.
-        int[] order=new int[faces.length];
-        float[] depth=new float[faces.length];
+        int[] order=new int[drawFaces.length];
+        float[] depth=new float[drawFaces.length];
         int count=0;
-        for(int f=0;f<faces.length;f++){
-            int[] face=faces[f];
-            float[] a=cameraPoint(vertices[face[0]][0],vertices[face[0]][1],vertices[face[0]][2]);
-            float[] b=cameraPoint(vertices[face[1]][0],vertices[face[1]][1],vertices[face[1]][2]);
-            float[] c=cameraPoint(vertices[face[2]][0],vertices[face[2]][1],vertices[face[2]][2]);
+        for(int f=0;f<drawFaces.length;f++){
+            int[] face=drawFaces[f];
+            float[] a=cameraPoint(drawVertices[face[0]][0],vertices[face[0]][1],vertices[face[0]][2]);
+            float[] b=cameraPoint(drawVertices[face[1]][0],vertices[face[1]][1],vertices[face[1]][2]);
+            float[] c=cameraPoint(drawVertices[face[2]][0],vertices[face[2]][1],vertices[face[2]][2]);
             float abx=b[0]-a[0], aby=b[1]-a[1], abz=b[2]-a[2];
             float acx=c[0]-a[0], acy=c[1]-a[1], acz=c[2]-a[2];
             float nx=aby*acz-abz*acy, ny=abz*acx-abx*acz, nz=abx*acy-aby*acx;
-            float centerZ=0f;for(int id:face)centerZ+=cameraPoint(vertices[id][0],vertices[id][1],vertices[id][2])[2];centerZ/=face.length;
+            float centerZ=0f;for(int id:face)centerZ+=cameraPoint(drawVertices[id][0],drawVertices[id][1],drawVertices[id][2])[2];centerZ/=face.length;
             // Camera looks toward negative camera-Z; visible outward normals face camera.
             if(nx*0f+ny*0f+nz > 0.0001f) {
                 order[count]=f; depth[f]=centerZ; count++;
@@ -302,7 +461,7 @@ public final class Meshy3DViewport extends View {
             int t=order[i]; order[i]=order[j]; order[j]=t;
         }
         for(int n=0;n<count;n++){
-            int f=order[n]; int[] face=faces[f];
+            int f=order[n]; int[] face=drawFaces[f];
             float[] ca=cameraPoint(vertices[face[0]][0],vertices[face[0]][1],vertices[face[0]][2]);
             float[] cb=cameraPoint(vertices[face[1]][0],vertices[face[1]][1],vertices[face[1]][2]);
             float[] cc=cameraPoint(vertices[face[2]][0],vertices[face[2]][1],vertices[face[2]][2]);
@@ -315,9 +474,10 @@ public final class Meshy3DViewport extends View {
             path.close();
             int side = Math.min(FACE_COLORS.length-1,f / (MESH_SUBDIVISIONS * MESH_SUBDIVISIONS));
             int base = FACE_COLORS[side];
-            int shaded = document.isFaceSelected(f) ? 0xFFFFA52B : blendColor(base, meshTint, 0.48f);
+            int shaded = meshEditMode && document.isFaceSelected(f) ? 0xFFFFA52B : blendColor(base, meshTint, 0.48f);
+            if(!meshEditMode && f<renderData.activeFaces.length && renderData.activeFaces[f]) shaded=blendColor(shaded,0xFFFFB34D,0.20f);
             if(hasActiveTexture)shaded=blendColor(shaded,document.sampleFaceTextureColor(f),0.72f);
-            if(sculpting&&vertexMask.length==vertices.length){
+            if(meshEditMode&&sculpting&&vertexMask.length==vertices.length){
                 float faceMask=0;for(int id:face)faceMask+=vertexMask[id]/face.length;
                 if(faceMask>0.001f)shaded=blendColor(shaded,0xFF7B3446,Math.min(.72f,faceMask*.72f));
             }
@@ -337,7 +497,7 @@ public final class Meshy3DViewport extends View {
             }
             if(selectionMode==Meshy3DCore.SelectMode.VERTEX){
                 paint.setStyle(Paint.Style.FILL);float density=getResources().getDisplayMetrics().density;
-                for(int i=0;i<vertices.length;i++){
+                for(int i=0;i<drawVertices.length;i++){
                     paint.setColor(document.isVertexSelected(i)?0xFFFFA52B:0xFFDBE2E9);
                     canvas.drawCircle(p[i][0],p[i][1],(document.isVertexSelected(i)?4.5f:2.1f)*density,paint);
                 }
