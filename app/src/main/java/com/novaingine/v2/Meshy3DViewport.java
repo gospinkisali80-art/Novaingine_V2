@@ -441,7 +441,10 @@ public final class Meshy3DViewport extends View {
             Meshy3DCore renderMesh=object.mesh;
             if(!object.modifiers.isEmpty()){
                 try{renderMesh=Meshy3DModifierEvaluator.evaluate(object);}
-                catch(RuntimeException modifierError){renderMesh=object.mesh;}
+                catch(RuntimeException modifierError){
+                    modifierEvaluationWarning=object.name+": "+(modifierError.getMessage()==null?"Modifier evaluation failed.":modifierError.getMessage());
+                    renderMesh=object.mesh;
+                }
             }
             float[][] meshVertices=renderMesh==document?vertices:renderMesh.copyVertices();
             int[][] meshFaces=renderMesh==document?faces:renderMesh.copyFaces();
@@ -708,7 +711,10 @@ public final class Meshy3DViewport extends View {
             if(mesh==null||!"MESH".equals(object.type)||!objectScene.isVisibleInRender(object))continue;
             if(!object.modifiers.isEmpty()){
                 try{mesh=Meshy3DModifierEvaluator.evaluate(object);}
-                catch(RuntimeException modifierError){mesh=object.mesh;}
+                catch(RuntimeException modifierError){
+                    modifierEvaluationWarning=object.name+": "+(modifierError.getMessage()==null?"Modifier evaluation failed.":modifierError.getMessage());
+                    mesh=object.mesh;
+                }
             }
             Integer materialId=materialIds.get(mesh);
             if(materialId==null) {
@@ -1069,7 +1075,15 @@ public final class Meshy3DViewport extends View {
         for(Meshy3DObjectScene.Object3D object:targets) {
             if(object==null)continue;
             if(object.mesh!=null) {
-                for(float[] vertex:object.mesh.copyVertices()) {
+                Meshy3DCore frameMesh=object.mesh;
+                if(!object.modifiers.isEmpty()){
+                    try{frameMesh=Meshy3DModifierEvaluator.evaluate(object);}
+                    catch(RuntimeException error){
+                        modifierEvaluationWarning=object.name+": "+(error.getMessage()==null?"Modifier evaluation failed.":error.getMessage());
+                        frameMesh=object.mesh;
+                    }
+                }
+                for(float[] vertex:frameMesh.copyVertices()) {
                     float[] world=objectScene.transformPoint(object.id,vertex[0],vertex[1],vertex[2]);
                     for(int axis=0;axis<3;axis++){min[axis]=Math.min(min[axis],world[axis]);max[axis]=Math.max(max[axis],world[axis]);}
                     found=true;
