@@ -126,6 +126,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private boolean timelineReverse;
     private long timelineStartMs;
     private int currentTimelineFrame=1;
+    private int renderOutputWidth=1280;
+    private int renderOutputHeight=720;
+    private int renderResolutionPercent=100;
     private Runnable timelineTick;
 
     public ManualSculptWorkspace(Activity activity, EngineSurface engine, Runnable onExit) {
@@ -1104,9 +1107,30 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 else showWorkspaceActionInfo(item);
                 break;
             case 7:
-                if ("Render Image".equals(item) || "Render Viewport".equals(item) || "Last Render".equals(item))
-                    saveViewportRender();
-                else showWorkspaceActionInfo(item);
+                if ("Render Image".equals(item) || "Render Viewport".equals(item) || "Last Render".equals(item)
+                        || "Render Result".equals(item)) saveViewportRender();
+                else if ("Settings".equals(item) || "Render Settings".equals(item)
+                        || "Output Properties".equals(item)) showRenderOutputSettings();
+                else if ("Resolution X".equals(item)) showAmountDialog("Output Width (pixels)",64f,2048f,renderOutputWidth,value->{
+                    renderOutputWidth=Math.max(64,Math.min(2048,Math.round(value)));
+                    status.setText("Rendering | Output width set to "+renderOutputWidth+" px");
+                });
+                else if ("Resolution Y".equals(item)) showAmountDialog("Output Height (pixels)",64f,2048f,renderOutputHeight,value->{
+                    renderOutputHeight=Math.max(64,Math.min(2048,Math.round(value)));
+                    status.setText("Rendering | Output height set to "+renderOutputHeight+" px");
+                });
+                else if ("Percentage".equals(item)) showAmountDialog("Resolution Percentage",10f,100f,renderResolutionPercent,value->{
+                    renderResolutionPercent=Math.max(10,Math.min(100,Math.round(value)));
+                    status.setText("Rendering | Resolution scale set to "+renderResolutionPercent+"%");
+                });
+                else if ("Camera View".equals(item)) {
+                    try{meshyViewport.toggleActiveCameraView();}
+                    catch(RuntimeException error){status.setText("Rendering | "+error.getMessage());}
+                } else if ("Render Engine".equals(item)) {
+                    new android.app.AlertDialog.Builder(activity).setTitle("Render Engine")
+                            .setMessage("Meshy3D currently uses its CPU software rasterizer with scene lighting and compositor effects. Cycles/path tracing and GPU render engines are not implemented.")
+                            .setPositiveButton("OK",null).show();
+                } else showWorkspaceActionInfo(item);
                 break;
             case 8:
                 if ("Node Editor".equals(item) || "Compositor".equals(item) || "Node Graph".equals(item)
@@ -2643,10 +2667,69 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 }).show();
     }
 
+    private void showRenderOutputSettings() {
+        LinearLayout panel=new LinearLayout(activity);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(18),dp(10),dp(18),dp(8));
+        TextView engine=new TextView(activity);
+        engine.setTextColor(Color.WHITE);
+        engine.setText("Engine: Meshy3D CPU Rasterizer (PNG output)");
+        panel.addView(engine);
+        TextView size=new TextView(activity);
+        size.setTextColor(Color.WHITE);
+        size.setPadding(0,dp(12),0,dp(8));
+        panel.addView(size);
+        SeekBar width=new SeekBar(activity);width.setMax(1984);
+        width.setProgress(Math.max(0,Math.min(1984,renderOutputWidth-64)));
+        SeekBar height=new SeekBar(activity);height.setMax(1984);
+        height.setProgress(Math.max(0,Math.min(1984,renderOutputHeight-64)));
+        SeekBar percent=new SeekBar(activity);percent.setMax(90);
+        percent.setProgress(Math.max(0,Math.min(90,renderResolutionPercent-10)));
+        TextView widthLabel=new TextView(activity),heightLabel=new TextView(activity),percentLabel=new TextView(activity);
+        for(TextView label:new TextView[]{widthLabel,heightLabel,percentLabel})label.setTextColor(Color.WHITE);
+        Runnable refresh=()->{
+            widthLabel.setText("Width: "+(64+width.getProgress())+" px");
+            heightLabel.setText("Height: "+(64+height.getProgress())+" px");
+            percentLabel.setText("Resolution: "+(10+percent.getProgress())+"%");
+            size.setText("Effective output: "+((64+width.getProgress())*(10+percent.getProgress())/100)
+                    +" × "+((64+height.getProgress())*(10+percent.getProgress())/100)+" px");
+        };
+        width.setOnSeekBarChangeListener(simpleSeekListener(refresh));
+        height.setOnSeekBarChangeListener(simpleSeekListener(refresh));
+        percent.setOnSeekBarChangeListener(simpleSeekListener(refresh));
+        panel.addView(widthLabel);panel.addView(width);
+        panel.addView(heightLabel);panel.addView(height);
+        panel.addView(percentLabel);panel.addView(percent);
+        refresh.run();
+        new android.app.AlertDialog.Builder(activity).setTitle("Render Output")
+                .setView(panel).setPositiveButton("Apply",(d,w)->{
+                    renderOutputWidth=64+width.getProgress();
+                    renderOutputHeight=64+height.getProgress();
+                    renderResolutionPercent=10+percent.getProgress();
+                    status.setText("Rendering | Output "+renderOutputWidth+" × "+renderOutputHeight
+                            +" at "+renderResolutionPercent+"%");
+                }).setNeutralButton("Render Now",(d,w)->{
+                    renderOutputWidth=64+width.getProgress();
+                    renderOutputHeight=64+height.getProgress();
+                    renderResolutionPercent=10+percent.getProgress();
+                    saveViewportRender();
+                }).setNegativeButton("Cancel",null).show();
+    }
+
+    private SeekBar.OnSeekBarChangeListener simpleSeekListener(Runnable refresh) {
+        return new SeekBar.OnSeekBarChangeListener(){
+            public void onProgressChanged(SeekBar seek,int progress,boolean fromUser){refresh.run();}
+            public void onStartTrackingTouch(SeekBar seek){}
+            public void onStopTrackingTouch(SeekBar seek){}
+        };
+    }
+
     private void saveViewportRender() {
         try {
-            int width=Math.max(640,Math.min(1280,meshyViewport.getWidth()*2));
-            int height=Math.max(360,Math.min(720,(int)(width*(meshyViewport.getHeight()/(float)Math.max(1,meshyViewport.getWidth())))));
+            int width=Math.max(64,Math.min(2048,renderOutputWidth*renderResolutionPercent/100));
+            int height=Math.max(64,Math.min(2048,renderOutputHeight*renderResolutionPercent/100));
+            long pixelCount=(long)width*height;
+            if(pixelCount>4_194_304L)throw new IllegalArgumentException("Render exceeds the 4-megapixel safety limit on Android");
             android.graphics.Bitmap raw=meshyViewport.renderFinalImage(width,height);
             int[] sourcePixels=new int[width*height];raw.getPixels(sourcePixels,0,width,0,0,width,height);raw.recycle();
             int[] finalPixels=meshyViewport.getDocumentCore().evaluateCompositor(sourcePixels,width,height);
