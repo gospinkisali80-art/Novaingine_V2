@@ -1022,6 +1022,9 @@ public final class Meshy3DCore {
         if(pixels==null||width<1||height<1||pixels.length!=width*height)return;
         textureWidth=width;textureHeight=height;texturePixels=pixels.clone();revision++;
     }
+
+    /** Mark direct edits through getTexturePixelsUnsafe() as a document change. */
+    public void markTextureChanged(){revision++;}
     public JSONObject exportState(){
         JSONObject o=new JSONObject();JSONArray vs=new JSONArray(),fs=new JSONArray(),ss=new JSONArray(),ps=new JSONArray();
         try{
