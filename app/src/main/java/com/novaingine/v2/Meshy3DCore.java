@@ -213,7 +213,7 @@ public final class Meshy3DCore {
     public void markSelectedSeams(boolean clear){
         if(clear){for(int i=selectedEdges.nextSetBit(0);i>=0;i=selectedEdges.nextSetBit(i+1)){Edge e=edges.get(i);seams.remove(edgeKey(e.a,e.b));}}
         else for(int i=selectedEdges.nextSetBit(0);i>=0;i=selectedEdges.nextSetBit(i+1)){Edge e=edges.get(i);seams.add(edgeKey(e.a,e.b));}
-        revision++;
+        rebuildIslands();revision++;
     }
     public boolean isSeam(int edge){if(edge<0||edge>=edges.size())return false;Edge e=edges.get(edge);return seams.contains(edgeKey(e.a,e.b));}
     public void pinSelectedUvs(boolean pin){
@@ -605,7 +605,7 @@ public final class Meshy3DCore {
         int[] compact=new int[vertices.size()];Arrays.fill(compact,-1);ArrayList<float[]> kept=new ArrayList<>();
         for(int i=0;i<vertices.size();i++)if(used[i]){compact[i]=kept.size();kept.add(vertices.get(i));}
         for(Face face:faces)for(int i=0;i<face.vertices.length;i++)face.vertices[i]=compact[face.vertices[i]];
-        vertices.clear();vertices.addAll(kept);clearSelection();rebuildEdges();revision++;
+        vertices.clear();vertices.addAll(kept);faceUvs=null;islands.clear();clearSelection();rebuildEdges();revision++;
     }
     public float[][] copyVertices(){float[][] out=new float[vertices.size()][3];for(int i=0;i<out.length;i++)System.arraycopy(vertices.get(i),0,out[i],0,3);return out;}
     public int[][] copyFaces(){int[][] out=new int[faces.size()][];for(int i=0;i<out.length;i++)out[i]=faces.get(i).vertices.clone();return out;}
