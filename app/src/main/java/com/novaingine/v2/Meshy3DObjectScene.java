@@ -179,6 +179,37 @@ public final class Meshy3DObjectScene {
         return result;
     }
 
+    public void selectAllObjects() {
+        String last=null;
+        for(Object3D o:objects.values()){o.selected=o.selectable;o.active=false;if(o.selected)last=o.id;}
+        activeObjectId=last;
+        if(last!=null)objects.get(last).active=true;
+        revision++;
+    }
+
+    public void deselectAllObjects() {
+        for(Object3D o:objects.values()){o.selected=false;o.active=false;}
+        activeObjectId=null;revision++;
+    }
+
+    public void invertObjectSelection() {
+        String last=null;
+        for(Object3D o:objects.values()){o.selected=o.selectable&&!o.selected;o.active=false;if(o.selected)last=o.id;}
+        activeObjectId=last;
+        if(last!=null)objects.get(last).active=true;
+        revision++;
+    }
+
+    public void setActiveObject(String objectId) {
+        Object3D target=requireObject(objectId);
+        if(!target.selectable)return;
+        target.selected=true;
+        for(Object3D o:objects.values())o.active=false;
+        target.active=true;activeObjectId=objectId;revision++;
+    }
+
+
+
     public void setTransform(String objectId,Transform transform) {
         if(transform==null)throw new IllegalArgumentException("Transform is required");
         Object3D o=requireObject(objectId);
