@@ -394,13 +394,21 @@ public final class ManualSculptWorkspace extends FrameLayout {
         } else if ("Brush Preview".equals(item)) {
             Toast.makeText(activity,"Active brush: "+BRUSHES[selectedSculptBrush],Toast.LENGTH_SHORT).show();
         } else if ("Stroke Method".equals(item)) {
+            String[] methods={"Dots","Drag Dot","Space"};
             new android.app.AlertDialog.Builder(activity).setTitle("Stroke Method")
-                    .setItems(new String[]{"Dots","Drag Dot","Space"},(d,w)->Toast.makeText(activity,
-                    new String[]{"Dots","Drag Dot","Space"}[w]+" selected",Toast.LENGTH_SHORT).show()).show();
+                    .setSingleChoiceItems(methods,sculptStrokeMethodUi,(d,w)->{
+                        sculptStrokeMethodUi=w;updateSculptViewport();
+                        status.setText("Sculpting | Stroke method: "+methods[w]);d.dismiss();
+                    }).setNegativeButton("Cancel",null).show();
         } else if ("Dyntopo / Remesh options".equals(item)) {
             new android.app.AlertDialog.Builder(activity).setTitle("Mesh Detail")
-                    .setMessage("Dynamic topology and remeshing require a dense editable mesh. The current viewport starter cube has 8 vertices, so these operations are not enabled yet.")
-                    .setPositiveButton("OK",null).show();
+                    .setItems(new String[]{"Uniform Subdivide","Smooth Detail","Information"},(d,w)->{
+                        if(w==0){checkpointMeshEdit();meshyViewport.subdivideSelected();status.setText("Sculpting | Uniform mesh subdivision applied");}
+                        else if(w==1){showSculptSlider("Detail smoothing",0.05f,.8f,.25f,value->{checkpointMeshEdit();meshyViewport.smoothMesh(value,2);});}
+                        else new android.app.AlertDialog.Builder(activity).setTitle("Mesh Detail")
+                                .setMessage("Current mesh: "+meshyViewport.getVertexCount()+" vertices, "+meshyViewport.getFaceCount()+" faces. Adaptive Dyntopo and voxel remeshing are not implemented yet.")
+                                .setPositiveButton("OK",null).show();
+                    }).show();
         }
     }
 
