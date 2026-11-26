@@ -3187,6 +3187,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
             bottomParams.bottomMargin = dp(8);
             workspaceLayoutLayer.addView(workspaceBottomDock, bottomParams);
         }
+        if (viewportChrome != null) viewportChrome.setSculptWorkspace(index == 2);
         if (index == 2) {
             workspaceLeftDock.setVisibility(sculptEnabled ? View.VISIBLE : View.GONE);
             workspaceRightDock.setVisibility(sculptEnabled ? View.VISIBLE : View.GONE);
