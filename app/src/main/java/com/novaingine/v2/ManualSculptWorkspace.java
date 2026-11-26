@@ -1735,6 +1735,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
             valueField=modifierNumberField(panel,"Thickness",modifier.value,false);
         }
 
+        final android.widget.Spinner selectedAxisSpinner=axisSpinner;
+        final EditText selectedCountField=countField,selectedLevelsField=levelsField,selectedValueField=valueField;
+        final EditText selectedOffsetXField=offsetXField,selectedOffsetYField=offsetYField,selectedOffsetZField=offsetZField;
         android.app.AlertDialog.Builder builder=new android.app.AlertDialog.Builder(activity)
                 .setTitle(modifier.type.replace('_',' ')+" Modifier")
                 .setView(panel).setPositiveButton("Save",null)
@@ -1786,13 +1789,13 @@ public final class ManualSculptWorkspace extends FrameLayout {
         dialog.setOnShowListener(ignored->dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
                 .setOnClickListener(view->{
                     try{
-                        int axis=axisSpinner==null?modifier.axis:axisSpinner.getSelectedItemPosition();
-                        int count=countField==null?modifier.count:Integer.parseInt(countField.getText().toString().trim());
-                        int levels=levelsField==null?modifier.levels:Integer.parseInt(levelsField.getText().toString().trim());
-                        float value=valueField==null?modifier.value:Float.parseFloat(valueField.getText().toString().trim());
-                        float offsetX=offsetXField==null?modifier.offsetX:Float.parseFloat(offsetXField.getText().toString().trim());
-                        float offsetY=offsetYField==null?modifier.offsetY:Float.parseFloat(offsetYField.getText().toString().trim());
-                        float offsetZ=offsetZField==null?modifier.offsetZ:Float.parseFloat(offsetZField.getText().toString().trim());
+                        int axis=selectedAxisSpinner==null?modifier.axis:selectedAxisSpinner.getSelectedItemPosition();
+                        int count=selectedCountField==null?modifier.count:Integer.parseInt(selectedCountField.getText().toString().trim());
+                        int levels=selectedLevelsField==null?modifier.levels:Integer.parseInt(selectedLevelsField.getText().toString().trim());
+                        float value=selectedValueField==null?modifier.value:Float.parseFloat(selectedValueField.getText().toString().trim());
+                        float offsetX=selectedOffsetXField==null?modifier.offsetX:Float.parseFloat(selectedOffsetXField.getText().toString().trim());
+                        float offsetY=selectedOffsetYField==null?modifier.offsetY:Float.parseFloat(selectedOffsetYField.getText().toString().trim());
+                        float offsetZ=selectedOffsetZField==null?modifier.offsetZ:Float.parseFloat(selectedOffsetZField.getText().toString().trim());
                         checkpointMeshEdit();
                         scene.setModifierParameters(active.id,modifier.id,axis,count,levels,value,offsetX,offsetY,offsetZ);
                         scene.setModifierEnabled(active.id,modifier.id,enabled.isChecked());
