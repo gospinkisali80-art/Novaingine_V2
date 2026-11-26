@@ -691,7 +691,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 String type=choices[w];float value=graph==0?.15f:graph==1
                         ?(type.equals("Metallic")?.5f:type.equals("Roughness")?.65f:type.equals("Base Color")?(float)(core.getBaseColor()&0xFFFFFF):0f)
                         :type.equals("Blur")?2f:20f;
-                if(graph==0)core.addGeometryNode(type,type.equals("Instance on Points")?2f:0f,0f,0f,value);
+                if(graph==0)core.addGeometryNode(type,type.equals("Instance on Points")?2f:0f,0f,0f,type.equals("Instance on Points")?3f:value);
                 else core.addNodeToGraph(graph,type,value);
                 graphView.setNodes(core.getGraphNodeLabels(graph));graphView.setLinks(core.getGraphLinks(graph));
                 status.setText(title+" | Added "+type+" node");
