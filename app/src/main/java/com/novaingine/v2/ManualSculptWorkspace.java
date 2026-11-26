@@ -446,7 +446,16 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 else showWorkspaceActionInfo(item);
                 break;
             case 1:
-                if ("Object Properties".equals(item)) showObjectPropertiesDialog();
+                if ("Set 3D Cursor".equals(item)) showSceneCursorDialog();
+                else if ("Snap to Grid".equals(item)) showGridSnapDialog();
+                else if ("Snap to 3D Cursor".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.snapSelectedObjectsToCursor();refreshModelingOutliner();
+                    status.setText("Modeling | Selected object origins snapped to the 3D cursor");
+                } else if ("Frame Selected".equals(item)) {
+                    meshyViewport.frameSelectedObjects();status.setText("Modeling | View framed on selected objects");
+                } else if ("Frame All".equals(item)) {
+                    meshyViewport.frameAllObjects();status.setText("Modeling | View framed on all visible objects");
+                } else if ("Object Properties".equals(item)) showObjectPropertiesDialog();
                 else if ("Object Transform".equals(item) || "Numeric Transform".equals(item)) showObjectTransformTypeDialog();
                 else if ("Dimensions".equals(item)) {
                     Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
@@ -1072,6 +1081,46 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 }).setNegativeButton("Cancel",null).show();
     }
 
+    private void showSceneCursorDialog() {
+        float[] cursor=meshyViewport.getSceneCursorLocation();
+        LinearLayout panel=new LinearLayout(activity);panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(16),dp(8),dp(16),dp(8));
+        String[] axes={"X","Y","Z"};EditText[] fields=new EditText[3];
+        for(int i=0;i<3;i++){
+            TextView label=new TextView(activity);label.setText("Cursor "+axes[i]);
+            fields[i]=new EditText(activity);fields[i].setSingleLine(true);
+            fields[i].setInputType(android.text.InputType.TYPE_CLASS_NUMBER
+                    |android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+                    |android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+            fields[i].setText(fmt(cursor[i]));panel.addView(label);panel.addView(fields[i]);
+        }
+        new android.app.AlertDialog.Builder(activity).setTitle("3D Cursor Location").setView(panel)
+                .setPositiveButton("Set Cursor",(d,w)->{
+                    try{
+                        float x=Float.parseFloat(fields[0].getText().toString());
+                        float y=Float.parseFloat(fields[1].getText().toString());
+                        float z=Float.parseFloat(fields[2].getText().toString());
+                        meshyViewport.setSceneCursorLocation(x,y,z);
+                        status.setText("Modeling | 3D cursor location updated");
+                    }catch(Exception error){Toast.makeText(activity,"Enter valid cursor coordinates.",Toast.LENGTH_SHORT).show();}
+                }).setNegativeButton("Cancel",null).show();
+    }
+
+    private void showGridSnapDialog() {
+        EditText input=new EditText(activity);input.setSingleLine(true);
+        input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER|android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        input.setText("1.0");
+        new android.app.AlertDialog.Builder(activity).setTitle("Snap Selected Objects to Grid")
+                .setMessage("Enter the grid spacing in scene units.")
+                .setView(input).setPositiveButton("Snap",(d,w)->{
+                    try{
+                        float step=Float.parseFloat(input.getText().toString());
+                        checkpointMeshEdit();meshyViewport.snapSelectedObjectsToGrid(step);refreshModelingOutliner();
+                        status.setText("Modeling | Selected object origins snapped to "+fmt(step)+" unit grid");
+                    }catch(Exception error){showObjectOperationError(error);}
+                }).setNegativeButton("Cancel",null).show();
+    }
+
     private void showCameraSettingsDialog() {
         Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
         if(active==null||!"CAMERA".equals(active.type)){
@@ -1457,7 +1506,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         "Remesh", "Weld", "Triangulate", "Wireframe"
                 };
                 rightTitle = "Tool Properties";
-                rightItems = new String[]{"Object Properties", "Object Transform", "Numeric Transform", "Dimensions", "Parent", "Collections",
+                rightItems = new String[]{"Object Properties", "Object Transform", "Numeric Transform", "Dimensions",
+                        "Set 3D Cursor", "Snap to Grid", "Snap to 3D Cursor", "Frame Selected", "Frame All",
+                        "Parent", "Collections",
                         "Visibility", "Selectable", "Render Visibility", "Active Camera", "Camera Settings", "Light Settings",
                         "Active Tool", "Selection Mode", "Operation Amount", "Offset", "Segments", "Profile",
                         "Loop Cut Count", "Merge Threshold", "Mesh Statistics", "Vertices", "Edges", "Faces",
