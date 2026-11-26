@@ -20,11 +20,11 @@ public final class Meshy3DUvEditorView extends View {
     private float opacity=0.9f;
 
     public Meshy3DUvEditorView(Context context,Meshy3DCore core,boolean paintMode){
-        super(context);this.core=core;this.paintMode=paintMode;setBackgroundColor(0xFF252B33);
+        super(context);this.core=core;this.paintMode=paintMode;brushColor=core.getBrushColor();brushRadius=core.getBrushRadius();opacity=core.getBrushOpacity();setBackgroundColor(0xFF252B33);
         setLayerType(View.LAYER_TYPE_SOFTWARE,null);
     }
     public void setPaintMode(boolean enabled){paintMode=enabled;invalidate();}
-    public void setBrush(int color,float radius,float alpha){brushColor=color;brushRadius=radius;opacity=alpha;invalidate();}
+    public void setBrush(int color,float radius,float alpha){brushColor=color;brushRadius=radius;opacity=alpha;core.setBrush(color,radius,alpha);invalidate();}
     private float side(){return Math.max(40f,Math.min(getWidth(),getHeight())-48f);}
     private float left(){return (getWidth()-side())*.5f;}
     private float top(){return (getHeight()-side())*.5f;}
