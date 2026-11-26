@@ -389,6 +389,20 @@ public final class Meshy3DViewport extends View {
         meshVisible=visible;
         invalidate();
     }
+    public void setActiveObjectSelectable(boolean selectable) {
+        if(objectSceneActiveId==null)return;
+        objectScene.setSelectable(objectSceneActiveId,selectable);invalidate();
+    }
+    public void setActiveObjectRenderVisible(boolean visible) {
+        if(objectSceneActiveId==null)return;
+        objectScene.setRenderVisibility(objectSceneActiveId,visible);invalidate();
+    }
+    public void setSelectedObjectsVisible(boolean visible) {
+        java.util.ArrayList<Meshy3DObjectScene.Object3D> targets=new java.util.ArrayList<>(objectScene.getSelectedObjects());
+        if(targets.isEmpty()&&objectSceneActiveId!=null)targets.add(objectScene.getObject(objectSceneActiveId));
+        for(Meshy3DObjectScene.Object3D target:targets)objectScene.setVisibility(target.id,visible);
+        invalidate();
+    }
 
     public void setActiveObjectParent(String parentId) {
         if(objectSceneActiveId==null)return;
