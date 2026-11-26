@@ -1734,6 +1734,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         Meshy3DObjectScene.Modifier3D modifier=meshyViewport.getObjectScene()
                                 .addModifier(active.id,types[which]);
                         meshyViewport.invalidate();
+                        String warning=meshyViewport.validateActiveObjectModifiers();
+                        if(warning!=null)showObjectOperationError(new IllegalStateException(warning));
                         showObjectModifierEditor(modifier);
                     }catch(Exception error){showObjectOperationError(error);}
                 }).setNegativeButton("Cancel",null).show();
@@ -1815,11 +1817,15 @@ public final class ManualSculptWorkspace extends FrameLayout {
 
         up.setOnClickListener(view->{
             try{checkpointMeshEdit();scene.moveModifier(active.id,modifier.id,-1);
+                String warning=meshyViewport.validateActiveObjectModifiers();
+                if(warning!=null)throw new IllegalStateException(warning);
                 meshyViewport.invalidate();dialog.dismiss();showObjectModifierEditor(modifier);}
             catch(Exception error){showObjectOperationError(error);}
         });
         down.setOnClickListener(view->{
             try{checkpointMeshEdit();scene.moveModifier(active.id,modifier.id,1);
+                String warning=meshyViewport.validateActiveObjectModifiers();
+                if(warning!=null)throw new IllegalStateException(warning);
                 meshyViewport.invalidate();dialog.dismiss();showObjectModifierEditor(modifier);}
             catch(Exception error){showObjectOperationError(error);}
         });
@@ -1854,6 +1860,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         checkpointMeshEdit();
                         scene.setModifierParameters(active.id,modifier.id,axis,count,levels,value,offsetX,offsetY,offsetZ);
                         scene.setModifierEnabled(active.id,modifier.id,enabled.isChecked());
+                        String warning=meshyViewport.validateActiveObjectModifiers();
+                        if(warning!=null)throw new IllegalStateException(warning);
                         meshyViewport.invalidate();status.setText("Modeling | Modifier settings updated");
                         dialog.dismiss();showObjectModifiersDialog();
                     }catch(Exception error){showObjectOperationError(error);}
