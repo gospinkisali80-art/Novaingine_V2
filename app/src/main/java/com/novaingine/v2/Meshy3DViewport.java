@@ -258,6 +258,12 @@ public final class Meshy3DViewport extends View {
         }
         for(int n=0;n<count;n++){
             int f=order[n]; int[] face=faces[f];
+            float[] ca=cameraPoint(vertices[face[0]][0],vertices[face[0]][1],vertices[face[0]][2]);
+            float[] cb=cameraPoint(vertices[face[1]][0],vertices[face[1]][1],vertices[face[1]][2]);
+            float[] cc=cameraPoint(vertices[face[2]][0],vertices[face[2]][1],vertices[face[2]][2]);
+            float abx=cb[0]-ca[0],aby=cb[1]-ca[1],abz=cb[2]-ca[2];
+            float acx=cc[0]-ca[0],acy=cc[1]-ca[1],acz=cc[2]-ca[2];
+            float nx=aby*acz-abz*acy,ny=abz*acx-abx*acz,nz=abx*acy-aby*acx;
             Path path=new Path();
             path.moveTo(p[face[0]][0],p[face[0]][1]);
             for(int k=1;k<4;k++) path.lineTo(p[face[k]][0],p[face[k]][1]);
