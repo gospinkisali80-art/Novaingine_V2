@@ -438,15 +438,23 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     checkpointMeshEdit();meshyViewport.selectAllElements();
                     status.setText("Modeling | All " + meshyViewport.getSelectionMode().toLowerCase()
                             + " elements selected (" + meshyViewport.getSelectedElementCount() + ")");
+                } else if ("Select Loops".equals(item)) {
+                    meshyViewport.selectLoops();status.setText("Modeling | Connected quad edge loops selected");
+                } else if ("Select Similar".equals(item)) {
+                    meshyViewport.selectSimilar();status.setText("Modeling | Similar mesh elements selected");
                 } else if ("Move".equals(item) || "Rotate".equals(item) || "Scale".equals(item)
                         || "Transform".equals(item)) {
                     meshyViewport.setMeshEditMode(true);
                     showTransformDialog(item.equals("Transform") ? "Move" : item);
                 } else if ("Extrude Region".equals(item) || "Extrude Along Normals".equals(item)
                         || "Extrude Individual Faces".equals(item) || "Extrude".equals(item)) {
+                    final boolean individual="Extrude Individual Faces".equals(item);
+                    final boolean alongNormals="Extrude Along Normals".equals(item);
                     showAmountDialog("Extrude distance",0.01f,2.0f,value->{
-                        checkpointMeshEdit();meshyViewport.extrudeSelected(value);
-                        status.setText("Modeling | Extruded selected face region");
+                        checkpointMeshEdit();
+                        if(individual||alongNormals)meshyViewport.extrudeSelectedAlongNormals(value,individual);
+                        else meshyViewport.extrudeSelected(value);
+                        status.setText("Modeling | "+(individual?"Individual face extrusion":alongNormals?"Extrude along normals":"Region extrusion")+" applied");
                     });
                 } else if ("Inset Faces".equals(item) || "Inset".equals(item)) {
                     showAmountDialog("Inset thickness",0.01f,0.9f,value->{
@@ -463,6 +471,38 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         checkpointMeshEdit();meshyViewport.loopCutSelected(value);
                         status.setText("Modeling | Loop cut evaluated on selected edge");
                     });
+                } else if ("Mirror".equals(item) || "Mirror Modifier".equals(item) || "Symmetrize".equals(item)) {
+                    String[] axes={"X","Y","Z"};
+                    new android.app.AlertDialog.Builder(activity).setTitle("Mirror across axis")
+                            .setItems(axes,(d,w)->{checkpointMeshEdit();meshyViewport.mirrorSelected(w);status.setText("Modeling | Mirrored selected geometry across "+axes[w]);}).show();
+                } else if ("Shrink / Fatten".equals(item)) {
+                    showAmountDialog("Shrink / Fatten distance",-1f,1f,value->{checkpointMeshEdit();meshyViewport.shrinkFattenSelected(value);status.setText("Modeling | Vertices moved along their normals");});
+                } else if ("Shear".equals(item) || "Bend".equals(item)) {
+                    showAmountDialog("Shear amount",-1.5f,1.5f,value->{checkpointMeshEdit();meshyViewport.shearSelected(value);status.setText("Modeling | Selected geometry sheared");});
+                } else if ("To Sphere".equals(item)) {
+                    showAmountDialog("To Sphere factor",0f,1f,value->{checkpointMeshEdit();meshyViewport.toSphereSelected(value);status.setText("Modeling | Selected geometry blended toward a sphere");});
+                } else if ("Randomize".equals(item)) {
+                    showAmountDialog("Random displacement",0f,.5f,value->{checkpointMeshEdit();meshyViewport.randomizeSelected(value);status.setText("Modeling | Selected vertices randomized");});
+                } else if ("Make Planar".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.makePlanarSelected();status.setText("Modeling | Selected vertices projected onto a best-fit plane");
+                } else if ("Flip Normals".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.flipSelectedNormals();status.setText("Modeling | Selected face winding flipped");
+                } else if ("Fill".equals(item) || "Grid Fill".equals(item) || "Bridge".equals(item) || "Bridge Edge Loops".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.fillSelectedBoundary();status.setText("Modeling | Closed selected boundary filled when it forms one valid loop");
+                } else if ("Poke Faces".equals(item) || "Poke".equals(item)) {
+                    showAmountDialog("Poke offset",0f,1f,value->{checkpointMeshEdit();meshyViewport.pokeSelectedFaces(value);status.setText("Modeling | Selected faces poked into triangle fans");});
+                } else if ("Delete Edges".equals(item) || "Dissolve Faces".equals(item) || "Limited Dissolve".equals(item)) {
+                    checkpointMeshEdit();
+                    if("Dissolve Faces".equals(item))meshyViewport.deleteSelectedFaces();else meshyViewport.dissolveSelectedEdges();
+                    status.setText("Modeling | "+item+" operation applied to the current selection");
+                } else if ("Degenerate Dissolve".equals(item) || "Weld".equals(item) || "Merge by Distance".equals(item) || "Merge".equals(item)) {
+                    showAmountDialog("Merge distance",0.001f,0.25f,value->{checkpointMeshEdit();meshyViewport.mergeSelected(value);status.setText("Modeling | Nearby selected vertices merged");});
+                } else if ("Subdivision Surface".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.subdivideSelected();status.setText("Modeling | Quad faces subdivided");
+                } else if ("Weighted Normal".equals(item) || "Normals".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.recalculateNormals();status.setText("Modeling | Face winding and normals recalculated");
+                } else if ("Edge Slide".equals(item) || "Vertex Slide".equals(item)) {
+                    showAmountDialog(item+" factor",0f,1f,value->{checkpointMeshEdit();meshyViewport.slideSelected(value,"Edge Slide".equals(item));status.setText("Modeling | Selected elements slid along connected topology");});
                 } else if ("Subdivide".equals(item)) {
                     checkpointMeshEdit();meshyViewport.subdivideSelected();
                     status.setText("Modeling | Mesh subdivided");
@@ -481,11 +521,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 } else if ("Recalculate Normals".equals(item)) {
                     checkpointMeshEdit();meshyViewport.recalculateNormals();
                     status.setText("Modeling | Face winding and outward normals recalculated");
-                } else if ("Merge by Distance".equals(item) || "Merge".equals(item)) {
-                    showAmountDialog("Merge distance",0.001f,0.25f,value->{
-                        checkpointMeshEdit();meshyViewport.mergeSelected(value);
-                        status.setText("Modeling | Merge by distance completed");
-                    });
+
                 } else if ("Smooth Vertices".equals(item) || "Smooth".equals(item))
                     showAmountDialog("Smoothing amount",0.05f,0.8f,value->{checkpointMeshEdit();meshyViewport.smoothMesh(value,2);});
                 else if ("Mesh Statistics".equals(item) || "Vertex / Edge / Face Counts".equals(item)
