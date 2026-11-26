@@ -231,6 +231,9 @@ public final class Meshy3DObjectScene {
         if(!"MESH".equals(object.type)||object.mesh==null)
             throw new IllegalArgumentException("Modifiers can only be added to mesh objects.");
         String clean=cleanModifierType(type);
+        if(("BEVEL".equals(clean)||"SOLIDIFY".equals(clean))
+                &&(object.mesh.hasTexture()||object.mesh.copyFaceUvs()!=null))
+            throw new IllegalArgumentException(clean+" currently requires a mesh without an image texture or UV map so the existing UV data is not corrupted.");
         Modifier3D modifier=new Modifier3D(UUID.randomUUID().toString(),clean);
         object.modifiers.add(modifier);revision++;return modifier;
     }
