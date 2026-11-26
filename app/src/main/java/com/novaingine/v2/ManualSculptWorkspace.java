@@ -503,7 +503,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 } else if ("Delete Selected Objects".equals(item)) {
                     checkpointMeshEdit();meshyViewport.deleteSelectedObjects();
                     refreshModelingOutliner();status.setText("Modeling | Selected objects deleted");
-                } else if ("Select All Objects".equals(item)) {
+                } else if ("Delete by Type".equals(item)) showDeleteObjectsByTypeDialog();
+                else if ("Select All Objects".equals(item)) {
                     meshyViewport.selectAllSceneObjects();refreshModelingOutliner();status.setText("Modeling | All scene objects selected");
                 } else if ("Deselect Objects".equals(item)) {
                     meshyViewport.deselectAllSceneObjects();refreshModelingOutliner();status.setText("Modeling | Object selection cleared");
@@ -1059,6 +1060,27 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 .setItems(labels,(d,w)->{
                     meshyViewport.selectObjectsByType(types[w],false);refreshModelingOutliner();
                     status.setText("Modeling | Selected "+labels[w].toLowerCase(java.util.Locale.ROOT));
+                }).setNegativeButton("Cancel",null).show();
+    }
+
+    private void showDeleteObjectsByTypeDialog() {
+        String[] labels={"Meshes","Cameras","Lights","Empties"};
+        String[] types={"MESH","CAMERA","LIGHT","EMPTY"};
+        new android.app.AlertDialog.Builder(activity).setTitle("Delete Objects by Type")
+                .setItems(labels,(d,w)->{
+                    Meshy3DObjectScene scene=meshyViewport.getObjectScene();
+                    int count=0;for(Meshy3DObjectScene.Object3D object:scene.getObjects())
+                        if(object.type.equalsIgnoreCase(types[w]))count++;
+                    if(count==0){Toast.makeText(activity,"No "+labels[w].toLowerCase(java.util.Locale.ROOT)+" in the scene.",Toast.LENGTH_SHORT).show();return;}
+                    new android.app.AlertDialog.Builder(activity).setTitle("Confirm Delete")
+                            .setMessage("Delete "+count+" "+labels[w].toLowerCase(java.util.Locale.ROOT)+"?")
+                            .setPositiveButton("Delete",(dialog,button)->{
+                                try{
+                                    checkpointMeshEdit();meshyViewport.selectObjectsByType(types[w],false);
+                                    meshyViewport.deleteSelectedObjects();refreshModelingOutliner();
+                                    status.setText("Modeling | Deleted "+count+" "+labels[w].toLowerCase(java.util.Locale.ROOT));
+                                }catch(Exception error){showObjectOperationError(error);}
+                            }).setNegativeButton("Cancel",null).show();
                 }).setNegativeButton("Cancel",null).show();
     }
 
@@ -1638,7 +1660,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 leftTitle = "Modeling Tools";
                 leftItems = new String[]{
                         "OBJECT MODE", "Select", "Select Box", "Add Primitive", "Add Camera", "Add Light", "Add Empty", "Add Cube",
-                        "Duplicate", "Duplicate Linked", "Delete Object", "Delete Selected Objects", "Join Selected Meshes",
+                        "Duplicate", "Duplicate Linked", "Delete Object", "Delete Selected Objects", "Delete by Type", "Join Selected Meshes",
                         "Select All Objects", "Deselect Objects", "Invert Selection", "Select Object", "Select By Type",
                         "Select Hierarchy", "Select by Name", "Select Active Camera", "Select Linked Data", "Rename Object", "Hide / Show Object",
                         "Hide Selected", "Hide Unselected", "Show All Objects", "Invert Hidden", "Toggle Local View",
