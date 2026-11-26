@@ -20,6 +20,12 @@ public final class Meshy3DViewport extends View {
     private float zoom = 1.0f;
     private float viewTargetX,viewTargetY,viewTargetZ;
     private boolean cameraViewActive;
+    private int viewportNavigationMode = 0; // 0 = orbit, 1 = pan
+    private boolean measureMode;
+    private boolean measurementHasStart;
+    private boolean measurementHasEnd;
+    private float measurementStartX, measurementStartY, measurementEndX, measurementEndY;
+    private float measurementDistance;
     private float savedViewYaw,savedViewPitch,savedViewRoll,savedViewZoom,savedTargetX,savedTargetY,savedTargetZ;
     // Each cube side is subdivided into a 24 x 24 quad grid.
     // Six independent side grids give 3,750 editable vertices and 3,456 quads.
@@ -1096,6 +1102,24 @@ public final class Meshy3DViewport extends View {
     public void frameSelectedObjects(){cameraViewActive=false;frameObjects(false);}
     public void frameAllObjects(){cameraViewActive=false;frameObjects(true);}
 
+    public void setViewportNavigationMode(int mode) {
+        viewportNavigationMode = mode == 1 ? 1 : 0;
+    }
+    public int getViewportNavigationMode() { return viewportNavigationMode; }
+
+    public void setMeasureMode(boolean enabled) {
+        measureMode = enabled;
+        measurementHasStart = false;
+        measurementHasEnd = false;
+        invalidate();
+    }
+    public boolean isMeasureMode() { return measureMode; }
+    public void clearMeasurement() {
+        measurementHasStart = false;
+        measurementHasEnd = false;
+        invalidate();
+    }
+
     public boolean isCameraViewActive(){return cameraViewActive;}
     public void toggleActiveCameraView() {
         if(cameraViewActive) {
@@ -1317,6 +1341,26 @@ public final class Meshy3DViewport extends View {
             canvas.drawCircle(sculptCursorX,sculptCursorY,radius,paint);
             paint.setStrokeWidth(1f*d);paint.setColor(0x887E8792);
             canvas.drawCircle(sculptCursorX,sculptCursorY,radius*(1f-sculptStrength*.35f),paint);
+            paint.setStyle(Paint.Style.FILL);
+        }
+        if(measurementHasStart) {
+            float d=getResources().getDisplayMetrics().density;
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(2f*d);
+            paint.setColor(0xFF52D8D0);
+            if(measurementHasEnd) {
+                canvas.drawLine(measurementStartX,measurementStartY,measurementEndX,measurementEndY,paint);
+                canvas.drawCircle(measurementStartX,measurementStartY,4f*d,paint);
+                canvas.drawCircle(measurementEndX,measurementEndY,4f*d,paint);
+                paint.setStyle(Paint.Style.FILL);
+                paint.setTextSize(11f*d);
+                paint.setColor(0xFFE8FFFF);
+                canvas.drawText(String.format(java.util.Locale.US,"≈ %.3f units",measurementDistance),
+                        (measurementStartX+measurementEndX)*.5f+6f*d,
+                        (measurementStartY+measurementEndY)*.5f-6f*d,paint);
+            } else {
+                canvas.drawCircle(measurementStartX,measurementStartY,5f*d,paint);
+            }
             paint.setStyle(Paint.Style.FILL);
         }
         drawSceneObjectMarkers(canvas,cx,cy,unit);
@@ -2057,6 +2101,10 @@ public final class Meshy3DViewport extends View {
             case MotionEvent.ACTION_DOWN:
                 downX=lastX=event.getX(); downY=lastY=event.getY();
                 moved=false; lastPinchDistance=0;
+                if(measureMode) {
+                    lastX=event.getX();lastY=event.getY();
+                    return true;
+                }
                 if(!sculpting&&!meshEditMode&&objectSelectionEnabled&&objectBoxSelectEnabled){
                     objectBoxSelecting=true;objectBoxEndX=downX;objectBoxEndY=downY;invalidate();return true;
                 }
@@ -2079,6 +2127,17 @@ public final class Meshy3DViewport extends View {
                 }
                 moved=true; return true;
             case MotionEvent.ACTION_MOVE:
+                if(measureMode) {
+                    if(measurementHasStart) {
+                        measurementEndX=event.getX();measurementEndY=event.getY();
+                        measurementHasEnd=true;
+                        float unit=Math.max(1f,Math.min(getWidth(),getHeight())*.235f*zoom);
+                        measurementDistance=(float)Math.hypot(measurementEndX-measurementStartX,
+                                measurementEndY-measurementStartY)/unit;
+                    }
+                    invalidate();
+                    return true;
+                }
                 if(cameraViewActive&&(Math.abs(event.getX()-downX)+Math.abs(event.getY()-downY)>4*d))cameraViewActive=false;
                 if(objectBoxSelecting&&event.getPointerCount()==1){
                     objectBoxEndX=event.getX();objectBoxEndY=event.getY();
@@ -2109,8 +2168,11 @@ public final class Meshy3DViewport extends View {
                 } else {
                     float dx=event.getX()-lastX, dy=event.getY()-lastY;
                     if(Math.abs(event.getX()-downX)+Math.abs(event.getY()-downY)>4*d) moved=true;
-                    yaw-=dx*0.008f;
-                    pitch=Math.max(-1.35f,Math.min(1.35f,pitch+dy*0.008f));
+                    if(viewportNavigationMode==1) panByPixels(dx,dy);
+                    else {
+                        yaw-=dx*0.008f;
+                        pitch=Math.max(-1.35f,Math.min(1.35f,pitch+dy*0.008f));
+                    }
                     invalidate();
                 }
                 lastX=event.getX(); lastY=event.getY(); return true;
@@ -2123,6 +2185,20 @@ public final class Meshy3DViewport extends View {
                 return true;
             case MotionEvent.ACTION_UP:
                 strokeActive=false;
+                if(measureMode) {
+                    if(!measurementHasStart) {
+                        measurementStartX=event.getX();measurementStartY=event.getY();
+                        measurementHasStart=true;measurementHasEnd=false;
+                    } else {
+                        measurementEndX=event.getX();measurementEndY=event.getY();
+                        measurementHasEnd=true;
+                        float unit=Math.max(1f,Math.min(getWidth(),getHeight())*.235f*zoom);
+                        measurementDistance=(float)Math.hypot(measurementEndX-measurementStartX,
+                                measurementEndY-measurementStartY)/unit;
+                        measureMode=false;
+                    }
+                    invalidate();performClick();return true;
+                }
                 if(objectBoxSelecting){
                     objectBoxSelecting=false;performObjectBoxSelection(downX,downY,event.getX(),event.getY());
                     invalidate();performClick();return true;
