@@ -34,6 +34,7 @@ final class Meshy3DPhoneControls extends LinearLayout {
     private TextView modeLabel;
     private int mouseMode = 0; // 0 orbit, 1 pan, 2 select-drag
     private boolean expanded;
+    private Button toggleButton;
 
     Meshy3DPhoneControls(Context context, Meshy3DViewport viewport, Actions actions) {
         super(context);
@@ -45,11 +46,9 @@ final class Meshy3DPhoneControls extends LinearLayout {
         setBackgroundColor(0xE91C222B);
         setPadding(6*dp, 5*dp, 6*dp, 5*dp);
 
-        Button toggle = button("⌨  Viewport Controls", () -> {
-            expanded = !expanded;
-            body.setVisibility(expanded ? VISIBLE : GONE);
-        });
-        addView(toggle, new LayoutParams(LayoutParams.WRAP_CONTENT, 38*dp));
+        toggleButton = button("⌨", () -> setExpanded(!expanded));
+        toggleButton.setContentDescription("Show or hide built-in virtual keyboard and mouse controls");
+        addView(toggleButton, new LayoutParams(42*dp, 34*dp));
 
         body = new LinearLayout(context);
         body.setOrientation(VERTICAL);
@@ -134,6 +133,15 @@ final class Meshy3DPhoneControls extends LinearLayout {
         }));
         body.addView(finalKeys);
     }
+
+    void setExpanded(boolean value) {
+        expanded = value;
+        if (body != null) body.setVisibility(expanded ? VISIBLE : GONE);
+        if (toggleButton != null) toggleButton.setText(expanded ? "⌨ ×" : "⌨");
+    }
+
+    void toggleExpanded() { setExpanded(!expanded); }
+    boolean isExpanded() { return expanded; }
 
     private void setMouseMode(int mode) {
         mouseMode = mode;
