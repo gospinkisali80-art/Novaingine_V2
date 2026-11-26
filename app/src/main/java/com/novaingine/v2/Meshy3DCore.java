@@ -77,6 +77,7 @@ public final class Meshy3DCore {
     private final ArrayList<Node> geometryNodes = new ArrayList<>();
     private final ArrayList<Node> shaderNodes = new ArrayList<>();
     private final ArrayList<Node> compositorNodes = new ArrayList<>();
+    private final ArrayList<int[]> geometryLinks=new ArrayList<>(),shaderLinks=new ArrayList<>(),compositorLinks=new ArrayList<>();
     private SelectMode selectMode=SelectMode.FACE;
     private float metallic, roughness=0.65f;
     private int baseColor=0xFF9DAAB7;
@@ -325,9 +326,10 @@ public final class Meshy3DCore {
     public void setMaterial(int color,float metal,float rough){baseColor=color;metallic=Math.max(0,Math.min(1,metal));roughness=Math.max(.02f,Math.min(1,rough));revision++;}
     public int getBaseColor(){return baseColor;}public float getMetallic(){return metallic;}public float getRoughness(){return roughness;}
     public void addShaderNode(String type){addShaderNode(type,0f);}
-    public void addShaderNode(String type,float value){Node n=new Node(type);n.value=value;shaderNodes.add(n);revision++;}
+    public void addShaderNode(String type,float value){Node n=new Node(type);n.value=value;int index=shaderNodes.size();shaderNodes.add(n);if(index>0)shaderLinks.add(new int[]{index-1,index});revision++;}
     public void evaluateShaderGraph(){
-        for(Node n:shaderNodes){
+        int[] order=graphExecutionOrder(1);
+        for(int index:order){Node n=shaderNodes.get(index);
             if("Metallic".equals(n.type))metallic=Math.max(0,Math.min(1,n.value));
             else if("Roughness".equals(n.type))roughness=Math.max(.02f,Math.min(1,n.value));
             else if("Base Color".equals(n.type))baseColor=0xFF000000|((int)n.value&0xFFFFFF);
@@ -346,16 +348,35 @@ public final class Meshy3DCore {
         else if(graph==1)addShaderNode(type,value);
         else addCompositorNode(type,value);
     }
+    private ArrayList<Node> nodesForGraph(int graph){return graph==0?geometryNodes:graph==1?shaderNodes:compositorNodes;}
+    private ArrayList<int[]> linksForGraph(int graph){return graph==0?geometryLinks:graph==1?shaderLinks:compositorLinks;}
+    public int[][] getGraphLinks(int graph){ArrayList<int[]> links=linksForGraph(graph);int[][] out=new int[links.size()][2];for(int i=0;i<out.length;i++)out[i]=links.get(i).clone();return out;}
+    public void connectGraphNodes(int graph,int from,int to){
+        ArrayList<Node> nodes=nodesForGraph(graph);if(from<0||to<0||from>=nodes.size()||to>=nodes.size()||from==to)return;
+        ArrayList<int[]> links=linksForGraph(graph);links.removeIf(link->link[1]==to);
+        links.add(new int[]{from,to});revision++;
+    }
+    private int[] graphExecutionOrder(int graph){
+        ArrayList<Node> nodes=nodesForGraph(graph);ArrayList<int[]> links=linksForGraph(graph);
+        int n=nodes.size();int[] indegree=new int[n];ArrayList<ArrayList<Integer>> next=new ArrayList<>();
+        for(int i=0;i<n;i++)next.add(new ArrayList<>());
+        for(int[] link:links)if(link[0]>=0&&link[0]<n&&link[1]>=0&&link[1]<n){next.get(link[0]).add(link[1]);indegree[link[1]]++;}
+        ArrayDeque<Integer> q=new ArrayDeque<>();for(int i=0;i<n;i++)if(indegree[i]==0)q.add(i);
+        int[] order=new int[n];int count=0;while(!q.isEmpty()){int id=q.removeFirst();order[count++]=id;for(int to:next.get(id))if(--indegree[to]==0)q.add(to);}
+        if(count!=n){for(int i=0;i<n;i++)order[i]=i;}
+        return order;
+    }
     public void evaluateGraph(int graph){
         if(graph==0)evaluateGeometryNodes();
         else if(graph==1)evaluateShaderGraph();
         else revision++;
     }
     public int getShaderNodeCount(){return shaderNodes.size();}
-    public void addGeometryNode(String type,float x,float y,float z,float value){Node n=new Node(type);n.x=x;n.y=y;n.z=z;n.value=value;geometryNodes.add(n);revision++;}
+    public void addGeometryNode(String type,float x,float y,float z,float value){Node n=new Node(type);n.x=x;n.y=y;n.z=z;n.value=value;int index=geometryNodes.size();geometryNodes.add(n);if(index>0)geometryLinks.add(new int[]{index-1,index});revision++;}
     public void clearGeometryNodes(){geometryNodes.clear();revision++;}
     public void evaluateGeometryNodes(){
-        for(Node n:geometryNodes){
+        int[] order=graphExecutionOrder(0);
+        for(int index:order){Node n=geometryNodes.get(index);
             if("Transform Geometry".equals(n.type)){for(float[] p:vertices){p[0]+=n.x;p[1]+=n.y;p[2]+=n.z;}}
             else if("Set Position".equals(n.type)){for(float[] p:vertices)p[1]+=n.value;}
             else if("Smooth".equals(n.type))smooth(.2f,1);
@@ -378,11 +399,12 @@ public final class Meshy3DCore {
         ArrayList<Face> extra=new ArrayList<>();for(Face f:faces){int[] ids=f.vertices.clone();for(int i=0;i<ids.length;i++)ids[i]+=base;extra.add(new Face(ids));}
         vertices.addAll(copy);faces.addAll(extra);rebuildEdges();
     }
-    public void addCompositorNode(String type,float value){Node n=new Node(type);n.value=value;compositorNodes.add(n);revision++;}
+    public void addCompositorNode(String type,float value){Node n=new Node(type);n.value=value;int index=compositorNodes.size();compositorNodes.add(n);if(index>0)compositorLinks.add(new int[]{index-1,index});revision++;}
     public int getCompositorNodeCount(){return compositorNodes.size();}
     public int[] evaluateCompositor(int[] input,int width,int height){
         int[] out=input.clone();
-        for(Node n:compositorNodes){
+        int[] order=graphExecutionOrder(2);
+        for(int nodeIndex:order){Node n=compositorNodes.get(nodeIndex);
             if("Grayscale".equals(n.type)){for(int i=0;i<out.length;i++){int c=out[i],g=(int)(.2126*((c>>16)&255)+.7152*((c>>8)&255)+.0722*(c&255));out[i]=0xFF000000|g<<16|g<<8|g;}}
             else if("Brightness".equals(n.type)){for(int i=0;i<out.length;i++){int c=out[i],r=clamp(((c>>16)&255)+n.value),g=clamp(((c>>8)&255)+n.value),b=clamp((c&255)+n.value);out[i]=0xFF000000|r<<16|g<<8|b;}}
             else if("Invert".equals(n.type)){for(int i=0;i<out.length;i++){int c=out[i];out[i]=0xFF000000|((255-((c>>16)&255))<<16)|((255-((c>>8)&255))<<8)|(255-(c&255));}}
