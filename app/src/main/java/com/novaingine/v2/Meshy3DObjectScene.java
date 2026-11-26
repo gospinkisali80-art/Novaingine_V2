@@ -75,6 +75,8 @@ public final class Meshy3DObjectScene {
         public float lightAngle = 45f;
         public int lightColor = 0xFFFFFFFF;
         public float displaySize = 1f;
+        public String viewportDisplayType = "SOLID";
+        public int viewportDisplayColor = 0xFFFFFFFF;
 
         private Object3D(String id,String name,String type,Meshy3DCore mesh) {
             this.id=id;this.name=name;this.type=type;this.mesh=mesh;
@@ -639,6 +641,7 @@ public final class Meshy3DObjectScene {
         copy.cameraLens=source.cameraLens;copy.cameraClipStart=source.cameraClipStart;copy.cameraClipEnd=source.cameraClipEnd;
         copy.lightType=source.lightType;copy.lightPower=source.lightPower;copy.lightAngle=source.lightAngle;
         copy.lightColor=source.lightColor;copy.displaySize=source.displaySize;
+        copy.viewportDisplayType=source.viewportDisplayType;copy.viewportDisplayColor=source.viewportDisplayColor;
         for(Constraint3D constraint:source.constraints)
             copy.constraints.add(new Constraint3D(UUID.randomUUID().toString(),constraint.type,
                     constraint.targetId,constraint.influence,constraint.enabled));
@@ -1285,6 +1288,16 @@ public final class Meshy3DObjectScene {
         return false;
     }
 
+    public void setViewportDisplay(String objectId,String displayType,int color){
+        Object3D object=requireObject(objectId);
+        String type=displayType==null?"SOLID":displayType.trim().toUpperCase(java.util.Locale.ROOT);
+        if(!"SOLID".equals(type)&&!"WIRE".equals(type)&&!"BOUNDS".equals(type))
+            throw new IllegalArgumentException("Viewport display must be Solid, Wire or Bounds.");
+        object.viewportDisplayType=type;
+        object.viewportDisplayColor=0xFF000000|(color&0x00FFFFFF);
+        revision++;
+    }
+
     public void setVisibility(String objectId,boolean visible) {requireObject(objectId).visible=visible;revision++;}
     public void setSelectable(String objectId,boolean selectable) {requireObject(objectId).selectable=selectable;revision++;}
     public void setRenderVisibility(String objectId,boolean visible) {requireObject(objectId).renderVisible=visible;revision++;}
@@ -1510,6 +1523,8 @@ public final class Meshy3DObjectScene {
                 item.put("cameraLens",o.cameraLens);item.put("cameraClipStart",o.cameraClipStart);item.put("cameraClipEnd",o.cameraClipEnd);
                 item.put("lightType",o.lightType);item.put("lightPower",o.lightPower);item.put("lightAngle",o.lightAngle);
                 item.put("lightColor",o.lightColor);item.put("displaySize",o.displaySize);
+                item.put("viewportDisplayType",o.viewportDisplayType);
+                item.put("viewportDisplayColor",o.viewportDisplayColor);
                 item.put("selected",o.selected);JSONArray members=new JSONArray();for(String id:o.collectionIds)members.put(id);item.put("collections",members);
                 JSONArray constraintArray=new JSONArray();
                 for(Constraint3D constraint:o.constraints){
@@ -1593,6 +1608,10 @@ public final class Meshy3DObjectScene {
                 o.lightType=item.optString("lightType","POINT");o.lightPower=(float)item.optDouble("lightPower",1000f);
                 o.lightAngle=(float)item.optDouble("lightAngle",45f);o.lightColor=item.optInt("lightColor",0xFFFFFFFF);
                 o.displaySize=(float)item.optDouble("displaySize",1f);
+                String displayType=item.optString("viewportDisplayType","SOLID").toUpperCase(java.util.Locale.ROOT);
+                if(!"SOLID".equals(displayType)&&!"WIRE".equals(displayType)&&!"BOUNDS".equals(displayType))return false;
+                o.viewportDisplayType=displayType;
+                o.viewportDisplayColor=item.optInt("viewportDisplayColor",0xFFFFFFFF);
                 JSONArray memberships=item.optJSONArray("collections");
                 if(memberships!=null)for(int j=0;j<memberships.length();j++){String cid=memberships.getString(j);if(newCollections.containsKey(cid))o.collectionIds.add(cid);}
                 if(o.collectionIds.isEmpty())o.collectionIds.add(newCollections.keySet().iterator().next());
