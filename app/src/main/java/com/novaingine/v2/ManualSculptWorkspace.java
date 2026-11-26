@@ -446,17 +446,20 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 else if ("Add Cube".equals(item)) {
                     checkpointMeshEdit();meshyViewport.addCubeObject();
                     activeEditorMode="Object Mode";if(modeButton!=null)modeButton.setText(activeEditorMode);
-                    meshyViewport.setMeshEditMode(false);
+                    meshyViewport.setMeshEditMode(false);meshyViewport.setObjectSelectionEnabled(true);
+                    refreshModelingOutliner();
                     status.setText("Modeling | New independent Cube object added");
                 } else if ("Duplicate".equals(item) || "Duplicate Linked".equals(item)) {
                     checkpointMeshEdit();meshyViewport.duplicateActiveObject("Duplicate Linked".equals(item));
-                    status.setText("Modeling | "+item+" created");
+                    activeEditorMode="Object Mode";if(modeButton!=null)modeButton.setText(activeEditorMode);
+                    meshyViewport.setMeshEditMode(false);meshyViewport.setObjectSelectionEnabled(true);
+                    refreshModelingOutliner();status.setText("Modeling | "+item+" created");
                 } else if ("Delete Object".equals(item)) {
                     checkpointMeshEdit();meshyViewport.deleteActiveObject();
-                    status.setText("Modeling | Active object deleted");
+                    refreshModelingOutliner();status.setText("Modeling | Active object deleted");
                 } else if ("Delete Selected Objects".equals(item)) {
                     checkpointMeshEdit();meshyViewport.deleteSelectedObjects();
-                    status.setText("Modeling | Selected objects deleted");
+                    refreshModelingOutliner();status.setText("Modeling | Selected objects deleted");
                 } else if ("Select All Objects".equals(item)) {
                     meshyViewport.selectAllSceneObjects();status.setText("Modeling | All scene objects selected");
                 } else if ("Deselect Objects".equals(item)) {
@@ -984,6 +987,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 }).setNegativeButton("Cancel",null).show();
     }
 
+    private void refreshModelingOutliner(){if(activeWorkspaceIndex==1)renderWorkspaceLayout(1);}
+
     private void showObjectPropertiesDialog() {
         Meshy3DObjectScene.Object3D o=meshyViewport.getObjectScene().getActiveObject();if(o==null)return;
         String parentName="None";
@@ -1004,7 +1009,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
         EditText input=new EditText(activity);input.setSingleLine(true);input.setText(active.name);
         new android.app.AlertDialog.Builder(activity).setTitle("Rename Object").setView(input)
                 .setPositiveButton("Rename",(d,w)->{
-                    try{meshyViewport.renameActiveObject(input.getText().toString());status.setText("Modeling | Object renamed");}
+                    try{meshyViewport.renameActiveObject(input.getText().toString());refreshModelingOutliner();status.setText("Modeling | Object renamed");}
                     catch(Exception e){Toast.makeText(activity,"Enter a valid object name.",Toast.LENGTH_SHORT).show();}
                 }).setNegativeButton("Cancel",null).show();
     }
