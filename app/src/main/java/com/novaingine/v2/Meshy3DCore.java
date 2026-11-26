@@ -212,7 +212,7 @@ public final class Meshy3DCore {
     }
     public void unwrapPlanar(){unwrapLSCM();}
     public void unwrapLSCM(){
-        faceUvs=null;islands.clear();
+        float[][][] previousUvs=faceUvs;faceUvs=null;islands.clear();
         // Sharp normal discontinuities become default seams; user seams are retained.
         for(Edge edge:edges)if(edge.faces.size()==2){
             float[] a=normal(faces.get(edge.faces.get(0)).vertices),b=normal(faces.get(edge.faces.get(1)).vertices);
@@ -224,7 +224,7 @@ public final class Meshy3DCore {
             }
         }
         rebuildIslands();
-        faceUvs=Meshy3DUvUnwrapper.unwrap(copyVertices(),copyFaces(),islands);
+        faceUvs=Meshy3DUvUnwrapper.unwrap(copyVertices(),copyFaces(),islands,pins,previousUvs);
         for(UvIsland island:islands){
             island.minU=Float.MAX_VALUE;island.minV=Float.MAX_VALUE;
             island.maxU=-Float.MAX_VALUE;island.maxV=-Float.MAX_VALUE;
