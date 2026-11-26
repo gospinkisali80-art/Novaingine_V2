@@ -131,6 +131,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
 
         // Meshy3D owns this viewport and its starter cube; it is not the Novaingine GL scene.
         meshyViewport = new Meshy3DViewport(activity, this::toggleViewportFocus);
+        meshyViewport.setObjectSelectionListener(()->{
+            if(activeWorkspaceIndex==1)refreshModelingOutliner();
+        });
         addView(meshyViewport, new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
         // Meshy3D is being rebuilt from the Blender reference one section at a time.
@@ -442,7 +445,30 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 else showWorkspaceActionInfo(item);
                 break;
             case 1:
-                if ("Add Primitive".equals(item)) showPrimitiveDialog();
+                if ("Object Properties".equals(item)) showObjectPropertiesDialog();
+                else if ("Object Transform".equals(item)) showObjectTransformDialog("Move");
+                else if ("Dimensions".equals(item)) {
+                    Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
+                    if(active!=null){float[] size=meshyViewport.getObjectScene().dimensions(active.id);
+                        status.setText("Modeling | World dimensions X "+fmt(size[0])+"  Y "+fmt(size[1])+"  Z "+fmt(size[2]));}
+                } else if ("Camera Settings".equals(item)) showCameraSettingsDialog();
+                else if ("Light Settings".equals(item)) showLightSettingsDialog();
+                else if ("Visibility".equals(item)) {
+                    Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
+                    if(active!=null)status.setText("Modeling | Viewport "+(active.visible?"Visible":"Hidden")+
+                            " | Render "+(active.renderVisible?"Enabled":"Disabled"));
+                } else if ("Selectable".equals(item)) {
+                    Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
+                    if(active!=null){active.selectable=!active.selectable;refreshModelingOutliner();
+                        status.setText("Modeling | "+active.name+" selectable: "+active.selectable);}
+                } else if ("Render Visibility".equals(item)) {
+                    Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
+                    if(active!=null){active.renderVisible=!active.renderVisible;meshyViewport.invalidate();
+                        status.setText("Modeling | "+active.name+" render visibility: "+active.renderVisible);}
+                } else if ("Active Camera".equals(item)) {
+                    Meshy3DObjectScene.Object3D camera=meshyViewport.getObjectScene().getActiveCamera();
+                    status.setText("Modeling | Active camera: "+(camera==null?"None":camera.name));
+                } else if ("Add Primitive".equals(item)) showPrimitiveDialog();
                 else if ("Add Camera".equals(item)) {
                     checkpointMeshEdit();meshyViewport.addCameraObject();meshyViewport.setMeshEditMode(false);
                     refreshModelingOutliner();status.setText("Modeling | Camera object added");
