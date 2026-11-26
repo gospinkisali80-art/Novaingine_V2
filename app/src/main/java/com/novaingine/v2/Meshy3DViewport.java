@@ -1595,6 +1595,8 @@ public final class Meshy3DViewport extends View {
                 | ((int)(ag+(bg-ag)*t)<<8) | (int)(ab+(bb-ab)*t);
     }
 
+    private int virtualAxisConstraint = -1;
+
     /** Phone input API: all virtual controls manipulate the same viewport state as touch gestures. */
     public void orbitBy(float dx, float dy) {
         cameraViewActive=false;
@@ -1642,8 +1644,15 @@ public final class Meshy3DViewport extends View {
         performClick();
     }
 
-    /** Applies a typed numeric value along one world axis using the active transform tool. */
+    public void setKeyboardAxisConstraint(int axis) {
+        virtualAxisConstraint = axis < 0 || axis > 2 ? -1 : axis;
+    }
+
+    public int getKeyboardAxisConstraint() { return virtualAxisConstraint; }
+
+    /** Applies a typed value using the active G/R/S operation and selected axis constraint. */
     public void applyNumericTransform(int axis,float amount) {
+        if(axis == -1) axis = virtualAxisConstraint >= 0 ? virtualAxisConstraint : 0;
         if(axis<0||axis>2||!Float.isFinite(amount))throw new IllegalArgumentException("Invalid axis or value");
         int operation=objectTransformTool<0?0:objectTransformTool;
         if(meshEditMode) {
