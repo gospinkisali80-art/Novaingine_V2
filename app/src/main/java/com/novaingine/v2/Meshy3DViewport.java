@@ -70,6 +70,8 @@ public final class Meshy3DViewport extends View {
         float[][] vertices;
         int[][] faces;
         boolean[] activeFaces;
+        boolean[] wireFaces;
+        int[] displayColors;
     }
 
     private static final class SceneRenderData {
@@ -658,12 +660,15 @@ public final class Meshy3DViewport extends View {
             data.vertices=vertices;
             data.faces=faces;
             data.activeFaces=new boolean[faces.length];
+            data.wireFaces=new boolean[faces.length];
+            data.displayColors=new int[faces.length];
             java.util.Arrays.fill(data.activeFaces,true);
             return data;
         }
         java.util.ArrayList<float[]> allVertices=new java.util.ArrayList<>();
         java.util.ArrayList<int[]> allFaces=new java.util.ArrayList<>();
-        java.util.ArrayList<Boolean> active=new java.util.ArrayList<>();
+        java.util.ArrayList<Boolean> active=new java.util.ArrayList<>(),wire=new java.util.ArrayList<>();
+        java.util.ArrayList<Integer> colors=new java.util.ArrayList<>();
         modifierEvaluationWarning=null;
         for(Meshy3DObjectScene.Object3D object:objectScene.getObjects()) {
             if(!objectScene.isVisibleInViewport(object)||!object.renderVisible
@@ -678,21 +683,44 @@ public final class Meshy3DViewport extends View {
             }
             float[][] meshVertices=renderMesh==document?vertices:renderMesh.copyVertices();
             int[][] meshFaces=renderMesh==document?faces:renderMesh.copyFaces();
-            int offset=allVertices.size();
-            for(float[] source:meshVertices) {
-                allVertices.add(objectScene.transformPoint(object.id,source[0],source[1],source[2]));
+            boolean bounds="BOUNDS".equals(object.viewportDisplayType);
+            boolean wireOnly=bounds||"WIRE".equals(object.viewportDisplayType);
+            if(bounds&&meshVertices.length>0){
+                float[] min={Float.MAX_VALUE,Float.MAX_VALUE,Float.MAX_VALUE};
+                float[] max={-Float.MAX_VALUE,-Float.MAX_VALUE,-Float.MAX_VALUE};
+                for(float[] vertex:meshVertices)for(int axis=0;axis<3;axis++){
+                    min[axis]=Math.min(min[axis],vertex[axis]);max[axis]=Math.max(max[axis],vertex[axis]);
+                }
+                meshVertices=new float[][]{
+                        {min[0],min[1],min[2]},{max[0],min[1],min[2]},
+                        {max[0],max[1],min[2]},{min[0],max[1],min[2]},
+                        {min[0],min[1],max[2]},{max[0],min[1],max[2]},
+                        {max[0],max[1],max[2]},{min[0],max[1],max[2]}};
+                meshFaces=new int[][]{{0,1,2,3},{4,7,6,5},{0,4,5,1},
+                        {1,5,6,2},{2,6,7,3},{3,7,4,0}};
             }
+            int offset=allVertices.size();
+            for(float[] source:meshVertices)
+                allVertices.add(objectScene.transformPoint(object.id,source[0],source[1],source[2]));
             for(int[] face:meshFaces) {
                 int[] mapped=face.clone();
                 for(int i=0;i<mapped.length;i++)mapped[i]+=offset;
                 allFaces.add(mapped);
                 active.add(object.id.equals(objectSceneActiveId));
+                wire.add(wireOnly);
+                colors.add(object.viewportDisplayColor);
             }
         }
         data.vertices=allVertices.toArray(new float[0][]);
         data.faces=allFaces.toArray(new int[0][]);
         data.activeFaces=new boolean[active.size()];
-        for(int i=0;i<active.size();i++)data.activeFaces[i]=active.get(i);
+        data.wireFaces=new boolean[wire.size()];
+        data.displayColors=new int[colors.size()];
+        for(int i=0;i<active.size();i++){
+            data.activeFaces[i]=active.get(i);
+            data.wireFaces[i]=wire.get(i);
+            data.displayColors[i]=colors.get(i);
+        }
         return data;
     }
     private SceneRenderData buildFinalSceneRenderData() {
@@ -1163,7 +1191,9 @@ public final class Meshy3DViewport extends View {
             float nx=aby*acz-abz*acy, ny=abz*acx-abx*acz, nz=abx*acy-aby*acx;
             float centerZ=0f;for(int id:face)centerZ+=cameraPoint(drawVertices[id][0],drawVertices[id][1],drawVertices[id][2])[2];centerZ/=face.length;
             // Camera looks toward negative camera-Z; visible outward normals face camera.
-            if(nx*0f+ny*0f+nz > 0.0001f) {
+            boolean wireFace=!meshEditMode&&renderData.wireFaces!=null
+                    &&f<renderData.wireFaces.length&&renderData.wireFaces[f];
+            if(wireFace||nx*0f+ny*0f+nz > 0.0001f) {
                 order[count]=f; depth[f]=centerZ; count++;
             }
         }
@@ -1182,6 +1212,15 @@ public final class Meshy3DViewport extends View {
             path.moveTo(p[face[0]][0],p[face[0]][1]);
             for(int k=1;k<face.length;k++) path.lineTo(p[face[k]][0],p[face[k]][1]);
             path.close();
+            if(!meshEditMode&&renderData.wireFaces!=null&&f<renderData.wireFaces.length&&renderData.wireFaces[f]){
+                int displayColor=f<renderData.displayColors.length?renderData.displayColors[f]:0xFFFFFFFF;
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth((renderData.activeFaces[f]?2.2f:1.35f)*getResources().getDisplayMetrics().density);
+                paint.setColor(renderData.activeFaces[f]?0xFFFFB34D:displayColor);
+                canvas.drawPath(path,paint);
+                paint.setStyle(Paint.Style.FILL);
+                continue;
+            }
             int side = Math.min(FACE_COLORS.length-1,f / (MESH_SUBDIVISIONS * MESH_SUBDIVISIONS));
             int base = FACE_COLORS[side];
             int shaded = meshEditMode && document.isFaceSelected(f) ? 0xFFFFA52B : blendColor(base, meshTint, 0.48f);
