@@ -360,8 +360,20 @@ public final class Meshy3DViewport extends View {
                 }
             }
         }
-        if(best==null&&bestMarkerDistance==Float.MAX_VALUE)return;
-        if(best!=null){activateSceneObject(best.id,!additive);if(onObjectSelectionChanged!=null)onObjectSelectionChanged.run();}
+        if(best==null){
+            if(!additive){
+                objectScene.deselectAllObjects();objectSceneActiveId=null;meshVisible=false;
+                invalidate();
+                if(onObjectSelectionChanged!=null)onObjectSelectionChanged.run();
+            }
+            return;
+        }
+        if(additive)objectScene.setSelected(best.id,!best.selected);
+        else objectScene.selectOnly(best.id);
+        String activeId=objectScene.getActiveObjectId();
+        if(activeId!=null)activateSceneObject(activeId,false);
+        else {objectSceneActiveId=null;meshVisible=false;invalidate();}
+        if(onObjectSelectionChanged!=null)onObjectSelectionChanged.run();
     }
 
     private static boolean pointInsidePolygon(float x,float y,float[] px,float[] py){
