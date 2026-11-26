@@ -28,15 +28,17 @@ public final class Meshy3DUvUnwrapper {
             }
             ArrayList<Integer> pinned=new ArrayList<>();for(int i=0;i<count;i++)if(pins.contains((long)ids[i]))pinned.add(i);
             boolean preservePinned=!pinned.isEmpty();
+            int singlePinned=pinned.size()==1?pinned.get(0):-1;
             ArrayList<Integer> anchors=new ArrayList<>(pinned);
             if(anchors.isEmpty()){anchors.add(pinA);anchors.add(pinB);}
-            else if(anchors.size()==1&&pinA!=anchors.get(0))anchors.add(pinB);
+            else if(anchors.size()==1){int other=pinA==singlePinned?pinB:pinA;if(other==singlePinned)other=(singlePinned+1)%count;anchors.add(other);}
             double[] target=new double[count*2],penalty=new double[count*2];
             double[] rhs=new double[count*2];double lambda=100000.0;
             for(int anchor:anchors){
                 float[] old=findOldUv(previousUvs,faces,faceIds,ids[anchor]);
                 double u=old==null?0:old[0],v=old==null?0:old[1];
-                if(old==null&&anchor==pinB)u=1;
+                if(old==null&&singlePinned>=0&&anchor!=singlePinned){u=target[singlePinned*2]+1;v=target[singlePinned*2+1];}
+                else if(old==null&&pinned.isEmpty()&&anchor==pinB)u=1;
                 target[anchor*2]=u;target[anchor*2+1]=v;
                 penalty[anchor*2]=lambda;penalty[anchor*2+1]=lambda;
                 rhs[anchor*2]=lambda*u;rhs[anchor*2+1]=lambda*v;
