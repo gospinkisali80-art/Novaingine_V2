@@ -553,6 +553,10 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 } else if ("Set Active Camera".equals(item)) {
                     try{meshyViewport.makeActiveCamera();status.setText("Modeling | Active camera updated");}
                     catch(Exception error){showObjectOperationError(error);}
+                } else if ("View Camera".equals(item)) {
+                    try{meshyViewport.toggleActiveCameraView();
+                        status.setText("Modeling | Camera view "+(meshyViewport.isCameraViewActive()?"enabled":"disabled"));}
+                    catch(Exception error){showObjectOperationError(error);}
                 } else if ("Camera Settings".equals(item)) showCameraSettingsDialog();
                 else if ("Light Settings".equals(item)) showLightSettingsDialog();
                 else if ("Hide / Show Object".equals(item)) {
@@ -1688,7 +1692,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         "Apply Location", "Apply Rotation & Scale", "Apply All Transforms", "Clear Location", "Clear Rotation", "Clear Scale",
                         "Set Origin to Geometry", "Set Origin to 3D Cursor", "Align Objects", "Parent To", "Parent Selected to Active", "Clear Parent",
                         "Add Collection", "Manage Collections", "Move To Collection", "Link To Collection", "Make Single User", "Link Mesh Data",
-                        "Set Active Camera", "Camera Settings", "Light Settings", "Object Statistics",
+                        "Set Active Camera", "View Camera", "Camera Settings", "Light Settings", "Object Statistics",
                         "EDIT MODE", "Vertex Select", "Edge Select", "Face Select",
                         "Select All", "Select Linked", "Select Loops", "Select Similar", "TRANSFORM",
                         "Move", "Rotate", "Scale", "Mirror", "Shrink / Fatten", "Shear", "Bend",
