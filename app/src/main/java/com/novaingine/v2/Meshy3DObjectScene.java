@@ -204,6 +204,11 @@ public final class Meshy3DObjectScene {
         owner.constraints.add(constraint);revision++;return constraint;
     }
 
+    public void setConstraintType(String objectId,String constraintId,String type){
+        Constraint3D constraint=findConstraint(requireObject(objectId),constraintId);
+        constraint.type=cleanConstraintType(type);revision++;
+    }
+
     public void setConstraintTarget(String objectId,String constraintId,String targetId){
         Object3D owner=requireObject(objectId);Object3D target=requireObject(targetId);
         Constraint3D constraint=findConstraint(owner,constraintId);
@@ -898,6 +903,8 @@ public final class Meshy3DObjectScene {
             if(source.id.equals(activeCameraId))activeCameraId=null;
             objects.remove(source.id);
         }
+        for(Object3D remaining:objects.values())
+            remaining.constraints.removeIf(constraint->deletingIds.contains(constraint.targetId));
         replaceSelection(java.util.Collections.singletonList(active));
         return active;
     }
