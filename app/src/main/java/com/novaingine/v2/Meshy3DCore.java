@@ -350,6 +350,9 @@ public final class Meshy3DCore {
     }
     private ArrayList<Node> nodesForGraph(int graph){return graph==0?geometryNodes:graph==1?shaderNodes:compositorNodes;}
     private ArrayList<int[]> linksForGraph(int graph){return graph==0?geometryLinks:graph==1?shaderLinks:compositorLinks;}
+    public float getGraphNodeValue(int graph,int index){ArrayList<Node> nodes=nodesForGraph(graph);return index>=0&&index<nodes.size()?nodes.get(index).value:0f;}
+    public String getGraphNodeType(int graph,int index){ArrayList<Node> nodes=nodesForGraph(graph);return index>=0&&index<nodes.size()?nodes.get(index).type:"";}
+    public void setGraphNodeValue(int graph,int index,float value){ArrayList<Node> nodes=nodesForGraph(graph);if(index<0||index>=nodes.size())return;nodes.get(index).value=value;revision++;}
     public int[][] getGraphLinks(int graph){ArrayList<int[]> links=linksForGraph(graph);int[][] out=new int[links.size()][2];for(int i=0;i<out.length;i++)out[i]=links.get(i).clone();return out;}
     public void connectGraphNodes(int graph,int from,int to){
         ArrayList<Node> nodes=nodesForGraph(graph);if(from<0||to<0||from>=nodes.size()||to>=nodes.size()||from==to)return;
