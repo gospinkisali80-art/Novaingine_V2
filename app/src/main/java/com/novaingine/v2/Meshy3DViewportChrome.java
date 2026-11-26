@@ -20,6 +20,7 @@ final class Meshy3DViewportChrome extends FrameLayout {
         void select();
         void cursor();
         void transform(int mode);
+        void manualScale();
         void sculpt();
         void measure();
         void add();
@@ -289,6 +290,7 @@ final class Meshy3DViewportChrome extends FrameLayout {
             addBottom("Move", () -> setTransform(0), false);
             addBottom("Rotate", () -> setTransform(1), false);
             addBottom("Scale", () -> setTransform(2), false);
+            addBottom("Scale Values", actions::manualScale, false);
             addBottom("Sculpt", actions::sculpt, false);
             addBottom("Measure", actions::measure, false);
             addBottom("Add", actions::add, false);
@@ -306,6 +308,7 @@ final class Meshy3DViewportChrome extends FrameLayout {
             addBottom("✥  Move", () -> setTransform(0), false);
             addBottom("⟳  Rotate", () -> setTransform(1), false);
             addBottom("□  Scale", () -> setTransform(2), false);
+            addBottom("Scale Values", actions::manualScale, false);
             addBottom("♧  Sculpt", actions::sculpt, false);
             addBottom("X", () -> viewport.setKeyboardAxisConstraint(0), false);
             addBottom("Y", () -> viewport.setKeyboardAxisConstraint(1), false);
