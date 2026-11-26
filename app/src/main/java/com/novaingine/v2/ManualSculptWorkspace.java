@@ -456,6 +456,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 else if ("Snap to 3D Cursor".equals(item)) {
                     checkpointMeshEdit();meshyViewport.snapSelectedObjectsToCursor();refreshModelingOutliner();
                     status.setText("Modeling | Selected object origins snapped to the 3D cursor");
+                } else if ("Snap to Active Geometry".equals(item)) {
+                    showObjectGeometrySnapDialog();
                 } else if ("Frame Selected".equals(item)) {
                     meshyViewport.frameSelectedObjects();status.setText("Modeling | View framed on selected objects");
                 } else if ("Frame All".equals(item)) {
@@ -1275,6 +1277,20 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         meshyViewport.mirrorSelectedObjects(w%3,w>=3);
                         refreshModelingOutliner();
                         status.setText("Modeling | Selected objects mirrored across "+options[w]);
+                    }catch(Exception error){showObjectOperationError(error);}
+                }).setNegativeButton("Cancel",null).show();
+    }
+
+    private void showObjectGeometrySnapDialog() {
+        String[] choices={"Nearest Vertex","Nearest Edge","Nearest Face Surface"};
+        new android.app.AlertDialog.Builder(activity).setTitle("Snap Selected Objects to Active Mesh")
+                .setItems(choices,(dialog,which)->{
+                    try{
+                        checkpointMeshEdit();
+                        int count=meshyViewport.getObjectScene().snapSelectedToActiveGeometry(which);
+                        meshyViewport.invalidate();
+                        refreshModelingOutliner();
+                        status.setText("Modeling | Snapped "+count+" object(s) to active mesh "+choices[which].toLowerCase(java.util.Locale.ROOT));
                     }catch(Exception error){showObjectOperationError(error);}
                 }).setNegativeButton("Cancel",null).show();
     }
@@ -2371,7 +2387,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 };
                 rightTitle = "Tool Properties";
                 rightItems = new String[]{"Object Properties", "Object Transform", "Numeric Transform", "Dimensions",
-                        "Set 3D Cursor", "Snap to Grid", "Snap to 3D Cursor", "Frame Selected", "Frame All",
+                        "Set 3D Cursor", "Snap to Grid", "Snap to 3D Cursor", "Snap to Active Geometry",
+                        "Frame Selected", "Frame All",
                         "Parent", "Constraints", "Modifiers", "Collections", "Manage Collections",
                         "Visibility", "Selectable", "Render Visibility", "Active Camera", "Camera Settings", "Light Settings",
                         "Active Tool", "Selection Mode", "Operation Amount", "Offset", "Segments", "Profile",
