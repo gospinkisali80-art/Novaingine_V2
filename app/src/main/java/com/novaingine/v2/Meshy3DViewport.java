@@ -176,9 +176,11 @@ public final class Meshy3DViewport extends View {
     public void setSelectedObjectsRenderVisible(boolean visible){objectScene.setSelectedRenderVisible(visible);invalidate();}
 
     public void selectObjectsByType(String type,boolean extend){
+        enterObjectSelectionMode();
         objectScene.selectByType(type,extend);activateCurrentObjectWithoutClearing();
     }
     public void selectActiveCameraObject(boolean extend){
+        enterObjectSelectionMode();
         objectScene.selectActiveCamera(extend);activateCurrentObjectWithoutClearing();
     }
     public void selectLinkedDataObjects(boolean extend){
@@ -229,6 +231,7 @@ public final class Meshy3DViewport extends View {
         invalidate();
     }
     public void selectCollectionObjects(String collectionId,boolean extend){
+        enterObjectSelectionMode();
         objectScene.selectCollection(collectionId,extend);activateCurrentObjectWithoutClearing();
     }
     public void setCollectionViewportVisibility(String collectionId,boolean visible){
@@ -251,8 +254,15 @@ public final class Meshy3DViewport extends View {
         invalidate();
     }
 
-    public void selectSceneObject(String id) { activateSceneObject(id); }
-    public void selectSceneObject(String id,boolean additive) { activateSceneObject(id,!additive); }
+    private void enterObjectSelectionMode() {
+        if(meshEditMode)syncCoreFromViewport();
+        meshEditMode=false;sculpting=false;strokeActive=false;
+        objectSelectionEnabled=true;objectTransformTool=-1;objectBoxSelectEnabled=false;
+    }
+    public void selectSceneObject(String id) { enterObjectSelectionMode();activateSceneObject(id); }
+    public void selectSceneObject(String id,boolean additive) {
+        enterObjectSelectionMode();activateSceneObject(id,!additive);
+    }
     public void setObjectSelectionEnabled(boolean enabled){objectSelectionEnabled=enabled;}
     private void performObjectBoxSelection(float x0,float y0,float x1,float y1) {
         float left=Math.min(x0,x1),right=Math.max(x0,x1),top=Math.min(y0,y1),bottom=Math.max(y0,y1);
@@ -342,15 +352,18 @@ public final class Meshy3DViewport extends View {
     }
 
     public void selectAllSceneObjects() {
+        enterObjectSelectionMode();
         objectScene.selectAllObjects();
         String id=objectScene.getActiveObjectId();
         if(id!=null)activateSceneObject(id,false);
         invalidate();
     }
     public void deselectAllSceneObjects() {
+        enterObjectSelectionMode();
         objectScene.deselectAllObjects();objectSceneActiveId=null;invalidate();
     }
     public void invertSceneSelection() {
+        enterObjectSelectionMode();
         objectScene.invertObjectSelection();
         String id=objectScene.getActiveObjectId();
         if(id!=null)activateSceneObject(id,false);else objectSceneActiveId=null;
