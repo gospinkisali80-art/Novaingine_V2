@@ -59,6 +59,7 @@ public final class Meshy3DObjectScene {
         public Meshy3DCore mesh;
         public String parentId;
         public final ArrayList<String> collectionIds = new ArrayList<>();
+        public final ArrayList<Constraint3D> constraints = new ArrayList<>();
         public boolean selected;
         public boolean active;
         public boolean visible = true;
@@ -75,6 +76,17 @@ public final class Meshy3DObjectScene {
 
         private Object3D(String id,String name,String type,Meshy3DCore mesh) {
             this.id=id;this.name=name;this.type=type;this.mesh=mesh;
+        }
+    }
+
+    public static final class Constraint3D {
+        public final String id;
+        public String type;
+        public String targetId;
+        public float influence=1f;
+        public boolean enabled=true;
+        private Constraint3D(String id,String type,String targetId,float influence,boolean enabled){
+            this.id=id;this.type=type;this.targetId=targetId;this.influence=influence;this.enabled=enabled;
         }
     }
 
@@ -160,6 +172,103 @@ public final class Meshy3DObjectScene {
         light.lightType=clean;light.lightPower=power;light.lightAngle=angle;light.lightColor=color;revision++;
     }
 
+    public List<Constraint3D> getConstraints(String objectId){
+        return Collections.unmodifiableList(new ArrayList<>(requireObject(objectId).constraints));
+    }
+
+    public Constraint3D addConstraint(String objectId,String type,String targetId){
+        Object3D owner=requireObject(objectId);
+        String clean=cleanConstraintType(type);
+        Object3D target=requireObject(targetId);
+        if(objectId.equals(targetId)||dependencyReaches(objects,targetId,objectId,new java.util.HashSet<>()))
+            throw new IllegalArgumentException("That target would create a transform dependency cycle.");
+        Constraint3D constraint=new Constraint3D(UUID.randomUUID().toString(),clean,target.id,1f,true);
+        owner.constraints.add(constraint);revision++;return constraint;
+    }
+
+    public void setConstraintTarget(String objectId,String constraintId,String targetId){
+        Object3D owner=requireObject(objectId);Object3D target=requireObject(targetId);
+        Constraint3D constraint=findConstraint(owner,constraintId);
+        if(objectId.equals(targetId)||dependencyReaches(objects,targetId,objectId,new java.util.HashSet<>()))
+            throw new IllegalArgumentException("That target would create a transform dependency cycle.");
+        constraint.targetId=target.id;revision++;
+    }
+
+    public void setConstraintInfluence(String objectId,String constraintId,float influence){
+        Constraint3D constraint=findConstraint(requireObject(objectId),constraintId);
+        if(!Float.isFinite(influence)||influence<0f||influence>1f)
+            throw new IllegalArgumentException("Constraint influence must be between 0 and 1.");
+        constraint.influence=influence;revision++;
+    }
+
+    public void setConstraintEnabled(String objectId,String constraintId,boolean enabled){
+        findConstraint(requireObject(objectId),constraintId).enabled=enabled;revision++;
+    }
+
+    public void removeConstraint(String objectId,String constraintId){
+        Object3D owner=requireObject(objectId);
+        if(!owner.constraints.removeIf(c->c.id.equals(constraintId)))
+            throw new IllegalArgumentException("Constraint no longer exists.");
+        revision++;
+    }
+
+    private static String cleanConstraintType(String type){
+        String clean=type==null?"COPY_LOCATION":type.trim().toUpperCase(java.util.Locale.ROOT);
+        if(!"COPY_LOCATION".equals(clean)&&!"COPY_ROTATION".equals(clean)
+                &&!"COPY_SCALE".equals(clean)&&!"COPY_TRANSFORMS".equals(clean))
+            throw new IllegalArgumentException("Unsupported constraint type.");
+        return clean;
+    }
+
+    private static Constraint3D findConstraint(Object3D object,String id){
+        for(Constraint3D constraint:object.constraints)if(constraint.id.equals(id))return constraint;
+        throw new IllegalArgumentException("Constraint no longer exists.");
+    }
+
+    private boolean dependencyReaches(String currentId,String destinationId,java.util.Set<String> visited){
+        return dependencyReaches(objects,currentId,destinationId,visited);
+    }
+
+    private static boolean dependencyReaches(Map<String,Object3D> graph,String currentId,
+            String destinationId,java.util.Set<String> visited){
+        if(currentId==null)return false;
+        if(currentId.equals(destinationId))return true;
+        if(!visited.add(currentId))return false;
+        Object3D current=graph.get(currentId);if(current==null)return false;
+        if(dependencyReaches(graph,current.parentId,destinationId,visited))return true;
+        for(Constraint3D constraint:current.constraints)
+            if(dependencyReaches(graph,constraint.targetId,destinationId,visited))return true;
+        return false;
+    }
+
+    private static double blendAngle(double from,double to,float influence){
+        double delta=((to-from+540.0)%360.0)-180.0;
+        return from+delta*influence;
+    }
+
+    private static double[] applyConstraint(double[] sourceMatrix,double[] targetMatrix,Constraint3D constraint){
+        float weight=Math.max(0f,Math.min(1f,constraint.influence));
+        if(weight<=0f)return sourceMatrix;
+        Transform source=new Transform(),target=new Transform();
+        decompose(sourceMatrix,source);decompose(targetMatrix,target);
+        if("COPY_LOCATION".equals(constraint.type)||"COPY_TRANSFORMS".equals(constraint.type)){
+            source.x+=(target.x-source.x)*weight;
+            source.y+=(target.y-source.y)*weight;
+            source.z+=(target.z-source.z)*weight;
+        }
+        if("COPY_ROTATION".equals(constraint.type)||"COPY_TRANSFORMS".equals(constraint.type)){
+            source.rotationX=(float)blendAngle(source.rotationX,target.rotationX,weight);
+            source.rotationY=(float)blendAngle(source.rotationY,target.rotationY,weight);
+            source.rotationZ=(float)blendAngle(source.rotationZ,target.rotationZ,weight);
+        }
+        if("COPY_SCALE".equals(constraint.type)||"COPY_TRANSFORMS".equals(constraint.type)){
+            source.scaleX+=(target.scaleX-source.scaleX)*weight;
+            source.scaleY+=(target.scaleY-source.scaleY)*weight;
+            source.scaleZ+=(target.scaleZ-source.scaleZ)*weight;
+        }
+        return localMatrix(source);
+    }
+
     public Object3D createMeshObject(String name,Meshy3DCore mesh) {
         if(mesh==null)throw new IllegalArgumentException("Mesh data is required");
         String id=UUID.randomUUID().toString();
@@ -232,6 +341,9 @@ public final class Meshy3DObjectScene {
         copy.cameraLens=source.cameraLens;copy.cameraClipStart=source.cameraClipStart;copy.cameraClipEnd=source.cameraClipEnd;
         copy.lightType=source.lightType;copy.lightPower=source.lightPower;copy.lightAngle=source.lightAngle;
         copy.lightColor=source.lightColor;copy.displaySize=source.displaySize;
+        for(Constraint3D constraint:source.constraints)
+            copy.constraints.add(new Constraint3D(UUID.randomUUID().toString(),constraint.type,
+                    constraint.targetId,constraint.influence,constraint.enabled));
         copy.collectionIds.clear();
         copy.collectionIds.addAll(source.collectionIds);
         revision++;
@@ -246,6 +358,8 @@ public final class Meshy3DObjectScene {
         // Blender-style delete must not make children jump when their parent disappears.
         for(String child:children)setParent(child,deleting.parentId);
         objects.remove(objectId);
+        for(Object3D remaining:objects.values())
+            remaining.constraints.removeIf(constraint->objectId.equals(constraint.targetId));
         if(objectId.equals(activeObjectId))activeObjectId=null;
         revision++;
     }
@@ -731,8 +845,8 @@ public final class Meshy3DObjectScene {
         Object3D child=requireObject(childId);
         if(parentId!=null){
             requireObject(parentId);
-            if(childId.equals(parentId)||isDescendant(parentId,childId))
-                throw new IllegalArgumentException("Parenting would create a hierarchy cycle");
+            if(childId.equals(parentId)||dependencyReaches(parentId,childId,new java.util.HashSet<>()))
+                throw new IllegalArgumentException("Parenting would create a transform dependency cycle");
         }
         double[] world=worldMatrix(childId);
         child.parentId=parentId;
@@ -778,10 +892,22 @@ public final class Meshy3DObjectScene {
     }
 
     private double[] worldMatrix(String objectId) {
+        return worldMatrix(objectId,new java.util.HashSet<>());
+    }
+
+    private double[] worldMatrix(String objectId,java.util.Set<String> evaluatingConstraints) {
         Object3D o=requireObject(objectId);
         double[] local=localMatrix(o.transform);
-        if(o.parentId==null)return local;
-        return multiply(worldMatrix(o.parentId),local);
+        double[] result=o.parentId==null?local:multiply(worldMatrix(o.parentId,evaluatingConstraints),local);
+        if(!evaluatingConstraints.add(objectId))
+            throw new IllegalStateException("A transform constraint cycle was detected in the scene.");
+        for(Constraint3D constraint:o.constraints){
+            if(!constraint.enabled||constraint.influence<=0f)continue;
+            double[] target=worldMatrix(constraint.targetId,evaluatingConstraints);
+            result=applyConstraint(result,target,constraint);
+        }
+        evaluatingConstraints.remove(objectId);
+        return result;
     }
 
     private static double[] localMatrix(Transform t) {
@@ -1071,6 +1197,13 @@ public final class Meshy3DObjectScene {
                 item.put("lightType",o.lightType);item.put("lightPower",o.lightPower);item.put("lightAngle",o.lightAngle);
                 item.put("lightColor",o.lightColor);item.put("displaySize",o.displaySize);
                 item.put("selected",o.selected);JSONArray members=new JSONArray();for(String id:o.collectionIds)members.put(id);item.put("collections",members);
+                JSONArray constraintArray=new JSONArray();
+                for(Constraint3D constraint:o.constraints){
+                    JSONObject saved=new JSONObject();saved.put("id",constraint.id);saved.put("type",constraint.type);
+                    saved.put("targetId",constraint.targetId);saved.put("influence",constraint.influence);
+                    saved.put("enabled",constraint.enabled);constraintArray.put(saved);
+                }
+                item.put("constraints",constraintArray);
                 objectArray.put(item);
             }
             root.put("objects",objectArray);
@@ -1133,9 +1266,26 @@ public final class Meshy3DObjectScene {
                 JSONArray memberships=item.optJSONArray("collections");
                 if(memberships!=null)for(int j=0;j<memberships.length();j++){String cid=memberships.getString(j);if(newCollections.containsKey(cid))o.collectionIds.add(cid);}
                 if(o.collectionIds.isEmpty())o.collectionIds.add(newCollections.keySet().iterator().next());
+                JSONArray savedConstraints=item.optJSONArray("constraints");
+                if(savedConstraints!=null)for(int j=0;j<savedConstraints.length();j++){
+                    JSONObject saved=savedConstraints.getJSONObject(j);
+                    String constraintType=cleanConstraintType(saved.optString("type","COPY_LOCATION"));
+                    String targetId=saved.optString("targetId","");
+                    float influence=(float)saved.optDouble("influence",1f);
+                    if(targetId.isEmpty()||!Float.isFinite(influence)||influence<0f||influence>1f)return false;
+                    o.constraints.add(new Constraint3D(saved.optString("id",UUID.randomUUID().toString()),
+                            constraintType,targetId,influence,saved.optBoolean("enabled",true)));
+                }
                 newObjects.put(id,o);
             }
-            for(Object3D o:newObjects.values())if(o.parentId!=null&&!newObjects.containsKey(o.parentId))return false;
+            for(Object3D o:newObjects.values()){
+                if(o.parentId!=null&&!newObjects.containsKey(o.parentId))return false;
+                for(Constraint3D constraint:o.constraints){
+                    if(!newObjects.containsKey(constraint.targetId)||o.id.equals(constraint.targetId)
+                            ||dependencyReaches(newObjects,constraint.targetId,o.id,new java.util.HashSet<>()))
+                        return false;
+                }
+            }
             // Reject cyclic or self-referential hierarchies before replacing the current scene.
             for(Object3D o:newObjects.values()){
                 String p=o.parentId;int guard=0;
