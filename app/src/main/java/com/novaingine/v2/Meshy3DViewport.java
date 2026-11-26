@@ -955,6 +955,9 @@ public final class Meshy3DViewport extends View {
     public void markSeams(boolean clear){document.markSelectedSeams(clear);invalidate();}
     public void pinSelectedUvs(boolean pin){document.pinSelectedUvs(pin);invalidate();}
     public void packUvIslands(){document.packUvIslands();invalidate();}
+    public void packUvIslands(float margin){document.packUvIslands(margin);invalidate();}
+    public void removeUvMap(){document.clearUvMap();invalidate();}
+    public boolean hasUvMap(){return document.hasUvMap();}
     public boolean selectPinnedUvIsland(){boolean found=document.selectPinnedUvIsland();invalidate();return found;}
     public boolean selectOverlappingUvIsland(){boolean found=document.selectOverlappingUvIsland();invalidate();return found;}
     public boolean selectBoundaryUvIsland(){boolean found=document.selectBoundaryUvIsland();invalidate();return found;}
