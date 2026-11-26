@@ -318,6 +318,7 @@ public final class Meshy3DCore {
         texturePixels=new int[textureWidth*textureHeight];Arrays.fill(texturePixels,color);if(faceUvs==null)unwrapPlanar();revision++;
     }
     public void setBrush(int color,float radius,float opacity){textureColor=color;brushRadius=Math.max(1,radius);brushOpacity=Math.max(0,Math.min(1,opacity));}
+    public int getBrushColor(){return textureColor;}public float getBrushRadius(){return brushRadius;}public float getBrushOpacity(){return brushOpacity;}
     public void paintPixel(int x,int y){
         if(texturePixels==null)createTexture(1024,1024,0xFFFFFFFF);
         int r=(int)brushRadius;for(int py=Math.max(0,y-r);py<Math.min(textureHeight,y+r);py++)
