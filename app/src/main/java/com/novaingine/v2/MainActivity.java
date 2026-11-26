@@ -794,9 +794,10 @@ public final class MainActivity extends Activity
                 break;
             case "Quit":
                 if (manualSculptWorkspace != null) {
-                    confirmMeshySwitch("leaving Meshy3D", () -> {
+                    confirmMeshySwitch("quitting Meshy3D", () -> {
                         activeMeshyDocument = null;
                         activeMeshyProjectDirectory = null;
+                        finish();
                     });
                 } else finish();
                 break;
