@@ -194,6 +194,11 @@ public final class Meshy3DObjectScene {
         constraint.targetId=target.id;revision++;
     }
 
+    public void setConstraintType(String objectId,String constraintId,String type){
+        Constraint3D constraint=findConstraint(requireObject(objectId),constraintId);
+        constraint.type=cleanConstraintType(type);revision++;
+    }
+
     public void setConstraintInfluence(String objectId,String constraintId,float influence){
         Constraint3D constraint=findConstraint(requireObject(objectId),constraintId);
         if(!Float.isFinite(influence)||influence<0f||influence>1f)
