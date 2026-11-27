@@ -107,7 +107,9 @@ public final class Meshy3DObjectScene {
             this.id=id;this.type=type;
             if("BEVEL".equals(type))value=.1f;
             else if("SOLIDIFY".equals(type))value=.1f;
-            else if("SUBDIVIDE".equals(type))levels=1;
+            else if("SUBDIVIDE".equals(type)||"CATMULL_CLARK".equals(type))levels=1;
+            else if("PLANAR_DECIMATE".equals(type))value=15f;
+            else if("SMOOTH".equals(type)){value=.25f;levels=2;}
         }
     }
 
@@ -415,7 +417,8 @@ public final class Meshy3DObjectScene {
         if(!"MESH".equals(object.type)||object.mesh==null)
             throw new IllegalArgumentException("Modifiers can only be added to mesh objects.");
         String clean=cleanModifierType(type);
-        if(("BEVEL".equals(clean)||"SOLIDIFY".equals(clean))
+        if(("BEVEL".equals(clean)||"SOLIDIFY".equals(clean)||"CATMULL_CLARK".equals(clean)
+                ||"TRIANGULATE".equals(clean)||"PLANAR_DECIMATE".equals(clean))
                 &&(object.mesh.hasTexture()||object.mesh.copyFaceUvs()!=null))
             throw new IllegalArgumentException(clean+" currently requires a mesh without an image texture or UV map so the existing UV data is not corrupted.");
         Modifier3D modifier=new Modifier3D(UUID.randomUUID().toString(),clean);
@@ -475,7 +478,9 @@ public final class Meshy3DObjectScene {
     private static String cleanModifierType(String type){
         String clean=type==null?"":type.trim().toUpperCase(java.util.Locale.ROOT);
         if(!"MIRROR".equals(clean)&&!"ARRAY".equals(clean)&&!"BEVEL".equals(clean)
-                &&!"SOLIDIFY".equals(clean)&&!"SUBDIVIDE".equals(clean))
+                &&!"SOLIDIFY".equals(clean)&&!"SUBDIVIDE".equals(clean)
+                &&!"CATMULL_CLARK".equals(clean)&&!"TRIANGULATE".equals(clean)
+                &&!"PLANAR_DECIMATE".equals(clean)&&!"SMOOTH".equals(clean))
             throw new IllegalArgumentException("Unsupported modifier type.");
         return clean;
     }
