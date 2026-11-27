@@ -3099,6 +3099,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
 
     private void renderWorkspaceLayout(int index) {
         if (workspaceLayoutLayer == null) return;
+        boolean preserveModelingDockState=index==1&&activeWorkspaceIndex==1&&workspacePanelsOpen;
         workspaceLayoutLayer.removeAllViews();
         workspaceLeftDock = null;
         workspaceRightDock = null;
@@ -3286,13 +3287,15 @@ public final class ManualSculptWorkspace extends FrameLayout {
         workspaceRightDock = createDock(rightTitle, index == 1 ? 140 : index == 2 ? 142 : 156, Gravity.RIGHT);
         addDockItems(workspaceRightDock, rightTitle, rightItems);
         // Modeling docks start collapsed so the mesh remains unobstructed on a phone.
-        workspacePanelsOpen = index != 0 && index != 1;
+        workspacePanelsOpen = index == 1 ? preserveModelingDockState : index != 0;
         int dockVisibility = workspacePanelsOpen ? View.VISIBLE : View.GONE;
         workspaceLeftDock.setVisibility(dockVisibility);
         workspaceRightDock.setVisibility(dockVisibility);
         if(index==1){
             leftDockTab=dockRailTab("TOOLS",Gravity.LEFT|Gravity.CENTER_VERTICAL);
             rightDockTab=dockRailTab("PROPS",Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+            leftDockTab.setVisibility(workspacePanelsOpen?View.GONE:View.VISIBLE);
+            rightDockTab.setVisibility(workspacePanelsOpen?View.GONE:View.VISIBLE);
             leftDockTab.setOnClickListener(v->setModelingDockVisibility(true));
             rightDockTab.setOnClickListener(v->setModelingDockVisibility(true));
         }
