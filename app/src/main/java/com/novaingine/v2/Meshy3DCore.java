@@ -1258,6 +1258,83 @@ public final class Meshy3DCore {
         return separated;
     }
 
+    /**
+     * Fill one selected boundary loop with a quad grid. The boundary must have
+     * four equal edge spans (vertex count divisible by four); other loops are
+     * rejected instead of producing unpredictable topology.
+     */
+    public boolean gridFillSelectedBoundary() {
+        java.util.HashMap<Integer,java.util.ArrayList<Integer>> adjacency=new java.util.HashMap<>();
+        for(int i=selectedEdges.nextSetBit(0);i>=0;i=selectedEdges.nextSetBit(i+1)){
+            Edge edge=edges.get(i);
+            if(edge.faces.size()!=1)continue;
+            adjacency.computeIfAbsent(edge.a,k->new java.util.ArrayList<>()).add(edge.b);
+            adjacency.computeIfAbsent(edge.b,k->new java.util.ArrayList<>()).add(edge.a);
+        }
+        if(adjacency.size()<4||adjacency.size()%4!=0)return false;
+        for(java.util.ArrayList<Integer> neighbours:adjacency.values())if(neighbours.size()!=2)return false;
+        java.util.ArrayList<Integer> loop=new java.util.ArrayList<>();
+        int start=adjacency.keySet().iterator().next(),previous=-1,current=start;
+        do {
+            loop.add(current);
+            java.util.ArrayList<Integer> neighbours=adjacency.get(current);
+            int next=neighbours.get(0)==previous?neighbours.get(1):neighbours.get(0);
+            previous=current;current=next;
+            if(loop.size()>adjacency.size()+1)return false;
+        } while(current!=start);
+        if(loop.size()!=adjacency.size())return false;
+        int n=loop.size(),span=n/4;
+        // Rotate the loop so the four most strongly turning corners define the grid corners.
+        int bestOffset=0;double bestScore=-Double.MAX_VALUE;
+        for(int offset=0;offset<n;offset++){
+            double score=0;
+            for(int side=0;side<4;side++){
+                int index=(offset+side*span)%n;
+                float[] before=vertices.get(loop.get((index+n-1)%n));
+                float[] point=vertices.get(loop.get(index));
+                float[] after=vertices.get(loop.get((index+1)%n));
+                double ax=point[0]-before[0],ay=point[1]-before[1],az=point[2]-before[2];
+                double bx=after[0]-point[0],by=after[1]-point[1],bz=after[2]-point[2];
+                double al=Math.sqrt(ax*ax+ay*ay+az*az),bl=Math.sqrt(bx*bx+by*by+bz*bz);
+                if(al>1e-8&&bl>1e-8)score+=1.0-(ax*bx+ay*by+az*bz)/(al*bl);
+            }
+            if(score>bestScore){bestScore=score;bestOffset=offset;}
+        }
+        java.util.ArrayList<Integer> ordered=new java.util.ArrayList<>(n);
+        for(int i=0;i<n;i++)ordered.add(loop.get((bestOffset+i)%n));
+        int p00=ordered.get(0),p10=ordered.get(span),p11=ordered.get(2*span),p01=ordered.get(3*span);
+        int[][] grid=new int[span+1][span+1];
+        for(int j=0;j<=span;j++)for(int i=0;i<=span;i++){
+            if(j==0)grid[j][i]=ordered.get(i);
+            else if(i==span)grid[j][i]=ordered.get(span+j);
+            else if(j==span)grid[j][i]=ordered.get(3*span-i);
+            else if(i==0)grid[j][i]=ordered.get((n-j)%n);
+            else {
+                float u=i/(float)span,v=j/(float)span;
+                float[] bottom=vertices.get(ordered.get(i));
+                float[] top=vertices.get(ordered.get(3*span-i));
+                float[] left=vertices.get(ordered.get((n-j)%n));
+                float[] right=vertices.get(ordered.get(span+j));
+                float[] a=vertices.get(p00),b=vertices.get(p10),c=vertices.get(p11),d=vertices.get(p01);
+                int id=vertices.size();
+                float[] point=new float[3];
+                for(int axis=0;axis<3;axis++){
+                    float blend=(1-v)*bottom[axis]+v*top[axis]+(1-u)*left[axis]+u*right[axis];
+                    float bilinear=(1-u)*(1-v)*a[axis]+u*(1-v)*b[axis]+u*v*c[axis]+(1-u)*v*d[axis];
+                    point[axis]=blend-bilinear;
+                }
+                vertices.add(point);grid[j][i]=id;
+            }
+        }
+        int firstNewFace=faces.size();
+        for(int j=0;j<span;j++)for(int i=0;i<span;i++)
+            faces.add(new Face(grid[j][i],grid[j][i+1],grid[j+1][i+1],grid[j+1][i]));
+        faceUvs=null;islands.clear();selectedUvIsland=-1;clearSelection();
+        for(int face=firstNewFace;face<faces.size();face++)selectedFaces.set(face);
+        rebuildEdges();revision++;
+        return true;
+    }
+
     public void bisect(float nx,float ny,float nz,float offset){
         float len=(float)Math.sqrt(nx*nx+ny*ny+nz*nz);if(len<1e-8)return;nx/=len;ny/=len;nz/=len;
         BitSet targets=(BitSet)selectedFaces.clone();boolean all=targets.isEmpty();
