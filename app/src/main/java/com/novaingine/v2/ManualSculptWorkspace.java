@@ -3345,8 +3345,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
             }
         }
         if (viewportChrome != null) {
-            viewportChrome.setSculptWorkspace(index == 2);
             viewportChrome.setModelingWorkspace(index == 1);
+            viewportChrome.setSculptWorkspace(index == 2);
         }
         if(index==1) applyModelingViewportInsets(workspacePanelsOpen);
         else applyModelingViewportInsets(false);
