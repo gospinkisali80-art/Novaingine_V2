@@ -902,9 +902,20 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         checkpointMeshEdit();meshyViewport.spinSelectedFaces((float)Math.toRadians(value),8,screw?1f:0f);
                         status.setText("Modeling | "+item+" generated eight rotational steps");
                     });
-                } else if ("Split".equals(item) || "Rip".equals(item) || "Separate Selection".equals(item)) {
+                } else if ("Separate Selection".equals(item)) {
+                    checkpointMeshEdit();
+                    try {
+                        String separatedId=meshyViewport.separateSelectedFacesToObject();
+                        if(separatedId==null)status.setText("Modeling | Select faces (or fully selected vertices/edges) before Separate Selection");
+                        else {
+                            status.setText("Modeling | Selected geometry separated into a new object");
+                            activeEditorMode="Object Mode";if(modeButton!=null)modeButton.setText(activeEditorMode);
+                            refreshModelingOutliner();
+                        }
+                    } catch(Exception error) { showObjectOperationError(error); }
+                } else if ("Split".equals(item) || "Rip".equals(item)) {
                     checkpointMeshEdit();meshyViewport.splitSelectedFaces();
-                    status.setText("Modeling | Selected faces disconnected by duplicating their boundary vertices (still in this object)");
+                    status.setText("Modeling | Selected region disconnected inside the same object");
                 } else if ("Solidify".equals(item)) {
                     showAmountDialog("Solidify thickness",0.01f,.5f,value->{checkpointMeshEdit();meshyViewport.solidifySelected(value);status.setText("Modeling | Solid thickness generated");});
                 } else if ("Bevel Modifier".equals(item)) {
@@ -922,7 +933,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 } else if ("Degenerate Dissolve".equals(item) || "Weld".equals(item) || "Merge by Distance".equals(item) || "Merge".equals(item)) {
                     showAmountDialog("Merge distance",0.001f,0.25f,value->{checkpointMeshEdit();meshyViewport.mergeSelected(value);status.setText("Modeling | Nearby selected vertices merged");});
                 } else if ("Subdivision Surface".equals(item)) {
-                    checkpointMeshEdit();meshyViewport.subdivideSelected();status.setText("Modeling | Quad faces subdivided");
+                    checkpointMeshEdit();meshyViewport.subdivideCatmullClark(1);
+                    status.setText("Modeling | Catmull-Clark subdivision level 1 applied");
                 } else if ("Weighted Normal".equals(item) || "Normals".equals(item)) {
                     checkpointMeshEdit();meshyViewport.recalculateNormals();status.setText("Modeling | Face winding and normals recalculated");
                 } else if ("Edge Slide".equals(item) || "Vertex Slide".equals(item)) {
