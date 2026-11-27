@@ -213,10 +213,30 @@ public final class Meshy3DViewport extends View {
         return addPrimitiveObject("Cube");
     }
 
+    /**
+     * Add a primitive at the 3D Cursor. In Object Mode it becomes a new object;
+     * in Edit Mode it is appended to the active mesh datablock.
+     */
     public String addPrimitiveObject(String primitive) {
         syncCoreFromViewport();
-        Meshy3DCore mesh=Meshy3DPrimitiveFactory.create(primitive);
-        Meshy3DObjectScene.Object3D created=objectScene.createMeshObject(primitive,mesh);
+        Meshy3DCore primitiveMesh=Meshy3DPrimitiveFactory.create(primitive);
+        float[] cursor=objectScene.getCursorLocation();
+        if(meshEditMode&&objectSceneActiveId!=null) {
+            Meshy3DObjectScene.Object3D active=objectScene.getObject(objectSceneActiveId);
+            if(active!=null&&active.mesh!=null&&"MESH".equals(active.type)) {
+                float[] localCursor=objectScene.inverseTransformPoint(
+                        active.id,cursor[0],cursor[1],cursor[2]);
+                document.appendGeometry(primitiveMesh.copyVertices(),primitiveMesh.copyFaces(),
+                        localCursor[0],localCursor[1],localCursor[2]);
+                syncViewportFromCore();
+                meshEditMode=true;
+                objectSelectionEnabled=false;
+                invalidate();
+                return active.id;
+            }
+        }
+        Meshy3DObjectScene.Object3D created=objectScene.createMeshObject(primitive,primitiveMesh);
+        objectScene.setWorldLocation(created.id,cursor[0],cursor[1],cursor[2]);
         activateSceneObject(created.id);
         meshEditMode=false;objectSelectionEnabled=true;
         return created.id;
