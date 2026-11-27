@@ -3390,8 +3390,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
         if(meshyViewport==null)return;
         FrameLayout.LayoutParams params=(FrameLayout.LayoutParams)meshyViewport.getLayoutParams();
         params.topMargin=dp(86);
-        params.leftMargin=sideDocksOpen?dp(126):0;
-        params.rightMargin=sideDocksOpen?dp(140):0;
+        // Side docks are 126dp + 6dp left margin and 140dp + 6dp right margin.
+        params.leftMargin=sideDocksOpen?dp(132):0;
+        params.rightMargin=sideDocksOpen?dp(146):0;
         // The bottom shelf is always visible in Modeling, so reserve its height.
         params.bottomMargin=activeWorkspaceIndex==1?dp(54):0;
         meshyViewport.setLayoutParams(params);
@@ -3405,7 +3406,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
         if(leftDockTab!=null)leftDockTab.setVisibility(visible?View.GONE:View.VISIBLE);
         if(rightDockTab!=null)rightDockTab.setVisibility(visible?View.GONE:View.VISIBLE);
         applyModelingViewportInsets(visible);
-        if(viewportChrome!=null)viewportChrome.setNavigationVisible(!visible);
+        // Modeling uses docked side properties; do not re-open the floating
+        // navigation panel when the side drawers collapse.
     }
 
     private void runModelingTransform(String operation){
