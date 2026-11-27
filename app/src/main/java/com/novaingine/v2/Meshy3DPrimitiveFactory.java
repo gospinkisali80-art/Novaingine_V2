@@ -12,11 +12,14 @@ public final class Meshy3DPrimitiveFactory {
         if("Cube".equalsIgnoreCase(type))return mesh;
         Geometry g;
         if("Plane".equalsIgnoreCase(type))g=plane();
-        else if("UV Sphere".equalsIgnoreCase(type))g=uvSphere(24,16);
+        else if("Circle".equalsIgnoreCase(type))g=circle(32);
+        else if("UV Sphere".equalsIgnoreCase(type))g=uvSphere(32,20);
         else if("Icosphere".equalsIgnoreCase(type))g=icoSphere(2);
         else if("Cylinder".equalsIgnoreCase(type))g=cylinder(32,1f,false);
         else if("Cone".equalsIgnoreCase(type))g=cylinder(32,1f,true);
-        else if("Torus".equalsIgnoreCase(type))g=torus(32,12,.72f,.28f);
+        else if("Torus".equalsIgnoreCase(type))g=torus(48,16,.72f,.28f);
+        else if("Grid".equalsIgnoreCase(type))g=grid(16,16);
+        else if("Monkey".equalsIgnoreCase(type)||"Suzanne".equalsIgnoreCase(type))g=monkeyHead();
         else throw new IllegalArgumentException("Unsupported primitive: "+type);
         mesh.replaceGeometry(g.vertices,g.faces);
         return mesh;
@@ -32,6 +35,72 @@ public final class Meshy3DPrimitiveFactory {
         v.add(new float[]{-1,0,-1});v.add(new float[]{1,0,-1});
         v.add(new float[]{1,0,1});v.add(new float[]{-1,0,1});
         f.add(new int[]{0,1,2,3});return new Geometry(v,f);
+    }
+
+    /** Blender-style Circle primitive represented as a filled n-gon disk. */
+    private static Geometry circle(int segments) {
+        ArrayList<float[]> v=new ArrayList<>();ArrayList<int[]> f=new ArrayList<>();
+        int[] ring=new int[segments];
+        for(int i=0;i<segments;i++){
+            double angle=2.0*Math.PI*i/segments;
+            ring[i]=v.size();
+            v.add(new float[]{(float)Math.cos(angle),0f,(float)Math.sin(angle)});
+        }
+        f.add(ring);
+        return new Geometry(v,f);
+    }
+
+    /** Regular quad grid with independent X/Y subdivision counts. */
+    private static Geometry grid(int xSegments,int ySegments) {
+        xSegments=Math.max(1,Math.min(128,xSegments));
+        ySegments=Math.max(1,Math.min(128,ySegments));
+        ArrayList<float[]> v=new ArrayList<>();
+        ArrayList<int[]> f=new ArrayList<>();
+        for(int y=0;y<=ySegments;y++){
+            float z=-1f+2f*y/ySegments;
+            for(int x=0;x<=xSegments;x++){
+                float px=-1f+2f*x/xSegments;
+                v.add(new float[]{px,0f,z});
+            }
+        }
+        int stride=xSegments+1;
+        for(int y=0;y<ySegments;y++)for(int x=0;x<xSegments;x++){
+            int a=y*stride+x,b=a+1,d=(y+1)*stride+x,c=d+1;
+            f.add(new int[]{a,b,c,d});
+        }
+        return new Geometry(v,f);
+    }
+
+    /**
+     * A lightweight Suzanne-style monkey head made from connected-looking
+     * ellipsoidal regions. It is an editable multi-shell approximation, not
+     * Blender's original Suzanne topology.
+     */
+    private static Geometry monkeyHead() {
+        ArrayList<float[]> vertices=new ArrayList<>();
+        ArrayList<int[]> faces=new ArrayList<>();
+        appendEllipsoid(vertices,faces,0f,0f,0f,.78f,.88f,.62f);
+        appendEllipsoid(vertices,faces,-.82f,-.02f,0f,.30f,.43f,.25f);
+        appendEllipsoid(vertices,faces,.82f,-.02f,0f,.30f,.43f,.25f);
+        appendEllipsoid(vertices,faces,0f,-.28f,.48f,.43f,.34f,.30f);
+        appendEllipsoid(vertices,faces,0f,-.52f,.43f,.34f,.20f,.24f);
+        appendEllipsoid(vertices,faces,-.24f,.20f,.49f,.24f,.16f,.17f);
+        appendEllipsoid(vertices,faces,.24f,.20f,.49f,.24f,.16f,.17f);
+        appendEllipsoid(vertices,faces,0f,.02f,.70f,.12f,.15f,.13f);
+        return new Geometry(vertices,faces);
+    }
+
+    private static void appendEllipsoid(ArrayList<float[]> vertices,ArrayList<int[]> faces,
+                                        float cx,float cy,float cz,float rx,float ry,float rz) {
+        Geometry source=uvSphere(16,12);
+        int offset=vertices.size();
+        for(float[] p:source.vertices)
+            vertices.add(new float[]{cx+p[0]*rx,cy+p[1]*ry,cz+p[2]*rz});
+        for(int[] face:source.faces){
+            int[] copy=face.clone();
+            for(int i=0;i<copy.length;i++)copy[i]+=offset;
+            faces.add(copy);
+        }
     }
 
     private static Geometry uvSphere(int segments,int rings) {
