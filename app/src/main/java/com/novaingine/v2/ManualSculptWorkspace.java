@@ -9,6 +9,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
 import android.view.MotionEvent;
+import android.view.KeyEvent;
 import android.view.View;
 import android.os.Handler;
 import android.os.Looper;
@@ -84,6 +85,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private boolean sculptEnabled = false;
     private boolean objectModesLocked;
     private String activeEditorMode = "Object Mode";
+    private final StringBuilder modelingNumericEntry = new StringBuilder();
+    private int modelingNumericAxis = -1;
+    private boolean modelingNumericPending;
     private TextView modeButton;
     private boolean orbitMode = false;
     private TextView orbitButton;
@@ -141,6 +145,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
         uiScale = Math.max(0.55f, Math.min(1.0f, availableHeightDp / 260.0f));
         setBackgroundColor(Color.TRANSPARENT);
         setClickable(false);
+        setFocusable(true);
+        setFocusableInTouchMode(true);
 
         // Meshy3D owns this viewport and its starter cube; it is not the Novaingine GL scene.
         meshyViewport = new Meshy3DViewport(activity, this::toggleViewportFocus);
@@ -3435,6 +3441,83 @@ public final class ManualSculptWorkspace extends FrameLayout {
         }else{
             showObjectTransformTypeDialog();
         }
+    }
+
+    @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        if(activeWorkspaceIndex==1 && event.getAction()==KeyEvent.ACTION_DOWN
+                && event.getRepeatCount()==0 && handleModelingShortcut(event)) return true;
+        return super.dispatchKeyEvent(event);
+    }
+
+    private boolean handleModelingShortcut(KeyEvent event) {
+        int code=event.getKeyCode();
+        boolean control=(event.getMetaState()&KeyEvent.META_CTRL_ON)!=0;
+        boolean alt=(event.getMetaState()&KeyEvent.META_ALT_ON)!=0;
+        if(control || (event.getMetaState()&KeyEvent.META_META_ON)!=0)return false;
+        if(code==KeyEvent.KEYCODE_TAB){
+            modelingNumericPending=false;modelingNumericEntry.setLength(0);
+            toggleMeshyModeFromPhone();return true;
+        }
+        if(code==KeyEvent.KEYCODE_ESCAPE){
+            modelingNumericPending=false;modelingNumericEntry.setLength(0);
+            modelingNumericAxis=-1;meshyViewport.setKeyboardAxisConstraint(-1);
+            meshyViewport.setObjectTransformTool(-1);
+            if(status!=null)status.setText("Modeling | Operation cancelled");
+            return true;
+        }
+        if(!meshyViewport.isMeshEditMode()) {
+            if(code==KeyEvent.KEYCODE_G){runModelingTransform("Move");return true;}
+            if(code==KeyEvent.KEYCODE_R){runModelingTransform("Rotate");return true;}
+            if(code==KeyEvent.KEYCODE_S){runModelingTransform("Scale");return true;}
+            return false;
+        }
+        if(code==KeyEvent.KEYCODE_1){modelingNumericPending=false;setModelingSelectionMode("Vertex");return true;}
+        if(code==KeyEvent.KEYCODE_2){modelingNumericPending=false;setModelingSelectionMode("Edge");return true;}
+        if(code==KeyEvent.KEYCODE_3){modelingNumericPending=false;setModelingSelectionMode("Face");return true;}
+        if(code==KeyEvent.KEYCODE_A){
+            if(alt){meshyViewport.clearElementSelection();if(status!=null)status.setText("Modeling | Selection cleared");}
+            else {meshyViewport.selectAllElements();if(status!=null)status.setText("Modeling | All "+meshyViewport.getSelectionMode().toLowerCase()+" elements selected");}
+            return true;
+        }
+        if(code==KeyEvent.KEYCODE_G||code==KeyEvent.KEYCODE_R||code==KeyEvent.KEYCODE_S){
+            int operation=code==KeyEvent.KEYCODE_G?0:code==KeyEvent.KEYCODE_R?1:2;
+            meshyViewport.setObjectTransformTool(operation);
+            modelingNumericPending=true;modelingNumericEntry.setLength(0);modelingNumericAxis=-1;
+            if(status!=null)status.setText("Modeling | "+(operation==0?"Move":operation==1?"Rotate":"Scale")+" selected elements; choose X/Y/Z or type a value");
+            return true;
+        }
+        if(code==KeyEvent.KEYCODE_X||code==KeyEvent.KEYCODE_Y||code==KeyEvent.KEYCODE_Z){
+            modelingNumericAxis=code==KeyEvent.KEYCODE_X?0:code==KeyEvent.KEYCODE_Y?1:2;
+            meshyViewport.setKeyboardAxisConstraint(modelingNumericAxis);
+            if(status!=null)status.setText("Modeling | "+(modelingNumericAxis==0?"X":modelingNumericAxis==1?"Y":"Z")+" axis constrained");
+            return true;
+        }
+        if(modelingNumericPending){
+            if(code==KeyEvent.KEYCODE_ENTER||code==KeyEvent.KEYCODE_NUMPAD_ENTER){
+                if(modelingNumericEntry.length()>0){
+                    try{
+                        float amount=Float.parseFloat(modelingNumericEntry.toString());
+                        meshyViewport.applyNumericTransform(modelingNumericAxis,amount);
+                        checkpointMeshEdit();
+                        if(status!=null)status.setText("Modeling | Numeric transform applied: "+modelingNumericEntry);
+                    }catch(NumberFormatException ignored){
+                        if(status!=null)status.setText("Modeling | Invalid numeric transform");
+                    }
+                }
+                modelingNumericPending=false;modelingNumericEntry.setLength(0);return true;
+            }
+            if(code==KeyEvent.KEYCODE_DEL){
+                if(modelingNumericEntry.length()>0)modelingNumericEntry.deleteCharAt(modelingNumericEntry.length()-1);
+                return true;
+            }
+            int unicode=event.getUnicodeChar();
+            if((unicode>='0'&&unicode<='9')||unicode=='.'||unicode=='-'){
+                modelingNumericEntry.append((char)unicode);
+                if(status!=null)status.setText("Modeling | Value: "+modelingNumericEntry+" (Enter to apply)");
+                return true;
+            }
+        }
+        return false;
     }
 
     private void setModelingSelectionMode(String mode){
