@@ -1200,6 +1200,14 @@ public final class Meshy3DObjectScene {
         revision++;
     }
 
+    /** Convert a world-space point into this object's local mesh coordinates. */
+    public float[] inverseTransformPoint(String objectId,float x,float y,float z) {
+        double[] inverse=invertAffine(worldMatrix(objectId));
+        return new float[]{(float)(inverse[0]*x+inverse[1]*y+inverse[2]*z+inverse[3]),
+                (float)(inverse[4]*x+inverse[5]*y+inverse[6]*z+inverse[7]),
+                (float)(inverse[8]*x+inverse[9]*y+inverse[10]*z+inverse[11])};
+    }
+
     /** Transform a mesh-local point through its object and every parent transform. */
     public float[] transformPoint(String objectId,float x,float y,float z) {
         double[] m=worldMatrix(objectId);
