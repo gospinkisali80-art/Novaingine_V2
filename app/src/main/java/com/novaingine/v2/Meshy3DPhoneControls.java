@@ -25,6 +25,8 @@ final class Meshy3DPhoneControls extends LinearLayout {
         void undo();
         void redo();
         void toggleMode();
+        void shortcut(String key);
+        void numericTransform(float amount, int axis);
     }
 
     private final Meshy3DViewport viewport;
@@ -94,7 +96,7 @@ final class Meshy3DPhoneControls extends LinearLayout {
         body.addView(tools);
 
         LinearLayout keys = row();
-        String[] shortcuts = {"G", "R", "S", "X", "Y", "Z", "Tab", "Esc", "Ctrl+Z", "Ctrl+Shift+Z"};
+        String[] shortcuts = {"1", "2", "3", "A", "Alt+A", "G", "R", "S", "X", "Y", "Z", "Tab", "Esc", "Ctrl+Z", "Ctrl+Shift+Z"};
         for (String key : shortcuts) add(keys, button(key, () -> pressKey(key)));
         body.addView(keys);
 
@@ -152,16 +154,9 @@ final class Meshy3DPhoneControls extends LinearLayout {
 
     private void pressKey(String key) {
         switch (key) {
-            case "G": viewport.setObjectTransformTool(0); break;
-            case "R": viewport.setObjectTransformTool(1); break;
-            case "S": viewport.setObjectTransformTool(2); break;
-            case "Tab": actions.toggleMode(); break;
-            case "Esc": viewport.setObjectTransformTool(-1); break;
             case "Ctrl+Z": actions.undo(); break;
             case "Ctrl+Shift+Z": actions.redo(); break;
-            case "X": viewport.setKeyboardAxisConstraint(0); modeLabel.setText("Virtual keyboard: X axis locked"); break;
-            case "Y": viewport.setKeyboardAxisConstraint(1); modeLabel.setText("Virtual keyboard: Y axis locked"); break;
-            case "Z": viewport.setKeyboardAxisConstraint(2); modeLabel.setText("Virtual keyboard: Z axis locked"); break;
+            default: actions.shortcut(key); break;
         }
     }
 
@@ -178,7 +173,7 @@ final class Meshy3DPhoneControls extends LinearLayout {
         try {
             float amount = Float.parseFloat(field.getText().toString().trim());
             if (!Float.isFinite(amount)) throw new NumberFormatException();
-            viewport.applyNumericTransform(axis, amount);
+            actions.numericTransform(amount, axis);
         } catch (RuntimeException error) {
             Toast.makeText(getContext(), "Enter a valid number.", Toast.LENGTH_SHORT).show();
         }
