@@ -37,6 +37,7 @@ public final class AIEditorAssistant {
     private TextView modelInfo;
     private final Activity activity;
     private final EngineSurface engine;
+    private final ManualSculptWorkspace meshyWorkspace;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final JSONArray history = new JSONArray();
@@ -47,13 +48,24 @@ public final class AIEditorAssistant {
     private boolean busy;
 
     public AIEditorAssistant(Activity activity, EngineSurface engine) {
+        this(activity, engine, null);
+    }
+
+    public AIEditorAssistant(Activity activity, EngineSurface engine, ManualSculptWorkspace meshyWorkspace) {
         this.activity = activity;
         this.engine = engine;
+        this.meshyWorkspace = meshyWorkspace;
         JSONObject system = new JSONObject();
         try {
             system.put("role", "system");
             system.put("content", "You are NOVA AI, powered by Groq, the modeling and scene-building assistant inside Novaingine. When asked to build an object, character, vehicle, building, prop or environment, CREATE REAL VISIBLE 3D GEOMETRY IN THE CURRENT SCENE, not just explain how. For a detailed fantasy humanoid such as an orc, use a dedicated character-production plan rather than a generic sphere or primitive pile: establish a consistent front-facing coordinate convention (X width, Y height, Z depth), total height about 4.5-5.5 world units, and create connected overlapping anatomical masses for pelvis, ribcage, abdomen, neck, skull, jaw, brow, cheekbones, nose, ears, shoulders, upper/lower arms, hands, thighs, calves, feet. Build the head as a focal asset with a projecting lower jaw, heavy brow ridge, cheek planes, nostril forms, separate upper/lower lip forms, visible tusks, pointed ears, and separate eyeball forms. Add shoulder/forearm armor, chest straps, belt, layered plates, cloth/leather pieces and restrained surface ornaments as distinct named meshes. Use ellipsoids only for primary masses; use tapered sweep meshes for tusks, horns, fingers, straps, seams and trim; use custom mesh parts for armor silhouettes and facial planes. Ensure limbs attach and overlap at joints, hands have a palm and individually shaped fingers, feet have toes/boots, and the silhouette reads clearly in front, side and three-quarter views. Use the dense sculpt mesh for broad organic transitions and apply multiple local sculpt strokes with Draw/Clay/Inflate, Grab, Crease, Pinch, Flatten and Smooth to refine the head, muscles and joints. Keep armor and clothing separate from skin so materials can differ. Use material contrast between skin, leather, metal and cloth; do not pretend geometry alone creates painted pores, wrinkles or texture maps. Create in stages (body blockout, head, limbs/hands/feet, armor/clothing, face/tusks, surface refinement), inspect after every stage, and fix disconnected or badly proportioned parts before continuing. Aim for a complete recognizable character with coherent anatomy, not a handful of primitive shapes. If the available geometry tools cannot support a requested detail, state that limitation instead of claiming it was created. Prefer create_lathe_mesh for rotational mechanical/architectural parts and create_ellipsoid_mesh for proportioned organic/body forms; these generate real high-resolution meshes locally with very few API tokens. Before building, plan the object's silhouette, proportions, primary masses, secondary forms, and small details. Build substantial assets from 10-24 deliberately proportioned parts when the request needs that complexity, grouped into coherent assemblies; never make a pile of unrelated primitives. Use create_ellipsoid_mesh for smooth organic masses, create_lathe_mesh for rotational parts with varied radius profiles, and create_sweep_mesh for curved limbs, pipes, cables, horns, handles, rails, branches, trim and other continuous forms. Sweep paths must follow the actual shape; vary per-point radii to taper ends and avoid blunt uniform tubes. Use create_mesh_part for distinctive hard-surface or irregular forms. Give every part a purposeful name, plausible scale, sensible overlap/joints, and consistent materials. Make the silhouette recognizable from a distance first, then add layered panels, seams, rims, recesses and small details. Avoid floating disconnected details and excessive symmetry where the real object is asymmetric. After each group inspect_scene, continue refining, and verify the final object count and placement. Build recognizable silhouettes, varied cross-sections, layered forms, and connected surfaces. After each logical group inspect_scene, then continue refining. Do not stop after creating a base shape. Each mesh part supports up to 3000 vertices and 6000 triangles, local coordinates -20..20. Use extrude_face, inset_face, bevel_edge, loop_cut, subdivide_mesh, merge_vertices, and knife_cut on the selected mesh to perform real topology edits. Use faceIndex or edgeIndex starting at 0 unless scene inspection supplies a better index. Subdivision is capped at 3 levels and Android mesh complexity is capped. Do not claim a tool operation succeeded unless its result confirms success. Use coherent surfaces and sensible placement; do not make every object from identical boxes. After creating parts, inspect the scene and report exactly what was created. For organic assets, create a dense sculpt mesh first (sphere for characters/creatures/rounded props; plane for terrain-like forms), density 64-80 when mobile performance permits. Then use sculpt_selected_mesh as a real SculptMesh brush stroke tool, not the old low-detail mesh modifier. Brush centers and every point are LOCAL mesh coordinates; X is left/right, Y is up, Z is depth. Use points as a flat list of xyz triplets to draw continuous paths; the engine interpolates dabs at 25% of brush radius. If points are omitted, x/y/z is a single dab. Build organic forms in stages: primary masses with Draw/Clay/Inflate, pull silhouette features with Grab, carve separations with Crease/Pinch, flatten planes with Flatten/Scrape, protect finished regions with Mask, then Smooth lightly to remove lumps. Use several deliberate strokes at different centers and radii rather than one giant dab. Use X symmetry for centered characters and vehicles, Y/Z only when appropriate. Grab accepts dragX/dragY/dragZ for a one-point pull or a points path for a continuous pull. Radius is 0.02-1.0 world units, strength 0-1, hardness/falloff 0-1; subtract reverses Draw, Clay and Inflate. Wait for queued strokes to process before relying on later scene inspection. The AI must make recognizable silhouettes, proportionate anatomy, layered forms, and refined transitions, not merely inflate a sphere. If editing an existing object, inspect and select it first. Preserve all existing scene content unless the user explicitly asks to remove it. Keep Blender desktop bridge and GLB import available. Use existing terrain and scene tools when relevant. Keep operations moderate for Android performance. Never claim a model exists unless creation tools confirm success. If a geometry or sculpt tool fails, read its exact error, diagnose the likely cause, and automatically try one corrected alternative (adjust parameters, inspect/select the correct mesh, or use a safer supported operation). Do not repeat an identical failing call. If the corrected retry also fails, stop and explain the actual reason. Never claim success without a successful tool result. Be honest about current sculpting limits and do not claim Blender or Unreal parity.");
             history.put(system);
+            if (meshyWorkspace != null) {
+                JSONObject meshSystem = new JSONObject();
+                meshSystem.put("role", "system");
+                meshSystem.put("content", "You are NOVA AI inside Meshy3D. All scene inspection and edits MUST target the Meshy3D document, never the separate Nova Engine runtime scene. Use only the Meshy3D tools provided. Inspect first, preserve existing objects, create actual indexed mesh geometry, use named objects and sensible proportions, and verify tool results. For component operations enter Edit Mode and select components before modifying them. Meshy3D exposes real object transforms, vertex/edge/face selection, extrude, inset, bevel, subdivision, smoothing, merge, UV unwrap, material settings, shader/geometry nodes and animation keys. Do not claim Blender parity or pretend an unsupported feature worked. The current Meshy3D AI bridge does not yet expose direct sculpt-brush strokes or texture-paint strokes; state that limitation honestly and use supported mesh operations instead.");
+                history.put(meshSystem);
+            }
         } catch (Exception ignored) {}
     }
 
@@ -410,6 +422,7 @@ public final class AIEditorAssistant {
     }
 
     private JSONArray buildTools() throws Exception {
+        if (meshyWorkspace != null) return buildMeshyTools();
         JSONArray tools = new JSONArray();
         tools.put(tool("inspect_scene", "List scene object IDs and names, and the selected object's transform.", "{\"type\":\"object\",\"properties\":{}}"));
         tools.put(tool("create_terrain", "Generate or replace the editable terrain patch.", "{\"type\":\"object\",\"properties\":{}}"));
@@ -436,6 +449,142 @@ public final class AIEditorAssistant {
         tools.put(tool("undo", "Undo the last supported scene change.", "{\"type\":\"object\",\"properties\":{}}"));
         tools.put(tool("redo", "Redo the last undone scene change.", "{\"type\":\"object\",\"properties\":{}}"));
         return tools;
+    }
+
+
+    private JSONArray buildMeshyTools() throws Exception {
+        JSONArray t = new JSONArray();
+        t.put(tool("inspect_meshy_scene","Inspect Meshy3D objects, active object, mesh counts, selection mode and selected component count.","{\"type\":\"object\",\"properties\":{}}"));
+        t.put(tool("create_mesh_part","Create a real Meshy3D mesh object from local xyz vertices and triangle indices. Positions are flat xyz values; triangles are flat index triplets. Keep parts below 3000 vertices and 6000 triangles.","{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"},\"positions\":{\"type\":\"array\",\"items\":{\"type\":\"number\"},\"minItems\":9,\"maxItems\":9000},\"triangles\":{\"type\":\"array\",\"items\":{\"type\":\"integer\"},\"minItems\":3,\"maxItems\":18000},\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"},\"r\":{\"type\":\"number\"},\"g\":{\"type\":\"number\"},\"b\":{\"type\":\"number\"},\"metallic\":{\"type\":\"number\"},\"roughness\":{\"type\":\"number\"}},\"required\":[\"positions\",\"triangles\"]}"));
+        t.put(tool("create_ellipsoid","Create a smooth real Meshy3D ellipsoid mesh object with independent radii.","{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"},\"rx\":{\"type\":\"number\"},\"ry\":{\"type\":\"number\"},\"rz\":{\"type\":\"number\"},\"rings\":{\"type\":\"integer\"},\"segments\":{\"type\":\"integer\"},\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"},\"r\":{\"type\":\"number\"},\"g\":{\"type\":\"number\"},\"b\":{\"type\":\"number\"}}}"));
+        t.put(tool("rename_active_object","Rename the active Meshy3D object.","{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"}},\"required\":[\"name\"]}"));
+        t.put(tool("transform_active_object","Transform the active object. operation is move, rotate or scale; x/y/z are offsets, radians, or scale multipliers respectively.","{\"type\":\"object\",\"properties\":{\"operation\":{\"type\":\"string\",\"enum\":[\"move\",\"rotate\",\"scale\"]},\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"}},\"required\":[\"operation\"]}"));
+        t.put(tool("set_material","Set the active mesh base color and PBR metallic/roughness values. RGB values range from 0 to 1.","{\"type\":\"object\",\"properties\":{\"r\":{\"type\":\"number\"},\"g\":{\"type\":\"number\"},\"b\":{\"type\":\"number\"},\"metallic\":{\"type\":\"number\"},\"roughness\":{\"type\":\"number\"}}}"));
+        t.put(tool("set_edit_mode","Enable or disable Meshy3D Edit Mode.","{\"type\":\"object\",\"properties\":{\"enabled\":{\"type\":\"boolean\"}},\"required\":[\"enabled\"]}"));
+        t.put(tool("set_component_selection_mode","Set component selection mode to VERTEX, EDGE or FACE.","{\"type\":\"object\",\"properties\":{\"mode\":{\"type\":\"string\",\"enum\":[\"VERTEX\",\"EDGE\",\"FACE\"]}},\"required\":[\"mode\"]}"));
+        t.put(tool("select_all_components","Select every component in the active mesh.","{\"type\":\"object\",\"properties\":{}}"));
+        t.put(tool("extrude_selected","Extrude selected mesh components along their normals by distance.","{\"type\":\"object\",\"properties\":{\"distance\":{\"type\":\"number\"}},\"required\":[\"distance\"]}"));
+        t.put(tool("inset_selected","Inset selected faces by a proportional amount from 0.01 to 0.9.","{\"type\":\"object\",\"properties\":{\"amount\":{\"type\":\"number\"}},\"required\":[\"amount\"]}"));
+        t.put(tool("bevel_selected","Bevel selected edges by a proportional width from 0.001 to 0.49.","{\"type\":\"object\",\"properties\":{\"width\":{\"type\":\"number\"}},\"required\":[\"width\"]}"));
+        t.put(tool("subdivide_selected","Subdivide the active mesh one to three levels.","{\"type\":\"object\",\"properties\":{\"levels\":{\"type\":\"integer\"}}}"));
+        t.put(tool("smooth_selected","Smooth the active mesh using a bounded amount and iteration count.","{\"type\":\"object\",\"properties\":{\"amount\":{\"type\":\"number\"},\"iterations\":{\"type\":\"integer\"}}}"));
+        t.put(tool("merge_selected","Merge selected vertices by distance.","{\"type\":\"object\",\"properties\":{\"tolerance\":{\"type\":\"number\"}},\"required\":[\"tolerance\"]}"));
+        t.put(tool("unwrap_uv","Generate a planar/conformal UV unwrap for the active mesh.","{\"type\":\"object\",\"properties\":{}}"));
+        t.put(tool("add_geometry_node","Add a geometry node to the active mesh document's Geometry Nodes graph.","{\"type\":\"object\",\"properties\":{\"type\":{\"type\":\"string\"},\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"},\"value\":{\"type\":\"number\"}},\"required\":[\"type\"]}"));
+        t.put(tool("evaluate_geometry_nodes","Evaluate the active mesh document's Geometry Nodes graph.","{\"type\":\"object\",\"properties\":{}}"));
+        t.put(tool("add_shader_node","Add a shader/material node to the active mesh document.","{\"type\":\"object\",\"properties\":{\"type\":{\"type\":\"string\"}},\"required\":[\"type\"]}"));
+        t.put(tool("insert_animation_key","Insert an animation key into the active mesh document.","{\"type\":\"object\",\"properties\":{\"property\":{\"type\":\"string\"},\"frame\":{\"type\":\"integer\"},\"value\":{\"type\":\"number\"}},\"required\":[\"property\",\"frame\",\"value\"]}"));
+        t.put(tool("create_texture","Create a paint texture for the active mesh, with dimensions limited for mobile.","{\"type\":\"object\",\"properties\":{\"width\":{\"type\":\"integer\"},\"height\":{\"type\":\"integer\"},\"color\":{\"type\":\"integer\"}}}"));
+        t.put(tool("delete_selected_objects","Delete the selected Meshy3D objects.","{\"type\":\"object\",\"properties\":{}}"));
+        t.put(tool("undo_meshy_edit","Undo the last Meshy3D AI or manual edit.","{\"type\":\"object\",\"properties\":{}}"));
+        t.put(tool("redo_meshy_edit","Redo the last Meshy3D edit.","{\"type\":\"object\",\"properties\":{}}"));
+        return t;
+    }
+
+    private interface UiCall<T> { T run(); }
+    private <T> T runOnMainThread(UiCall<T> call) {
+        if (Looper.myLooper() == Looper.getMainLooper()) return call.run();
+        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicReference<T> value = new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicReference<RuntimeException> failure = new java.util.concurrent.atomic.AtomicReference<>();
+        main.post(() -> { try { value.set(call.run()); } catch (RuntimeException ex) { failure.set(ex); } finally { latch.countDown(); } });
+        try {
+            if (!latch.await(15, java.util.concurrent.TimeUnit.SECONDS)) throw new IllegalStateException("Meshy3D UI thread did not respond.");
+        } catch (InterruptedException ex) { Thread.currentThread().interrupt(); throw new IllegalStateException("Meshy3D operation interrupted."); }
+        if (failure.get() != null) throw failure.get();
+        return value.get();
+    }
+
+    private String executeMeshyToolOnUiThread(String name, JSONObject args) {
+        Meshy3DViewport viewport = meshyWorkspace.getMeshyViewport();
+        if (viewport == null) return "Meshy3D viewport is not open.";
+        Meshy3DCore core = viewport.getDocumentCore();
+        Meshy3DObjectScene scene = viewport.getObjectScene();
+        try {
+            switch (name) {
+                case "inspect_meshy_scene": {
+                    StringBuilder out = new StringBuilder("Meshy3D objects: ");
+                    for (Meshy3DObjectScene.Object3D object : scene.getObjects()) {
+                        out.append(object.name).append(" [").append(object.type).append("]");
+                        if (object.mesh != null) out.append(" {").append(object.mesh.getVertexCount()).append(" verts, ").append(object.mesh.getFaceCount()).append(" faces}");
+                        if (object.active) out.append(" (ACTIVE)");
+                        out.append("; ");
+                    }
+                    out.append(" | Selection mode: ").append(viewport.getSelectionMode())
+                       .append(" | Selected components: ").append(viewport.getSelectedElementCount())
+                       .append(" | Edit mode: ").append(viewport.isMeshEditMode());
+                    return out.toString();
+                }
+                case "create_mesh_part":
+                case "create_ellipsoid": {
+                    meshyWorkspace.checkpointMeshEdit();
+                    if ("create_ellipsoid".equals(name)) {
+                        float rx=Math.max(.05f,Math.min(10f,number(args,"rx",1)));
+                        float ry=Math.max(.05f,Math.min(10f,number(args,"ry",1)));
+                        float rz=Math.max(.05f,Math.min(10f,number(args,"rz",1)));
+                        int rings=Math.max(8,Math.min(32,args.optInt("rings",16)));
+                        int segments=Math.max(12,Math.min(48,args.optInt("segments",24)));
+                        float[] p=new float[(rings+1)*segments*3]; int k=0;
+                        for(int i=0;i<=rings;i++){double phi=Math.PI*i/rings;for(int j=0;j<segments;j++){double theta=2*Math.PI*j/segments;p[k++]=(float)(rx*Math.sin(phi)*Math.cos(theta));p[k++]=(float)(ry*Math.cos(phi));p[k++]=(float)(rz*Math.sin(phi)*Math.sin(theta));}}
+                        int[] f=new int[rings*segments*6];k=0;
+                        for(int i=0;i<rings;i++)for(int j=0;j<segments;j++){int n=(j+1)%segments,a0=i*segments+j,b0=i*segments+n,c0=(i+1)*segments+n,d0=(i+1)*segments+j;f[k++]=a0;f[k++]=b0;f[k++]=c0;f[k++]=a0;f[k++]=c0;f[k++]=d0;}
+                        String id=viewport.addAIMeshObject(args.optString("name","AI Ellipsoid"),p,f,number(args,"x",0),number(args,"y",0),number(args,"z",0),meshColor(args),number(args,"metallic",0),number(args,"roughness",.65f));
+                        return "Created Meshy3D ellipsoid object " + id + " with " + (p.length/3) + " vertices.";
+                    }
+                    JSONArray pa=args.optJSONArray("positions"),fa=args.optJSONArray("triangles");
+                    if(pa==null||fa==null||pa.length()<9||pa.length()>9000||pa.length()%3!=0||fa.length()<3||fa.length()>18000||fa.length()%3!=0) return "Mesh arrays must contain 3-3000 vertices and 1-6000 triangles.";
+                    float[] p=new float[pa.length()];int[] f=new int[fa.length()];
+                    for(int i=0;i<p.length;i++){double q=pa.optDouble(i,Double.NaN);if(!Double.isFinite(q)||Math.abs(q)>20)return "Vertex coordinates must be finite and within -20..20.";p[i]=(float)q;}
+                    for(int i=0;i<f.length;i++){f[i]=fa.optInt(i,-1);if(f[i]<0||f[i]>=p.length/3)return "Triangle index is outside the vertex array.";}
+                    String id=viewport.addAIMeshObject(args.optString("name","AI Mesh"),p,f,number(args,"x",0),number(args,"y",0),number(args,"z",0),meshColor(args),number(args,"metallic",0),number(args,"roughness",.65f));
+                    return "Created Meshy3D mesh object " + id + " with " + (p.length/3) + " vertices and " + (f.length/3) + " triangles.";
+                }
+                case "rename_active_object": {
+                    String n=args.optString("name","").trim();if(n.isEmpty())return "Name cannot be empty.";
+                    meshyWorkspace.checkpointMeshEdit();viewport.renameActiveObject(n);viewport.invalidate();return "Renamed active Meshy3D object to "+n+".";
+                }
+                case "transform_active_object": {
+                    Meshy3DObjectScene.Object3D o=scene.getActiveObject();if(o==null)return "No active Meshy3D object.";
+                    String op=args.optString("operation","move");float x=number(args,"x",0),y=number(args,"y",0),z=number(args,"z",0);
+                    meshyWorkspace.checkpointMeshEdit();
+                    if("move".equals(op))scene.translate(o.id,x,y,z);
+                    else if("rotate".equals(op))scene.rotate(o.id,x,y,z);
+                    else if("scale".equals(op))scene.scale(o.id,Math.max(.01f,x==0?1:x),Math.max(.01f,y==0?1:y),Math.max(.01f,z==0?1:z));
+                    else return "Unsupported transform operation.";
+                    viewport.invalidate();return "Applied "+op+" to "+o.name+".";
+                }
+                case "set_material": {
+                    if(scene.getActiveObject()==null||scene.getActiveObject().mesh==null)return "Select a mesh object first.";
+                    meshyWorkspace.checkpointMeshEdit();core.setMaterial(meshColor(args),number(args,"metallic",core.getMetallic()),number(args,"roughness",core.getRoughness()));viewport.invalidate();return "Updated active mesh base color and PBR material values.";
+                }
+                case "set_edit_mode": viewport.setMeshEditMode(args.optBoolean("enabled",true));return "Mesh Edit Mode "+(args.optBoolean("enabled",true)?"enabled":"disabled")+".";
+                case "set_component_selection_mode": viewport.setSelectionMode(args.optString("mode","FACE"));return "Component selection mode set to "+viewport.getSelectionMode()+".";
+                case "select_all_components": viewport.selectAllElements();return "Selected "+viewport.getSelectedElementCount()+" mesh components.";
+                case "extrude_selected": if(viewport.getSelectedElementCount()==0)return "Select mesh components first.";meshyWorkspace.checkpointMeshEdit();viewport.extrudeSelected(number(args,"distance",.2f));return "Extruded selected mesh components.";
+                case "inset_selected": if(viewport.getSelectedElementCount()==0)return "Select faces first.";meshyWorkspace.checkpointMeshEdit();viewport.insetSelected(Math.max(.01f,Math.min(.9f,number(args,"amount",.1f))));return "Inset selected mesh faces.";
+                case "bevel_selected": if(viewport.getSelectedElementCount()==0)return "Select edges first.";meshyWorkspace.checkpointMeshEdit();viewport.bevelSelected(Math.max(.001f,Math.min(.49f,number(args,"width",.1f))));return "Beveled selected mesh edges.";
+                case "subdivide_selected": meshyWorkspace.checkpointMeshEdit();int levels=Math.max(1,Math.min(3,args.optInt("levels",1)));for(int i=0;i<levels;i++)viewport.subdivideSelected();return "Subdivided active mesh "+levels+" level(s).";
+                case "smooth_selected": meshyWorkspace.checkpointMeshEdit();viewport.smoothTopology(Math.max(0,Math.min(.8f,number(args,"amount",.25f))),Math.max(1,Math.min(8,args.optInt("iterations",2))));return "Smoothed active mesh topology.";
+                case "merge_selected": if(viewport.getSelectedElementCount()==0)return "Select components first.";meshyWorkspace.checkpointMeshEdit();viewport.mergeSelected(Math.max(.0001f,Math.min(1f,number(args,"tolerance",.001f))));return "Merged selected vertices by distance.";
+                case "unwrap_uv": meshyWorkspace.checkpointMeshEdit();viewport.unwrapMesh();return "Generated UV coordinates for the active mesh.";
+                case "add_geometry_node": meshyWorkspace.checkpointMeshEdit();viewport.addGeometryNode(args.optString("type","Transform"),number(args,"x",0),number(args,"y",0),number(args,"z",0),number(args,"value",0));return "Added geometry node to Meshy3D document.";
+                case "evaluate_geometry_nodes": meshyWorkspace.checkpointMeshEdit();viewport.evaluateGeometryNodes();return "Evaluated Geometry Nodes graph.";
+                case "add_shader_node": meshyWorkspace.checkpointMeshEdit();viewport.addShaderNode(args.optString("type","Principled BSDF"));return "Added shader node to Meshy3D document.";
+                case "insert_animation_key": meshyWorkspace.checkpointMeshEdit();viewport.insertAnimationKey(args.optString("property","location.x"),Math.max(1,args.optInt("frame",1)),number(args,"value",0));return "Inserted animation key.";
+                case "create_texture": meshyWorkspace.checkpointMeshEdit();int width=Math.max(16,Math.min(2048,args.optInt("width",512))),height=Math.max(16,Math.min(2048,args.optInt("height",512)));viewport.createPaintTexture(width,height,args.optInt("color",0xFFFFFFFF));return "Created "+width+" x "+height+" texture.";
+                case "delete_selected_objects": if(scene.getSelectedObjects().isEmpty())return "No Meshy3D objects selected.";meshyWorkspace.checkpointMeshEdit();int count=scene.getSelectedObjects().size();viewport.deleteSelectedObjects();return "Deleted "+count+" selected Meshy3D object(s).";
+                case "undo_meshy_edit": return meshyWorkspace.undoMeshEdit()?"Undid the last Meshy3D edit.":"Nothing to undo.";
+                case "redo_meshy_edit": return meshyWorkspace.redoMeshEdit()?"Redid the last Meshy3D edit.":"Nothing to redo.";
+                default: return "Unknown Meshy3D tool; no operation performed.";
+            }
+        } catch (Exception ex) { return "Meshy3D tool failed: " + safeMessage(ex); }
+    }
+
+    private int meshColor(JSONObject args) {
+        int r=Math.max(0,Math.min(255,Math.round(number(args,"r",.62f)*255)));
+        int g=Math.max(0,Math.min(255,Math.round(number(args,"g",.68f)*255)));
+        int b=Math.max(0,Math.min(255,Math.round(number(args,"b",.76f)*255)));
+        return 0xFF000000|(r<<16)|(g<<8)|b;
     }
 
     private JSONObject tool(String name, String description, String schema) throws Exception {
@@ -630,6 +779,10 @@ public final class AIEditorAssistant {
     }
 
     private String executeTool(String name, JSONObject a) {
+        if (meshyWorkspace != null) {
+            try { return runOnMainThread(() -> executeMeshyToolOnUiThread(name, a)); }
+            catch (Exception ex) { return "Meshy3D tool error: " + safeMessage(ex); }
+        }
         try {
             switch (name) {
                 case "inspect_scene": {
