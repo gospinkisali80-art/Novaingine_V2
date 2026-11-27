@@ -922,62 +922,105 @@ public final class Meshy3DViewport extends View {
     }
     public String getSelectionMode(){return selectionMode.name();}
     public int getSelectedElementCount(){return document.getSelectedCount();}
+    public void clearElementSelection(){document.clearSelection();invalidate();}
     public void selectAllElements(){document.selectAll();invalidate();}
     /**
      * Pick mesh elements using the active object's world transform. This keeps
      * edit-mode vertex/edge/face taps aligned after moving, rotating or scaling
      * the object in Object Mode.
      */
+    private static boolean pointInPolygon(float x,float y,float[][] polygon) {
+        boolean inside=false;
+        for(int i=0,j=polygon.length-1;i<polygon.length;j=i++){
+            float xi=polygon[i][0],yi=polygon[i][1],xj=polygon[j][0],yj=polygon[j][1];
+            boolean crosses=((yi>y)!=(yj>y))
+                    &&(x<(xj-xi)*(y-yi)/(Math.abs(yj-yi)<1e-6f?1e-6f: yj-yi)+xi);
+            if(crosses)inside=!inside;
+        }
+        return inside;
+    }
+
+    private float projectedDepth(float[] point) {
+        return cameraPoint(point[0],point[1],point[2])[2];
+    }
+
+    /** Screen-space component picking with visible-face testing and depth-aware overlap resolution. */
     public void selectAt(float x,float y,boolean additive){
+        if(getWidth()<=0||getHeight()<=0)return;
+        updateProjectionCameraDistance();
         float cx=getWidth()*.5f,cy=getHeight()*.49f;
         float unit=Math.min(getWidth(),getHeight())*.235f*zoom;
+        float density=getResources().getDisplayMetrics().density;
         float[][] local=document.copyVertices();
         float[][] world=new float[local.length][3];
+        float[][] screen=new float[local.length][3];
         for(int i=0;i<local.length;i++){
             if(objectSceneActiveId!=null){
-                float[] point=objectScene.transformPoint(objectSceneActiveId,
-                        local[i][0],local[i][1],local[i][2]);
-                world[i]=point;
+                world[i]=objectScene.transformPoint(objectSceneActiveId,local[i][0],local[i][1],local[i][2]);
             }else world[i]=local[i].clone();
+            screen[i]=project(world[i][0],world[i][1],world[i][2],cx,cy,unit);
         }
 
         int best=-1;
         float bestDistance=Float.MAX_VALUE;
+        float bestDepth=-Float.MAX_VALUE;
         if(selectionMode==Meshy3DCore.SelectMode.VERTEX){
-            for(int i=0;i<world.length;i++){
-                float[] point=project(world[i][0],world[i][1],world[i][2],cx,cy,unit);
-                float dx=point[0]-x,dy=point[1]-y,distance=dx*dx+dy*dy;
-                if(distance<bestDistance){bestDistance=distance;best=i;}
+            float tolerance= Math.max(12f*density,7f*density/Math.max(.25f,zoom));
+            float limit=tolerance*tolerance;
+            for(int i=0;i<screen.length;i++){
+                float dx=screen[i][0]-x,dy=screen[i][1]-y,distance=dx*dx+dy*dy;
+                float depth=screen[i][2];
+                if(distance<=limit&&(distance<bestDistance-1f
+                        ||(Math.abs(distance-bestDistance)<=1f&&depth>bestDepth))){
+                    bestDistance=distance;bestDepth=depth;best=i;
+                }
             }
-            if(best>=0&&bestDistance<900f)document.selectVertex(best,additive);
+            if(best>=0)document.selectVertex(best,additive);
         }else if(selectionMode==Meshy3DCore.SelectMode.EDGE){
             java.util.List<Meshy3DCore.Edge> edges=document.getEdges();
+            float tolerance= Math.max(12f*density,7f*density/Math.max(.25f,zoom));
+            float limit=tolerance*tolerance;
             for(int i=0;i<edges.size();i++){
                 Meshy3DCore.Edge edge=edges.get(i);
-                float[] a=project(world[edge.a][0],world[edge.a][1],world[edge.a][2],cx,cy,unit);
-                float[] b=project(world[edge.b][0],world[edge.b][1],world[edge.b][2],cx,cy,unit);
+                float[] a=screen[edge.a],b=screen[edge.b];
                 float dx=b[0]-a[0],dy=b[1]-a[1];
                 float t=((x-a[0])*dx+(y-a[1])*dy)/Math.max(.0001f,dx*dx+dy*dy);
                 t=Math.max(0f,Math.min(1f,t));
                 float px=a[0]+t*dx,py=a[1]+t*dy;
                 float ex=px-x,ey=py-y,distance=ex*ex+ey*ey;
-                if(distance<bestDistance){bestDistance=distance;best=i;}
+                float depth=a[2]+(b[2]-a[2])*t;
+                if(distance<=limit&&(distance<bestDistance-1f
+                        ||(Math.abs(distance-bestDistance)<=1f&&depth>bestDepth))){
+                    bestDistance=distance;bestDepth=depth;best=i;
+                }
             }
-            if(best>=0&&bestDistance<900f)document.selectEdge(best,additive);
+            if(best>=0)document.selectEdge(best,additive);
         }else{
             int[][] polygons=document.copyFaces();
+            float nearestDepth=-Float.MAX_VALUE;
+            int containingFace=-1;
             for(int i=0;i<polygons.length;i++){
-                int[] polygon=polygons[i];
-                float centerX=0f,centerY=0f;
-                for(int vertex:polygon){
-                    float[] point=project(world[vertex][0],world[vertex][1],world[vertex][2],cx,cy,unit);
-                    centerX+=point[0]/polygon.length;
-                    centerY+=point[1]/polygon.length;
+                int[] face=polygons[i];
+                if(face.length<3)continue;
+                float[][] polygon=new float[face.length][2];
+                float averageDepth=0f;
+                for(int j=0;j<face.length;j++){
+                    float[] p=screen[face[j]];
+                    polygon[j][0]=p[0];polygon[j][1]=p[1];averageDepth+=p[2]/face.length;
                 }
-                float dx=centerX-x,dy=centerY-y,distance=dx*dx+dy*dy;
-                if(distance<bestDistance){bestDistance=distance;best=i;}
+                // Ignore back-facing polygons just as the viewport renderer does.
+                float[] a=cameraPoint(world[face[0]][0],world[face[0]][1],world[face[0]][2]);
+                float[] b=cameraPoint(world[face[1]][0],world[face[1]][1],world[face[1]][2]);
+                float[] c=cameraPoint(world[face[2]][0],world[face[2]][1],world[face[2]][2]);
+                float abx=b[0]-a[0],aby=b[1]-a[1],abz=b[2]-a[2];
+                float acx=c[0]-a[0],acy=c[1]-a[1],acz=c[2]-a[2];
+                float nz=abx*acy-aby*acx;
+                if(nz<=0.0001f)continue;
+                if(pointInPolygon(x,y,polygon)&&averageDepth>nearestDepth){
+                    nearestDepth=averageDepth;containingFace=i;
+                }
             }
-            if(best>=0&&bestDistance<2500f)document.selectFace(best,additive);
+            if(containingFace>=0)document.selectFace(containingFace,additive);
         }
         invalidate();
     }
