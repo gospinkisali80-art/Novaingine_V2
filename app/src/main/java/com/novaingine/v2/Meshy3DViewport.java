@@ -921,11 +921,62 @@ public final class Meshy3DViewport extends View {
     public String getSelectionMode(){return selectionMode.name();}
     public int getSelectedElementCount(){return document.getSelectedCount();}
     public void selectAllElements(){document.selectAll();invalidate();}
+    /**
+     * Pick mesh elements using the active object's world transform. This keeps
+     * edit-mode vertex/edge/face taps aligned after moving, rotating or scaling
+     * the object in Object Mode.
+     */
     public void selectAt(float x,float y,boolean additive){
-        float cx=getWidth()*.5f,cy=getHeight()*.49f,unit=Math.min(getWidth(),getHeight())*.235f*zoom;
-        if(selectionMode==Meshy3DCore.SelectMode.VERTEX)document.selectNearestVertex(x,y,cx,cy,unit,yaw,pitch,additive);
-        else if(selectionMode==Meshy3DCore.SelectMode.EDGE)document.selectNearestEdge(x,y,cx,cy,unit,yaw,pitch,additive);
-        else document.selectNearestFace(x,y,cx,cy,unit,yaw,pitch,additive);
+        float cx=getWidth()*.5f,cy=getHeight()*.49f;
+        float unit=Math.min(getWidth(),getHeight())*.235f*zoom;
+        float[][] local=document.copyVertices();
+        float[][] world=new float[local.length][3];
+        for(int i=0;i<local.length;i++){
+            if(objectSceneActiveId!=null){
+                float[] point=objectScene.transformPoint(objectSceneActiveId,
+                        local[i][0],local[i][1],local[i][2]);
+                world[i]=point;
+            }else world[i]=local[i].clone();
+        }
+
+        int best=-1;
+        float bestDistance=Float.MAX_VALUE;
+        if(selectionMode==Meshy3DCore.SelectMode.VERTEX){
+            for(int i=0;i<world.length;i++){
+                float[] point=project(world[i][0],world[i][1],world[i][2],cx,cy,unit);
+                float dx=point[0]-x,dy=point[1]-y,distance=dx*dx+dy*dy;
+                if(distance<bestDistance){bestDistance=distance;best=i;}
+            }
+            if(best>=0&&bestDistance<900f)document.selectVertex(best,additive);
+        }else if(selectionMode==Meshy3DCore.SelectMode.EDGE){
+            java.util.List<Meshy3DCore.Edge> edges=document.getEdges();
+            for(int i=0;i<edges.size();i++){
+                Meshy3DCore.Edge edge=edges.get(i);
+                float[] a=project(world[edge.a][0],world[edge.a][1],world[edge.a][2],cx,cy,unit);
+                float[] b=project(world[edge.b][0],world[edge.b][1],world[edge.b][2],cx,cy,unit);
+                float dx=b[0]-a[0],dy=b[1]-a[1];
+                float t=((x-a[0])*dx+(y-a[1])*dy)/Math.max(.0001f,dx*dx+dy*dy);
+                t=Math.max(0f,Math.min(1f,t));
+                float px=a[0]+t*dx,py=a[1]+t*dy;
+                float ex=px-x,ey=py-y,distance=ex*ex+ey*ey;
+                if(distance<bestDistance){bestDistance=distance;best=i;}
+            }
+            if(best>=0&&bestDistance<900f)document.selectEdge(best,additive);
+        }else{
+            int[][] polygons=document.copyFaces();
+            for(int i=0;i<polygons.length;i++){
+                int[] polygon=polygons[i];
+                float centerX=0f,centerY=0f;
+                for(int vertex:polygon){
+                    float[] point=project(world[vertex][0],world[vertex][1],world[vertex][2],cx,cy,unit);
+                    centerX+=point[0]/polygon.length;
+                    centerY+=point[1]/polygon.length;
+                }
+                float dx=centerX-x,dy=centerY-y,distance=dx*dx+dy*dy;
+                if(distance<bestDistance){bestDistance=distance;best=i;}
+            }
+            if(best>=0&&bestDistance<2500f)document.selectFace(best,additive);
+        }
         invalidate();
     }
     public void insetSelected(float amount){document.insetSelected(amount);syncViewportFromCore();}
@@ -2398,7 +2449,11 @@ public final class Meshy3DViewport extends View {
                     float dx=event.getX()-gx,dy=event.getY()-gy;
                     if(dx*dx+dy*dy<=radius*radius){
                         snapToNearestAxis(dx,dy);
-                    } else if(meshEditMode){selectAt(event.getX(),event.getY(),(event.getMetaState()&android.view.KeyEvent.META_SHIFT_ON)!=0);}
+                    } else if(meshEditMode){
+                        boolean additive=(event.getMetaState()&android.view.KeyEvent.META_SHIFT_ON)!=0
+                                ||event.getEventTime()-event.getDownTime()>=450;
+                        selectAt(event.getX(),event.getY(),additive);
+                    }
                     else if(objectSelectionEnabled)selectObjectAt(event.getX(),event.getY(),
                             (event.getMetaState()&android.view.KeyEvent.META_SHIFT_ON)!=0
                                     ||event.getEventTime()-event.getDownTime()>=450);
