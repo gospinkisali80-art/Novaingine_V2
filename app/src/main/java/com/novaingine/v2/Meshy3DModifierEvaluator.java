@@ -33,6 +33,24 @@ public final class Meshy3DModifierEvaluator {
                 case "SUBDIVIDE":
                     for(int level=0;level<modifier.levels;level++)subdivide(result);
                     break;
+                case "CATMULL_CLARK":
+                    requireUvSafeMesh(result,"Catmull-Clark Subdivision");
+                    for(int level=0;level<modifier.levels;level++){
+                        result.subdivideCatmullClark(1);
+                        checkLimits(result.getVertexCount(),result.getFaceCount());
+                    }
+                    break;
+                case "TRIANGULATE":
+                    requireUvSafeMesh(result,"Triangulate");
+                    result.triangulateSelectedFaces();
+                    break;
+                case "PLANAR_DECIMATE":
+                    requireUvSafeMesh(result,"Planar Decimate");
+                    result.decimatePlanar(modifier.value,Math.max(4,result.getFaceCount()/2));
+                    break;
+                case "SMOOTH":
+                    result.smooth(modifier.value,modifier.levels);
+                    break;
                 case "BEVEL":
                     requireUvSafeMesh(result,"Bevel");
                     result.clearSelection();
