@@ -2263,6 +2263,38 @@ public final class Meshy3DViewport extends View {
         syncCoreFromViewport();invalidate();
     }
 
+
+    /** Run a scripted sculpt stroke against the active Meshy3D mesh using the same brush kernel as touch input. */
+    public int applyAISculptStroke(int brush,float[] localPoints,float radius,float strength,
+                                   float falloff,int symmetry,boolean subtract) {
+        if(localPoints==null||localPoints.length<3||localPoints.length>192||localPoints.length%3!=0)
+            throw new IllegalArgumentException("Sculpt stroke requires 1-64 local xyz points.");
+        if(objectScene.getActiveObject()==null||objectScene.getActiveObject().mesh==null)
+            throw new IllegalStateException("Select a mesh object before AI sculpting.");
+        if(getWidth()<=0||getHeight()<=0)throw new IllegalStateException("Meshy3D viewport is not ready.");
+        for(float value:localPoints)if(Float.isNaN(value)||Float.isInfinite(value)||Math.abs(value)>1000f)
+            throw new IllegalArgumentException("Sculpt point is outside the valid local coordinate range.");
+        if(onSculptStrokeStart!=null)onSculptStrokeStart.run();
+        setSculptSettings(true,brush,radius,strength,falloff,symmetry,subtract,1f);
+        float cx=getWidth()*.5f,cy=getHeight()*.49f;
+        float unit=Math.max(1,Math.min(getWidth(),getHeight())*.235f*zoom);
+        float previousX=0,previousY=0;
+        for(int i=0;i<localPoints.length;i+=3){
+            float[] screen=project(localPoints[i],localPoints[i+1],localPoints[i+2],cx,cy,unit);
+            if(i==0){
+                beginSculptStroke(screen[0],screen[1]);
+                applySculptDab(screen[0],screen[1],0,0,1f);
+            }else{
+                applySculptSegment(screen[0],screen[1],screen[0]-previousX,screen[1]-previousY,1f);
+            }
+            previousX=screen[0];previousY=screen[1];
+        }
+        sculpting=false;strokeActive=false;sculptCursorVisible=false;
+        syncCoreFromViewport();
+        invalidate();
+        return vertices.length;
+    }
+
     public void setSculptStrokeMethod(int method){sculptStrokeMethod=Math.max(0,Math.min(2,method));}
 
     public void setSculptSettings(boolean enabled, int brush, float radius, float strength,
