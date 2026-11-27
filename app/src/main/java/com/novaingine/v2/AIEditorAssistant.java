@@ -475,6 +475,8 @@ public final class AIEditorAssistant {
         t.put(tool("add_shader_node","Add a shader/material node to the active mesh document.","{\"type\":\"object\",\"properties\":{\"type\":{\"type\":\"string\"}},\"required\":[\"type\"]}"));
         t.put(tool("insert_animation_key","Insert an animation key into the active mesh document.","{\"type\":\"object\",\"properties\":{\"property\":{\"type\":\"string\"},\"frame\":{\"type\":\"integer\"},\"value\":{\"type\":\"number\"}},\"required\":[\"property\",\"frame\",\"value\"]}"));
         t.put(tool("create_texture","Create a paint texture for the active mesh, with dimensions limited for mobile.","{\"type\":\"object\",\"properties\":{\"width\":{\"type\":\"integer\"},\"height\":{\"type\":\"integer\"},\"color\":{\"type\":\"integer\"}}}"));
+        t.put(tool("sculpt_selected_mesh","Apply a real Meshy3D sculpt brush stroke to the active mesh. Brush names: draw, smooth, grab, inflate, pinch, flatten, crease, mask, clay, scrape, layer, unmask, blob, clay_strips, elastic_deform, snake_hook, thumb, pose, boundary, slide_relax, multiplane_scrape, fill, deepen, nudge, simplify. points is a flat list of local xyz triplets; if omitted use x/y/z. radius 0.02-1, strength/falloff 0-1, symmetry off/x/y/z.","{\"type\":\"object\",\"properties\":{\"brush\":{\"type\":\"string\",\"enum\":[\"draw\",\"smooth\",\"grab\",\"inflate\",\"pinch\",\"flatten\",\"crease\",\"mask\",\"clay\",\"scrape\",\"layer\",\"unmask\",\"blob\",\"clay_strips\",\"elastic_deform\",\"snake_hook\",\"thumb\",\"pose\",\"boundary\",\"slide_relax\",\"multiplane_scrape\",\"fill\",\"deepen\",\"nudge\",\"simplify\"]},\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"},\"points\":{\"type\":\"array\",\"items\":{\"type\":\"number\"},\"minItems\":3,\"maxItems\":192},\"radius\":{\"type\":\"number\"},\"strength\":{\"type\":\"number\"},\"falloff\":{\"type\":\"number\"},\"symmetry\":{\"type\":\"string\",\"enum\":[\"off\",\"x\",\"y\",\"z\"]},\"subtract\":{\"type\":\"boolean\"}}}"));
+        t.put(tool("select_object_by_name","Select a Meshy3D object by its exact name from inspect_meshy_scene.","{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"}},\"required\":[\"name\"]}"));
         t.put(tool("delete_selected_objects","Delete the selected Meshy3D objects.","{\"type\":\"object\",\"properties\":{}}"));
         t.put(tool("undo_meshy_edit","Undo the last Meshy3D AI or manual edit.","{\"type\":\"object\",\"properties\":{}}"));
         t.put(tool("redo_meshy_edit","Redo the last Meshy3D edit.","{\"type\":\"object\",\"properties\":{}}"));
@@ -538,6 +540,28 @@ public final class AIEditorAssistant {
                     for(int i=0;i<f.length;i++){f[i]=fa.optInt(i,-1);if(f[i]<0||f[i]>=p.length/3)return "Triangle index is outside the vertex array.";}
                     String id=viewport.addAIMeshObject(args.optString("name","AI Mesh"),p,f,number(args,"x",0),number(args,"y",0),number(args,"z",0),meshColor(args),number(args,"metallic",0),number(args,"roughness",.65f));
                     return "Created Meshy3D mesh object " + id + " with " + (p.length/3) + " vertices and " + (f.length/3) + " triangles.";
+                }
+                case "select_object_by_name": {
+                    String wanted=args.optString("name","").trim();
+                    if(wanted.isEmpty())return "Object name is required.";
+                    for(Meshy3DObjectScene.Object3D object:scene.getObjects())if(object.name.equalsIgnoreCase(wanted)){
+                        viewport.selectSceneObject(object.id);return "Selected Meshy3D object "+object.name+".";
+                    }
+                    return "No Meshy3D object named "+wanted+" was found.";
+                }
+                case "sculpt_selected_mesh": {
+                    String brush=args.optString("brush","draw").toLowerCase(java.util.Locale.US);
+                    String[] names={"draw","smooth","grab","inflate","pinch","flatten","crease","mask","clay","scrape","layer","unmask","blob","clay_strips","elastic_deform","snake_hook","thumb","pose","boundary","slide_relax","multiplane_scrape","fill","deepen","nudge","simplify"};
+                    int brushId=-1;for(int i=0;i<names.length;i++)if(names[i].equals(brush)){brushId=i;break;}
+                    if(brushId<0)return "Unknown Meshy3D sculpt brush.";
+                    JSONArray path=args.optJSONArray("points");
+                    float[] points;
+                    if(path==null){points=new float[]{number(args,"x",0),number(args,"y",0),number(args,"z",0)};}
+                    else{if(path.length()<3||path.length()>192||path.length()%3!=0)return "Sculpt points must contain 1-64 xyz triplets.";points=new float[path.length()];for(int i=0;i<points.length;i++)points[i]=(float)path.optDouble(i,Double.NaN);}
+                    String sym=args.optString("symmetry","off").toLowerCase(java.util.Locale.US);
+                    int symmetry="x".equals(sym)?1:"y".equals(sym)?2:"z".equals(sym)?3:0;
+                    int count=viewport.applyAISculptStroke(brushId,points,Math.max(.02f,Math.min(1f,number(args,"radius",.18f))),Math.max(0,Math.min(1,number(args,"strength",.4f))),Math.max(0,Math.min(1,number(args,"falloff",.5f))),symmetry,args.optBoolean("subtract",false));
+                    return "Applied "+brush+" sculpt stroke to Meshy3D mesh ("+count+" vertices).";
                 }
                 case "rename_active_object": {
                     String n=args.optString("name","").trim();if(n.isEmpty())return "Name cannot be empty.";
