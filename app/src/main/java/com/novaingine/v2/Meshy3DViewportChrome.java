@@ -42,6 +42,7 @@ final class Meshy3DViewportChrome extends FrameLayout {
     private final LinearLayout leftTools;
     private final ScrollView leftToolScroll;
     private final LinearLayout bottomTools;
+    private final HorizontalScrollView bottomScroll;
     private final LinearLayout transformTools;
     private boolean navigationVisible = true;
     private boolean moreMode;
@@ -138,7 +139,7 @@ final class Meshy3DViewportChrome extends FrameLayout {
         addView(navigationPanel, navParams);
 
         // Bottom shortcut row.
-        HorizontalScrollView bottomScroll = new HorizontalScrollView(context);
+        bottomScroll = new HorizontalScrollView(context);
         bottomScroll.setHorizontalScrollBarEnabled(false);
         bottomScroll.setFillViewport(false);
         bottomScroll.setBackground(panelBackground(0xF0161C24, 6f));
@@ -265,6 +266,21 @@ final class Meshy3DViewportChrome extends FrameLayout {
     private void setTransform(int mode) {
         actions.transform(mode);
         activeTool = mode == 0 ? 2 : mode == 1 ? 3 : 4;
+    }
+
+    /** Hide floating controls while Modeling docks own the left, right and bottom regions. */
+    void setModelingWorkspace(boolean modeling) {
+        if (modeling) {
+            leftToolScroll.setVisibility(GONE);
+            transformTools.setVisibility(GONE);
+            bottomScroll.setVisibility(GONE);
+            navigationPanel.setVisibility(GONE);
+        } else {
+            leftToolScroll.setVisibility(VISIBLE);
+            bottomScroll.setVisibility(VISIBLE);
+            navigationPanel.setVisibility(navigationVisible ? VISIBLE : GONE);
+            transformTools.setVisibility(VISIBLE);
+        }
     }
 
     void setNavigationVisible(boolean visible) {
