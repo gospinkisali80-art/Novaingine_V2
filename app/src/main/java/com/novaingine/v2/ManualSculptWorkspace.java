@@ -3302,6 +3302,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
             workspaceBottomDock.setGravity(Gravity.CENTER_VERTICAL);
             workspaceBottomDock.setBackgroundColor(0xF0181D24);
             if(index==1){
+                addModelingBottomButton("EDIT / OBJECT",()->toggleMeshyModeFromPhone());
                 addModelingBottomButton("VERTEX",()->setModelingSelectionMode("Vertex"));
                 addModelingBottomButton("EDGE",()->setModelingSelectionMode("Edge"));
                 addModelingBottomButton("FACE",()->setModelingSelectionMode("Face"));
@@ -3323,7 +3324,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     LayoutParams.MATCH_PARENT, dp(index==1?48:(index == 0 || index == 6 ? 72 : 82)), Gravity.BOTTOM);
             bottomParams.leftMargin = dp(index==1?4:154);
             bottomParams.rightMargin = dp(index==1?4:166);
-            bottomParams.bottomMargin = dp(4);
+            bottomParams.bottomMargin = dp(index==1?54:4);
             workspaceLayoutLayer.addView(workspaceBottomDock, bottomParams);
         }
         if (viewportChrome != null) viewportChrome.setSculptWorkspace(index == 2);
