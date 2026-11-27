@@ -920,6 +920,14 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     showAmountDialog("Solidify thickness",0.01f,.5f,value->{checkpointMeshEdit();meshyViewport.solidifySelected(value);status.setText("Modeling | Solid thickness generated");});
                 } else if ("Bevel Modifier".equals(item)) {
                     showAmountDialog("Bevel width",.001f,.45f,value->{checkpointMeshEdit();meshyViewport.bevelSelected(value);status.setText("Modeling | Bevel geometry generated");});
+                } else if ("Wireframe Modifier".equals(item)) {
+                    Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
+                    if(active==null||active.mesh==null)Toast.makeText(activity,"Select a mesh object first.",Toast.LENGTH_SHORT).show();
+                    else try {
+                        checkpointMeshEdit();
+                        Meshy3DObjectScene.Modifier3D modifier=meshyViewport.getObjectScene().addModifier(active.id,"WIREFRAME");
+                        meshyViewport.invalidate();showObjectModifierEditor(modifier);
+                    } catch(Exception error) { showObjectOperationError(error); }
                 } else if ("Remesh".equals(item)) {
                     new android.app.AlertDialog.Builder(activity).setTitle(item)
                             .setMessage("This operator is not implemented yet. No geometry was changed.")
@@ -2437,7 +2445,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
         String[] labels={"Mirror","Array","Bevel","Solidify","Linear Subdivide",
                 "Catmull-Clark Subdivision","Triangulate","Planar Decimate","Smooth"};
         String[] types={"MIRROR","ARRAY","BEVEL","SOLIDIFY","SUBDIVIDE",
-                "CATMULL_CLARK","TRIANGULATE","PLANAR_DECIMATE","SMOOTH"};
+                "CATMULL_CLARK","TRIANGULATE","PLANAR_DECIMATE","SMOOTH","WIREFRAME"};
         new android.app.AlertDialog.Builder(activity).setTitle("Add Modifier")
                 .setItems(labels,(dialog,which)->{
                     try{
@@ -2505,6 +2513,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
         }else if("SMOOTH".equals(modifier.type)){
             valueField=modifierNumberField(panel,"Smoothing amount (0–1)",modifier.value,false);
             levelsField=modifierNumberField(panel,"Iterations (1–20)",modifier.levels,true);
+        }else if("WIREFRAME".equals(modifier.type)){
+            valueField=modifierNumberField(panel,"Thickness (0.001–0.5)",modifier.value,false);
         }else if("BEVEL".equals(modifier.type)){
             valueField=modifierNumberField(panel,"Width (0.001–0.49)",modifier.value,false);
         }else if("SOLIDIFY".equals(modifier.type)){
@@ -3162,7 +3172,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         "Rip", "Decimate", "MESH CLEANUP", "Recalculate Normals", "Flip Normals",
                         "Degenerate Dissolve", "Make Planar", "Smooth Vertices", "Randomize",
                         "SYMMETRY & MODIFIERS", "Symmetrize", "Bisect", "Mirror Modifier",
-                        "Subdivision Surface", "Solidify", "Bevel Modifier", "Recalculate Normals",
+                        "Subdivision Surface", "Solidify", "Bevel Modifier", "Wireframe Modifier", "Recalculate Normals",
                         "Remesh", "Weld", "Triangulate", "Toggle Topology Overlay"
                 };
                 rightTitle = "Tool Properties";
