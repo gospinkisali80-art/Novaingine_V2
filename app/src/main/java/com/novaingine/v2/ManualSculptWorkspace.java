@@ -418,6 +418,35 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     @Override public void undo() { if(!undoMeshEdit())Toast.makeText(activity,"Nothing to undo",Toast.LENGTH_SHORT).show(); }
                     @Override public void redo() { if(!redoMeshEdit())Toast.makeText(activity,"Nothing to redo",Toast.LENGTH_SHORT).show(); }
                     @Override public void toggleMode() { toggleMeshyModeFromPhone(); }
+                    @Override public void shortcut(String key) {
+                        int code;
+                        int meta=0;
+                        switch(key){
+                            case "1":code=KeyEvent.KEYCODE_1;break;
+                            case "2":code=KeyEvent.KEYCODE_2;break;
+                            case "3":code=KeyEvent.KEYCODE_3;break;
+                            case "A":code=KeyEvent.KEYCODE_A;break;
+                            case "Alt+A":code=KeyEvent.KEYCODE_A;meta=KeyEvent.META_ALT_ON;break;
+                            case "G":code=KeyEvent.KEYCODE_G;break;
+                            case "R":code=KeyEvent.KEYCODE_R;break;
+                            case "S":code=KeyEvent.KEYCODE_S;break;
+                            case "X":code=KeyEvent.KEYCODE_X;break;
+                            case "Y":code=KeyEvent.KEYCODE_Y;break;
+                            case "Z":code=KeyEvent.KEYCODE_Z;break;
+                            case "Tab":code=KeyEvent.KEYCODE_TAB;break;
+                            case "Esc":code=KeyEvent.KEYCODE_ESCAPE;break;
+                            default:return;
+                        }
+                        handleModelingShortcut(new KeyEvent(SystemClock.uptimeMillis(),
+                                SystemClock.uptimeMillis(),KeyEvent.ACTION_DOWN,code,0,meta));
+                        requestFocus();
+                    }
+                    @Override public void numericTransform(float amount,int axis) {
+                        checkpointMeshEdit();
+                        meshyViewport.applyNumericTransform(axis,amount);
+                        status.setText("Modeling | Numeric transform applied: "+amount);
+                        requestFocus();
+                    }
                     @Override public void keyboard() {
                         if(phoneControls.getVisibility()!=View.VISIBLE) {
                             phoneControls.setVisibility(View.VISIBLE);
