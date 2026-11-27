@@ -1043,6 +1043,177 @@ public final class Meshy3DCore {
                 if(id==null){id=vertices.size();vertices.add(vertices.get(old).clone());duplicates.put(old,id);}face.vertices[j]=id;}
         }clearSelection();rebuildEdges();revision++;
     }
+    /** True Catmull-Clark subdivision for polygon meshes. */
+    public void subdivideCatmullClark(int requestedLevels) {
+        int levels=Math.max(1,Math.min(3,requestedLevels));
+        for(int level=0;level<levels;level++) {
+            int oldVertexCount=vertices.size(),oldFaceCount=faces.size();
+            if(oldVertexCount==0||oldFaceCount==0)return;
+            float[][] oldVertices=copyVertices();
+            int[][] oldFaces=copyFaces();
+
+            float[][] facePoints=new float[oldFaceCount][3];
+            java.util.ArrayList<java.util.ArrayList<Integer>> vertexFaces=new java.util.ArrayList<>();
+            java.util.ArrayList<java.util.ArrayList<Integer>> vertexNeighbours=new java.util.ArrayList<>();
+            java.util.ArrayList<java.util.ArrayList<Integer>> boundaryNeighbours=new java.util.ArrayList<>();
+            for(int i=0;i<oldVertexCount;i++){
+                vertexFaces.add(new java.util.ArrayList<>());
+                vertexNeighbours.add(new java.util.ArrayList<>());
+                boundaryNeighbours.add(new java.util.ArrayList<>());
+            }
+            for(int fi=0;fi<oldFaceCount;fi++){
+                int[] face=oldFaces[fi];
+                for(int id:face){
+                    for(int axis=0;axis<3;axis++)facePoints[fi][axis]+=oldVertices[id][axis]/face.length;
+                    vertexFaces.get(id).add(fi);
+                }
+            }
+            java.util.HashMap<Long,Integer> edgeFaces=new java.util.HashMap<>();
+            for(Edge edge:edges){
+                vertexNeighbours.get(edge.a).add(edge.b);
+                vertexNeighbours.get(edge.b).add(edge.a);
+                if(edge.faces.size()==1){
+                    boundaryNeighbours.get(edge.a).add(edge.b);
+                    boundaryNeighbours.get(edge.b).add(edge.a);
+                }
+            }
+
+            java.util.ArrayList<float[]> outputVertices=new java.util.ArrayList<>();
+            // Updated original-vertex points occupy the first vertex range.
+            for(int id=0;id<oldVertexCount;id++){
+                float[] p=oldVertices[id];
+                java.util.ArrayList<Integer> neighbours=vertexNeighbours.get(id);
+                java.util.ArrayList<Integer> incident=vertexFaces.get(id);
+                java.util.ArrayList<Integer> boundary=boundaryNeighbours.get(id);
+                float[] result=p.clone();
+                if(boundary.size()==2){
+                    float[] a=oldVertices[boundary.get(0)],b=oldVertices[boundary.get(1)];
+                    for(int axis=0;axis<3;axis++)
+                        result[axis]=.75f*p[axis]+.125f*a[axis]+.125f*b[axis];
+                }else if(!neighbours.isEmpty()&&!incident.isEmpty()){
+                    float n=neighbours.size();
+                    float[] faceAverage={0,0,0},edgeAverage={0,0,0};
+                    for(int fi:incident)for(int axis=0;axis<3;axis++)
+                        faceAverage[axis]+=facePoints[fi][axis]/incident.size();
+                    for(int other:neighbours)for(int axis=0;axis<3;axis++)
+                        edgeAverage[axis]+=(p[axis]+oldVertices[other][axis])*.5f/n;
+                    for(int axis=0;axis<3;axis++)
+                        result[axis]=(faceAverage[axis]+2f*edgeAverage[axis]+(n-3f)*p[axis])/n;
+                }
+                outputVertices.add(result);
+            }
+
+            // Edge points: average endpoints and adjacent face points for manifold edges.
+            java.util.HashMap<Long,Integer> edgePointIds=new java.util.HashMap<>();
+            for(Edge edge:edges){
+                float[] a=oldVertices[edge.a],b=oldVertices[edge.b];
+                float[] point=new float[3];
+                for(int axis=0;axis<3;axis++){
+                    if(edge.faces.size()==2){
+                        point[axis]=(a[axis]+b[axis]
+                                +facePoints[edge.faces.get(0)][axis]
+                                +facePoints[edge.faces.get(1)][axis])*.25f;
+                    }else point[axis]=(a[axis]+b[axis])*.5f;
+                }
+                int id=outputVertices.size();outputVertices.add(point);
+                edgePointIds.put(edgeKey(edge.a,edge.b),id);
+            }
+
+            int[] facePointIds=new int[oldFaceCount];
+            for(int fi=0;fi<oldFaceCount;fi++){
+                facePointIds[fi]=outputVertices.size();
+                outputVertices.add(facePoints[fi]);
+            }
+
+            java.util.ArrayList<int[]> outputFaces=new java.util.ArrayList<>();
+            for(int fi=0;fi<oldFaceCount;fi++){
+                int[] face=oldFaces[fi];
+                for(int corner=0;corner<face.length;corner++){
+                    int current=face[corner],next=face[(corner+1)%face.length];
+                    int previous=face[(corner+face.length-1)%face.length];
+                    Integer nextEdge=edgePointIds.get(edgeKey(current,next));
+                    Integer previousEdge=edgePointIds.get(edgeKey(previous,current));
+                    if(nextEdge==null||previousEdge==null)continue;
+                    outputFaces.add(new int[]{current,nextEdge,facePointIds[fi],previousEdge});
+                }
+            }
+            faceUvs=null;islands.clear();selectedUvIsland=-1;
+            float[][] newVertices=outputVertices.toArray(new float[0][]);
+            int[][] newFaces=outputFaces.toArray(new int[0][]);
+            replaceGeometry(newVertices,newFaces);
+            sculptMask=java.util.Arrays.copyOf(sculptMask,newVertices.length);
+            clearSelection();
+        }
+        revision++;
+    }
+
+    /** Extract selected faces (or fully selected vertex/edge faces) into a new mesh datablock. */
+    public Meshy3DCore extractSelectedFaces() {
+        java.util.BitSet chosen=(java.util.BitSet)selectedFaces.clone();
+        if(chosen.isEmpty()&& !selectedVertices.isEmpty()){
+            for(int fi=0;fi<faces.size();fi++){
+                boolean all=true;
+                for(int id:faces.get(fi).vertices)if(!selectedVertices.get(id)){all=false;break;}
+                if(all)chosen.set(fi);
+            }
+        }
+        if(chosen.isEmpty()&&!selectedEdges.isEmpty()){
+            java.util.HashSet<Long> selectedKeys=new java.util.HashSet<>();
+            for(int i=selectedEdges.nextSetBit(0);i>=0;i=selectedEdges.nextSetBit(i+1)){
+                Edge edge=edges.get(i);selectedKeys.add(edgeKey(edge.a,edge.b));
+            }
+            for(int fi=0;fi<faces.size();fi++){
+                int[] polygon=faces.get(fi).vertices;boolean all=true;
+                for(int i=0;i<polygon.length;i++)
+                    if(!selectedKeys.contains(edgeKey(polygon[i],polygon[(i+1)%polygon.length]))){all=false;break;}
+                if(all)chosen.set(fi);
+            }
+        }
+        if(chosen.isEmpty())return null;
+
+        int[][] sourceFaces=copyFaces();
+        float[][] sourceVertices=copyVertices();
+        java.util.LinkedHashMap<Integer,Integer> extractedMap=new java.util.LinkedHashMap<>();
+        java.util.ArrayList<float[]> extractedVertices=new java.util.ArrayList<>();
+        java.util.ArrayList<int[]> extractedFaces=new java.util.ArrayList<>();
+        java.util.ArrayList<int[]> remainingSourceFaces=new java.util.ArrayList<>();
+        for(int fi=0;fi<sourceFaces.length;fi++){
+            int[] polygon=sourceFaces[fi];
+            if(chosen.get(fi)){
+                int[] remapped=new int[polygon.length];
+                for(int i=0;i<polygon.length;i++){
+                    int old=polygon[i];
+                    Integer next=extractedMap.get(old);
+                    if(next==null){next=extractedVertices.size();extractedMap.put(old,next);extractedVertices.add(sourceVertices[old].clone());}
+                    remapped[i]=next;
+                }
+                extractedFaces.add(remapped);
+            }else remainingSourceFaces.add(polygon);
+        }
+        if(extractedFaces.isEmpty())return null;
+
+        java.util.LinkedHashMap<Integer,Integer> remainingMap=new java.util.LinkedHashMap<>();
+        java.util.ArrayList<float[]> remainingVertices=new java.util.ArrayList<>();
+        java.util.ArrayList<int[]> remainingFaces=new java.util.ArrayList<>();
+        for(int[] polygon:remainingSourceFaces){
+            int[] remapped=new int[polygon.length];
+            for(int i=0;i<polygon.length;i++){
+                int old=polygon[i];
+                Integer next=remainingMap.get(old);
+                if(next==null){next=remainingVertices.size();remainingMap.put(old,next);remainingVertices.add(sourceVertices[old].clone());}
+                remapped[i]=next;
+            }
+            remainingFaces.add(remapped);
+        }
+        Meshy3DCore separated=new Meshy3DCore();
+        separated.replaceGeometry(extractedVertices.toArray(new float[0][]),extractedFaces.toArray(new int[0][]));
+        separated.setMaterial(getBaseColor(),getMetallic(),getRoughness());
+        replaceGeometry(remainingVertices.toArray(new float[0][]),remainingFaces.toArray(new int[0][]));
+        clearSelection();
+        revision++;
+        return separated;
+    }
+
     public void bisect(float nx,float ny,float nz,float offset){
         float len=(float)Math.sqrt(nx*nx+ny*ny+nz*nz);if(len<1e-8)return;nx/=len;ny/=len;nz/=len;
         BitSet targets=(BitSet)selectedFaces.clone();boolean all=targets.isEmpty();
