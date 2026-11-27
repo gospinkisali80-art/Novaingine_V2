@@ -236,7 +236,9 @@ public final class AIEditorAssistant {
         JSONArray chatMessages = new JSONArray();
         JSONObject chatSystem = new JSONObject();
         chatSystem.put("role", "system");
-        chatSystem.put("content", "You are Novaingine's helpful local AI assistant. Answer clearly and briefly. Do not claim to change the 3D scene; use scene tools only for explicit modeling requests.");
+        chatSystem.put("content", meshyWorkspace != null
+                ? "You are Nova AI inside Meshy3D. Answer questions about the current modeling workflow clearly. For actual edits, the agent tool path is used when the user asks you to create, modify, sculpt, paint or transform the document. Never claim a change unless a tool confirms it."
+                : "You are Novaingine's helpful AI assistant. Answer clearly and briefly. Do not claim to change the 3D scene; use scene tools only for explicit modeling requests.");
         chatMessages.put(chatSystem);
 
         JSONObject latestUser = null;
