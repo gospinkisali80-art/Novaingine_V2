@@ -211,6 +211,47 @@ public final class Meshy3DViewport extends View {
         invalidate();
     }
 
+
+    /** Add AI-generated indexed geometry to the Meshy3D document, not the Nova Engine runtime scene. */
+    public String addAIMeshObject(String name,float[] positions,int[] triangles,
+                                  float x,float y,float z,int color,float metallic,float roughness) {
+        if(positions==null||triangles==null||positions.length<9||positions.length>9000
+                ||positions.length%3!=0||triangles.length<3||triangles.length>18000||triangles.length%3!=0)
+            throw new IllegalArgumentException("AI mesh exceeds the supported vertex/triangle limits.");
+        int vertexCount=positions.length/3;
+        org.json.JSONObject state=new org.json.JSONObject();
+        org.json.JSONArray verts=new org.json.JSONArray(),polys=new org.json.JSONArray();
+        try {
+            for(int i=0;i<vertexCount;i++){
+                org.json.JSONArray point=new org.json.JSONArray();
+                point.put(positions[i*3]);point.put(positions[i*3+1]);point.put(positions[i*3+2]);verts.put(point);
+            }
+            for(int i=0;i<triangles.length;i+=3){
+                org.json.JSONArray face=new org.json.JSONArray();
+                for(int j=0;j<3;j++){
+                    int index=triangles[i+j];
+                    if(index<0||index>=vertexCount)throw new IllegalArgumentException("AI mesh triangle index is invalid.");
+                    face.put(index);
+                }
+                polys.put(face);
+            }
+            state.put("vertices",verts);state.put("faces",polys);
+        } catch(org.json.JSONException error) {
+            throw new IllegalStateException("Could not assemble AI mesh data.",error);
+        }
+        Meshy3DCore mesh=new Meshy3DCore();
+        if(!mesh.importState(state))throw new IllegalArgumentException("Meshy3D rejected the generated mesh topology.");
+        mesh.setMaterial(color,metallic,roughness);
+        Meshy3DObjectScene.Object3D created=objectScene.createMeshObject(
+                name==null||name.trim().isEmpty()?"AI Mesh":name.trim(),mesh);
+        objectScene.setWorldLocation(created.id,x,y,z);
+        activateSceneObject(created.id);
+        meshEditMode=false;
+        objectSelectionEnabled=true;
+        invalidate();
+        return created.id;
+    }
+
     public String addCubeObject() {
         return addPrimitiveObject("Cube");
     }
