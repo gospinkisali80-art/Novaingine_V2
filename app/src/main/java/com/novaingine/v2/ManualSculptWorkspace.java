@@ -3466,9 +3466,11 @@ public final class ManualSculptWorkspace extends FrameLayout {
             if(status!=null)status.setText("Modeling | Operation cancelled");
             return true;
         }
-        if(code==KeyEvent.KEYCODE_1){modelingNumericPending=false;setModelingSelectionMode("Vertex");return true;}
-        if(code==KeyEvent.KEYCODE_2){modelingNumericPending=false;setModelingSelectionMode("Edge");return true;}
-        if(code==KeyEvent.KEYCODE_3){modelingNumericPending=false;setModelingSelectionMode("Face");return true;}
+        if(!modelingNumericPending){
+            if(code==KeyEvent.KEYCODE_1){setModelingSelectionMode("Vertex");return true;}
+            if(code==KeyEvent.KEYCODE_2){setModelingSelectionMode("Edge");return true;}
+            if(code==KeyEvent.KEYCODE_3){setModelingSelectionMode("Face");return true;}
+        }
         if(!meshyViewport.isMeshEditMode()) {
             if(code==KeyEvent.KEYCODE_G){runModelingTransform("Move");return true;}
             if(code==KeyEvent.KEYCODE_R){runModelingTransform("Rotate");return true;}
