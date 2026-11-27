@@ -2918,7 +2918,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
                 dp(width), LayoutParams.MATCH_PARENT, gravity);
         params.topMargin = dp(36);
-        params.bottomMargin = dp(8);
+        // The Modeling docks stop above the fixed bottom tool shelf.
+        params.bottomMargin = activeWorkspaceIndex == 1 ? dp(56) : dp(8);
         params.leftMargin = dp(6);
         params.rightMargin = dp(6);
         workspaceLayoutLayer.addView(dock, params);
@@ -3280,9 +3281,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
             workspaceToolbar.addView(item, new LinearLayout.LayoutParams(
                     LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
         }
-        workspaceLeftDock = createDock(leftTitle, index == 2 ? 126 : 142, Gravity.LEFT);
+        workspaceLeftDock = createDock(leftTitle, index == 1 ? 126 : index == 2 ? 126 : 142, Gravity.LEFT);
         addDockItems(workspaceLeftDock, leftTitle, leftItems);
-        workspaceRightDock = createDock(rightTitle, index == 2 ? 142 : 156, Gravity.RIGHT);
+        workspaceRightDock = createDock(rightTitle, index == 1 ? 140 : index == 2 ? 142 : 156, Gravity.RIGHT);
         addDockItems(workspaceRightDock, rightTitle, rightItems);
         // Modeling docks start collapsed so the mesh remains unobstructed on a phone.
         workspacePanelsOpen = index != 0 && index != 1;
@@ -3302,14 +3303,20 @@ public final class ManualSculptWorkspace extends FrameLayout {
             workspaceBottomDock.setGravity(Gravity.CENTER_VERTICAL);
             workspaceBottomDock.setBackgroundColor(0xF0181D24);
             if(index==1){
-                addModelingBottomButton("EDIT / OBJECT",()->toggleMeshyModeFromPhone());
+                addModelingBottomButton("OBJECT / EDIT",()->toggleMeshyModeFromPhone());
                 addModelingBottomButton("VERTEX",()->setModelingSelectionMode("Vertex"));
                 addModelingBottomButton("EDGE",()->setModelingSelectionMode("Edge"));
                 addModelingBottomButton("FACE",()->setModelingSelectionMode("Face"));
+                addModelingBottomButton("SELECT ALL",()->{meshyViewport.selectAllElements();status.setText("Modeling | All "+meshyViewport.getSelectionMode().toLowerCase()+" elements selected");});
                 addModelingBottomButton("ADD MESH",this::showAddMeshMenuDialog);
+                addModelingBottomButton("MOVE",()->runModelingTransform("Move"));
+                addModelingBottomButton("ROTATE",()->runModelingTransform("Rotate"));
+                addModelingBottomButton("SCALE",()->runModelingTransform("Scale"));
+                addModelingBottomButton("NUMERIC",()->showModelingNumericTransform());
                 addModelingBottomButton("EXTRUDE",()->handleWorkspaceItem("Extrude Region"));
                 addModelingBottomButton("INSET",()->handleWorkspaceItem("Inset Faces"));
                 addModelingBottomButton("BEVEL",()->handleWorkspaceItem("Bevel Edges"));
+                addModelingBottomButton("LOOP CUT",()->handleWorkspaceItem("Loop Cut"));
                 addModelingBottomButton("SUBDIVIDE",()->handleWorkspaceItem("Subdivide"));
                 addModelingBottomButton("DOCKS",()->setModelingDockVisibility(!workspacePanelsOpen));
             }else{
@@ -3321,13 +3328,28 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 }
             }
             FrameLayout.LayoutParams bottomParams = new FrameLayout.LayoutParams(
-                    LayoutParams.MATCH_PARENT, dp(index==1?48:(index == 0 || index == 6 ? 72 : 82)), Gravity.BOTTOM);
+                    LayoutParams.MATCH_PARENT, dp(index==1?50:(index == 0 || index == 6 ? 72 : 82)), Gravity.BOTTOM);
             bottomParams.leftMargin = dp(index==1?4:154);
             bottomParams.rightMargin = dp(index==1?4:166);
-            bottomParams.bottomMargin = dp(index==1?54:4);
-            workspaceLayoutLayer.addView(workspaceBottomDock, bottomParams);
+            bottomParams.bottomMargin = dp(index==1?4:4);
+            if(index==1){
+                HorizontalScrollView modelingShelf = new HorizontalScrollView(activity);
+                modelingShelf.setHorizontalScrollBarEnabled(true);
+                modelingShelf.setFillViewport(false);
+                modelingShelf.setBackgroundColor(0xF0181D24);
+                modelingShelf.addView(workspaceBottomDock,new HorizontalScrollView.LayoutParams(
+                        LayoutParams.WRAP_CONTENT,LayoutParams.MATCH_PARENT));
+                workspaceLayoutLayer.addView(modelingShelf,bottomParams);
+            }else{
+                workspaceLayoutLayer.addView(workspaceBottomDock,bottomParams);
+            }
         }
-        if (viewportChrome != null) viewportChrome.setSculptWorkspace(index == 2);
+        if (viewportChrome != null) {
+            viewportChrome.setSculptWorkspace(index == 2);
+            viewportChrome.setModelingWorkspace(index == 1);
+        }
+        if(index==1) applyModelingViewportInsets(workspacePanelsOpen);
+        else applyModelingViewportInsets(false);
         if (index == 2) {
             workspaceLeftDock.setVisibility(sculptEnabled ? View.VISIBLE : View.GONE);
             workspaceRightDock.setVisibility(sculptEnabled ? View.VISIBLE : View.GONE);
@@ -3364,6 +3386,17 @@ public final class ManualSculptWorkspace extends FrameLayout {
         button.setOnClickListener(v->action.run());
     }
 
+    private void applyModelingViewportInsets(boolean sideDocksOpen){
+        if(meshyViewport==null)return;
+        FrameLayout.LayoutParams params=(FrameLayout.LayoutParams)meshyViewport.getLayoutParams();
+        params.topMargin=dp(86);
+        params.leftMargin=sideDocksOpen?dp(126):0;
+        params.rightMargin=sideDocksOpen?dp(140):0;
+        // The bottom shelf is always visible in Modeling, so reserve its height.
+        params.bottomMargin=activeWorkspaceIndex==1?dp(54):0;
+        meshyViewport.setLayoutParams(params);
+    }
+
     private void setModelingDockVisibility(boolean visible){
         workspacePanelsOpen=visible;
         int state=visible?View.VISIBLE:View.GONE;
@@ -3371,7 +3404,32 @@ public final class ManualSculptWorkspace extends FrameLayout {
         if(workspaceRightDock!=null)workspaceRightDock.setVisibility(state);
         if(leftDockTab!=null)leftDockTab.setVisibility(visible?View.GONE:View.VISIBLE);
         if(rightDockTab!=null)rightDockTab.setVisibility(visible?View.GONE:View.VISIBLE);
+        applyModelingViewportInsets(visible);
         if(viewportChrome!=null)viewportChrome.setNavigationVisible(!visible);
+    }
+
+    private void runModelingTransform(String operation){
+        checkpointMeshEdit();
+        if(meshyViewport.isMeshEditMode()){
+            showTransformDialog(operation);
+        }else{
+            Meshy3DObjectScene.Object3D active=meshyViewport.getObjectScene().getActiveObject();
+            if(active==null){Toast.makeText(activity,"Select a mesh object first.",Toast.LENGTH_SHORT).show();return;}
+            meshyViewport.setObjectTransformTool(
+                    "Move".equals(operation)?0:"Rotate".equals(operation)?1:2);
+            status.setText("Modeling | "+operation+" gizmo active");
+        }
+    }
+
+    private void showModelingNumericTransform(){
+        if(meshyViewport.isMeshEditMode()){
+            new android.app.AlertDialog.Builder(activity).setTitle("Numeric Transform")
+                    .setItems(new String[]{"Move","Rotate","Scale"},(dialog,which)->
+                            showTransformDialog(new String[]{"Move","Rotate","Scale"}[which]))
+                    .setNegativeButton("Cancel",null).show();
+        }else{
+            showObjectTransformTypeDialog();
+        }
     }
 
     private void setModelingSelectionMode(String mode){
