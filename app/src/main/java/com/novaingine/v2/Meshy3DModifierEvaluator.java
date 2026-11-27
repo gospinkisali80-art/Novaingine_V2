@@ -51,6 +51,10 @@ public final class Meshy3DModifierEvaluator {
                 case "SMOOTH":
                     result.smooth(modifier.value,modifier.levels);
                     break;
+                case "WIREFRAME":
+                    requireUvSafeMesh(result,"Wireframe");
+                    result.wireframe(modifier.value);
+                    break;
                 case "BEVEL":
                     requireUvSafeMesh(result,"Bevel");
                     result.clearSelection();
