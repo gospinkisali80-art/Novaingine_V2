@@ -471,6 +471,9 @@ public final class AIEditorAssistant {
         t.put(tool("subdivide_selected","Subdivide the active mesh one to three levels.","{\"type\":\"object\",\"properties\":{\"levels\":{\"type\":\"integer\"}}}"));
         t.put(tool("smooth_selected","Smooth the active mesh using a bounded amount and iteration count.","{\"type\":\"object\",\"properties\":{\"amount\":{\"type\":\"number\"},\"iterations\":{\"type\":\"integer\"}}}"));
         t.put(tool("merge_selected","Merge selected vertices by distance.","{\"type\":\"object\",\"properties\":{\"tolerance\":{\"type\":\"number\"}},\"required\":[\"tolerance\"]}"));
+        t.put(tool("add_modifier","Add a non-destructive Meshy3D modifier to the active mesh. Supported types: MIRROR, ARRAY, BEVEL, SOLIDIFY, SUBDIVIDE, CATMULL_CLARK, TRIANGULATE, PLANAR_DECIMATE, SMOOTH, WIREFRAME.","{\"type\":\"object\",\"properties\":{\"type\":{\"type\":\"string\",\"enum\":[\"MIRROR\",\"ARRAY\",\"BEVEL\",\"SOLIDIFY\",\"SUBDIVIDE\",\"CATMULL_CLARK\",\"TRIANGULATE\",\"PLANAR_DECIMATE\",\"SMOOTH\",\"WIREFRAME\"]}},\"required\":[\"type\"]}"));
+        t.put(tool("configure_modifier","Configure an existing modifier by ID. Set enabled, levels, count, axis and value as appropriate.","{\"type\":\"object\",\"properties\":{\"modifierId\":{\"type\":\"string\"},\"enabled\":{\"type\":\"boolean\"},\"levels\":{\"type\":\"integer\"},\"count\":{\"type\":\"integer\"},\"axis\":{\"type\":\"integer\"},\"value\":{\"type\":\"number\"}},\"required\":[\"modifierId\"]}"));
+        t.put(tool("apply_modifier_stack","Apply the active object's modifier stack through the zero-based modifier index.","{\"type\":\"object\",\"properties\":{\"index\":{\"type\":\"integer\"}},\"required\":[\"index\"]}"));
         t.put(tool("unwrap_uv","Generate a planar/conformal UV unwrap for the active mesh.","{\"type\":\"object\",\"properties\":{}}"));
         t.put(tool("add_geometry_node","Add a geometry node to the active mesh document's Geometry Nodes graph.","{\"type\":\"object\",\"properties\":{\"type\":{\"type\":\"string\"},\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"},\"value\":{\"type\":\"number\"}},\"required\":[\"type\"]}"));
         t.put(tool("evaluate_geometry_nodes","Evaluate the active mesh document's Geometry Nodes graph.","{\"type\":\"object\",\"properties\":{}}"));
@@ -598,6 +601,24 @@ public final class AIEditorAssistant {
                 case "subdivide_selected": meshyWorkspace.checkpointMeshEdit();int levels=Math.max(1,Math.min(3,args.optInt("levels",1)));for(int i=0;i<levels;i++)viewport.subdivideSelected();return "Subdivided active mesh "+levels+" level(s).";
                 case "smooth_selected": meshyWorkspace.checkpointMeshEdit();viewport.smoothTopology(Math.max(0,Math.min(.8f,number(args,"amount",.25f))),Math.max(1,Math.min(8,args.optInt("iterations",2))));return "Smoothed active mesh topology.";
                 case "merge_selected": if(viewport.getSelectedElementCount()==0)return "Select components first.";meshyWorkspace.checkpointMeshEdit();viewport.mergeSelected(Math.max(.0001f,Math.min(1f,number(args,"tolerance",.001f))));return "Merged selected vertices by distance.";
+                case "add_modifier": {
+                    Meshy3DObjectScene.Object3D active=scene.getActiveObject();if(active==null||active.mesh==null)return "Select a mesh object first.";
+                    meshyWorkspace.checkpointMeshEdit();Meshy3DObjectScene.Modifier3D modifier=scene.addModifier(active.id,args.optString("type","BEVEL"));
+                    viewport.invalidate();return "Added "+modifier.type+" modifier. Modifier ID: "+modifier.id+".";
+                }
+                case "configure_modifier": {
+                    Meshy3DObjectScene.Object3D active=scene.getActiveObject();if(active==null)return "No active object.";
+                    String id=args.optString("modifierId","");Meshy3DObjectScene.Modifier3D found=null;
+                    for(Meshy3DObjectScene.Modifier3D m:scene.getModifiers(active.id))if(m.id.equals(id)){found=m;break;}
+                    if(found==null)return "Modifier ID was not found on the active object.";
+                    meshyWorkspace.checkpointMeshEdit();
+                    scene.setModifierEnabled(active.id,id,args.optBoolean("enabled",found.enabled));
+                    scene.setModifierParameters(active.id,id,Math.max(0,Math.min(2,args.optInt("axis",found.axis))),Math.max(1,Math.min(20,args.optInt("count",found.count))),Math.max(1,Math.min(3,args.optInt("levels",found.levels))),number(args,"value",found.value),found.offsetX,found.offsetY,found.offsetZ);
+                    viewport.invalidate();return "Updated "+found.type+" modifier parameters.";
+                }
+                case "apply_modifier_stack": {
+                    meshyWorkspace.checkpointMeshEdit();int index=Math.max(0,args.optInt("index",0));viewport.applyActiveObjectModifiersThrough(index);return "Applied modifier stack through index "+index+".";
+                }
                 case "unwrap_uv": meshyWorkspace.checkpointMeshEdit();viewport.unwrapMesh();return "Generated UV coordinates for the active mesh.";
                 case "add_geometry_node": meshyWorkspace.checkpointMeshEdit();viewport.addGeometryNode(args.optString("type","Transform"),number(args,"x",0),number(args,"y",0),number(args,"z",0),number(args,"value",0));return "Added geometry node to Meshy3D document.";
                 case "evaluate_geometry_nodes": meshyWorkspace.checkpointMeshEdit();viewport.evaluateGeometryNodes();return "Evaluated Geometry Nodes graph.";
