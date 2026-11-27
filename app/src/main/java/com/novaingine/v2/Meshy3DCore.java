@@ -90,7 +90,72 @@ public final class Meshy3DCore {
     public int getEdgeCount(){return edges.size();}
     public int getFaceCount(){return faces.size();}
     public SelectMode getSelectMode(){return selectMode;}
-    public void setSelectMode(SelectMode mode){selectMode=mode;clearSelection();}
+
+    /**
+     * Blender-style selection-mode conversion. Compatible components survive
+     * Vertex → Edge → Face and Face → Edge → Vertex mode changes.
+     */
+    public void setSelectMode(SelectMode mode){
+        if(mode==null||mode==selectMode)return;
+        SelectMode previous=selectMode;
+        BitSet oldVertices=(BitSet)selectedVertices.clone();
+        BitSet oldEdges=(BitSet)selectedEdges.clone();
+        BitSet oldFaces=(BitSet)selectedFaces.clone();
+        HashSet<Long> oldEdgeKeys=new HashSet<>();
+        for(int i=oldEdges.nextSetBit(0);i>=0;i=oldEdges.nextSetBit(i+1)){
+            if(i<edges.size()){Edge edge=edges.get(i);oldEdgeKeys.add(edgeKey(edge.a,edge.b));}
+        }
+        selectMode=mode;
+        clearSelection();
+
+        if(previous==SelectMode.VERTEX){
+            if(mode==SelectMode.EDGE){
+                for(int i=0;i<edges.size();i++){
+                    Edge edge=edges.get(i);
+                    if(oldVertices.get(edge.a)&&oldVertices.get(edge.b)){
+                        selectedEdges.set(i);selectedVertices.set(edge.a);selectedVertices.set(edge.b);
+                    }
+                }
+            }else if(mode==SelectMode.FACE){
+                for(int i=0;i<faces.size();i++){
+                    int[] polygon=faces.get(i).vertices;boolean complete=true;
+                    for(int vertex:polygon)if(!oldVertices.get(vertex)){complete=false;break;}
+                    if(complete){selectedFaces.set(i);faces.get(i).selected=true;
+                        for(int vertex:polygon)selectedVertices.set(vertex);}
+                }
+            }
+        }else if(previous==SelectMode.EDGE){
+            if(mode==SelectMode.VERTEX){
+                for(int i=oldEdges.nextSetBit(0);i>=0;i=oldEdges.nextSetBit(i+1)){
+                    if(i>=edges.size())continue;
+                    Edge edge=edges.get(i);selectedVertices.set(edge.a);selectedVertices.set(edge.b);
+                }
+            }else if(mode==SelectMode.FACE){
+                for(int fi=0;fi<faces.size();fi++){
+                    int[] polygon=faces.get(fi).vertices;boolean complete=true;
+                    for(int j=0;j<polygon.length;j++){
+                        if(!oldEdgeKeys.contains(edgeKey(polygon[j],polygon[(j+1)%polygon.length]))){
+                            complete=false;break;
+                        }
+                    }
+                    if(complete){selectedFaces.set(fi);faces.get(fi).selected=true;
+                        for(int vertex:polygon)selectedVertices.set(vertex);}
+                }
+            }
+        }else if(previous==SelectMode.FACE){
+            if(mode==SelectMode.VERTEX){
+                for(int fi=oldFaces.nextSetBit(0);fi>=0;fi=oldFaces.nextSetBit(fi+1))
+                    if(fi<faces.size())for(int vertex:faces.get(fi).vertices)selectedVertices.set(vertex);
+            }else if(mode==SelectMode.EDGE){
+                for(int i=0;i<edges.size();i++){
+                    Edge edge=edges.get(i);boolean belongs=false;
+                    for(int faceIndex:edge.faces)if(oldFaces.get(faceIndex)){belongs=true;break;}
+                    if(belongs){selectedEdges.set(i);selectedVertices.set(edge.a);selectedVertices.set(edge.b);}
+                }
+            }
+        }
+        revision++;
+    }
     public List<Edge> getEdges(){return Collections.unmodifiableList(edges);}
     public List<Face> getFaces(){return Collections.unmodifiableList(faces);}
     public float[] getVertex(int i){return vertices.get(i).clone();}
@@ -154,7 +219,10 @@ public final class Meshy3DCore {
         }
         if(faceUvs!=null&&faceUvs.length!=faces.size()){faceUvs=null;islands.clear();}
     }
-    public void clearSelection(){selectedVertices.clear();selectedEdges.clear();selectedFaces.clear();}
+    public void clearSelection(){
+        selectedVertices.clear();selectedEdges.clear();selectedFaces.clear();
+        for(Face face:faces)face.selected=false;
+    }
     public void selectVertex(int index,boolean additive){
         if(index<0||index>=vertices.size())return;if(!additive)clearSelection();
         selectedVertices.set(index);for(int i=0;i<edges.size();i++){Edge e=edges.get(i);if(e.a==index||e.b==index)selectedEdges.set(i);}
@@ -844,9 +912,22 @@ public final class Meshy3DCore {
         }
         faceUvs=null;islands.clear();selectedUvIsland=-1;
         clearSelection();
-        for(int i=vertexBase;i<vertices.size();i++)selectedVertices.set(i);
-        for(int i=faceBase;i<faces.size();i++)selectedFaces.set(i);
         rebuildEdges();
+        if(selectMode==SelectMode.VERTEX){
+            for(int i=vertexBase;i<vertices.size();i++)selectedVertices.set(i);
+        }else if(selectMode==SelectMode.EDGE){
+            for(int i=0;i<edges.size();i++){
+                Edge edge=edges.get(i);
+                if(edge.a>=vertexBase&&edge.b>=vertexBase){
+                    selectedEdges.set(i);selectedVertices.set(edge.a);selectedVertices.set(edge.b);
+                }
+            }
+        }else{
+            for(int i=faceBase;i<faces.size();i++){
+                selectedFaces.set(i);faces.get(i).selected=true;
+                for(int vertex:faces.get(i).vertices)selectedVertices.set(vertex);
+            }
+        }
         revision++;
     }
 
