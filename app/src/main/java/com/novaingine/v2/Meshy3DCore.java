@@ -1035,6 +1035,50 @@ public final class Meshy3DCore {
         }
         revision++;
     }
+    /** Convert each unique mesh edge into an independent rectangular wire beam. */
+    public void wireframe(float requestedThickness) {
+        float radius=Math.max(.001f,Math.min(.5f,requestedThickness));
+        if(edges.isEmpty())throw new IllegalStateException("Wireframe requires mesh edges.");
+        if(edges.size()>30000)throw new IllegalStateException("Wireframe result would exceed the mobile geometry limit.");
+        ArrayList<float[]> outputVertices=new ArrayList<>(edges.size()*8);
+        ArrayList<int[]> outputFaces=new ArrayList<>(edges.size()*6);
+        for(Edge edge:edges) {
+            float[] a=vertices.get(edge.a),b=vertices.get(edge.b);
+            float dx=b[0]-a[0],dy=b[1]-a[1],dz=b[2]-a[2];
+            float length=(float)Math.sqrt(dx*dx+dy*dy+dz*dz);
+            if(length<1e-7f)continue;
+            dx/=length;dy/=length;dz/=length;
+            float rx=Math.abs(dy)<.85f?0f:1f;
+            float ry=Math.abs(dy)<.85f?1f:0f;
+            float rz=0f;
+            float ux=dy*rz-dz*ry,uy=dz*rx-dx*rz,uz=dx*ry-dy*rx;
+            float ul=(float)Math.sqrt(ux*ux+uy*uy+uz*uz);
+            if(ul<1e-7f)continue;
+            ux/=ul;uy/=ul;uz/=ul;
+            float vx=dy*uz-dz*uy,vy=dz*ux-dx*uz,vz=dx*uy-dy*ux;
+            int base=outputVertices.size();
+            for(int endpoint=0;endpoint<2;endpoint++){
+                float[] p=endpoint==0?a:b;
+                for(int corner=0;corner<4;corner++){
+                    float su=(corner==0||corner==3)?-1f:1f;
+                    float sv=(corner<2)?-1f:1f;
+                    outputVertices.add(new float[]{p[0]+radius*(ux*su+vx*sv),
+                            p[1]+radius*(uy*su+vy*sv),p[2]+radius*(uz*su+vz*sv)});
+                }
+            }
+            for(int side=0;side<4;side++)
+                outputFaces.add(new int[]{base+side,base+(side+1)%4,
+                        base+4+(side+1)%4,base+4+side});
+            outputFaces.add(new int[]{base+3,base+2,base+1,base});
+            outputFaces.add(new int[]{base+4,base+5,base+6,base+7});
+        }
+        if(outputFaces.isEmpty())throw new IllegalStateException("No usable edges were found.");
+        faceUvs=null;islands.clear();selectedUvIsland=-1;
+        replaceGeometry(outputVertices.toArray(new float[0][]),outputFaces.toArray(new int[0][]));
+        sculptMask=new float[vertices.size()];
+        revision++;
+    }
+
     public void splitSelectedFaces(){
         if(selectedFaces.isEmpty())return;
         HashMap<Integer,Integer> duplicates=new HashMap<>();
