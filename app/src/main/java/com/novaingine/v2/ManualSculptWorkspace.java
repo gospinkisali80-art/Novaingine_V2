@@ -147,6 +147,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
         setClickable(false);
         setFocusable(true);
         setFocusableInTouchMode(true);
+        requestFocus();
 
         // Meshy3D owns this viewport and its starter cube; it is not the Novaingine GL scene.
         meshyViewport = new Meshy3DViewport(activity, this::toggleViewportFocus);
@@ -3392,7 +3393,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
         LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT,dp(38));
         lp.setMargins(dp(2),0,dp(2),0);
         workspaceBottomDock.addView(button,lp);
-        button.setOnClickListener(v->action.run());
+        button.setOnClickListener(v->{action.run();requestFocus();});
     }
 
     private void applyModelingViewportInsets(boolean sideDocksOpen){
@@ -3465,15 +3466,15 @@ public final class ManualSculptWorkspace extends FrameLayout {
             if(status!=null)status.setText("Modeling | Operation cancelled");
             return true;
         }
+        if(code==KeyEvent.KEYCODE_1){modelingNumericPending=false;setModelingSelectionMode("Vertex");return true;}
+        if(code==KeyEvent.KEYCODE_2){modelingNumericPending=false;setModelingSelectionMode("Edge");return true;}
+        if(code==KeyEvent.KEYCODE_3){modelingNumericPending=false;setModelingSelectionMode("Face");return true;}
         if(!meshyViewport.isMeshEditMode()) {
             if(code==KeyEvent.KEYCODE_G){runModelingTransform("Move");return true;}
             if(code==KeyEvent.KEYCODE_R){runModelingTransform("Rotate");return true;}
             if(code==KeyEvent.KEYCODE_S){runModelingTransform("Scale");return true;}
             return false;
         }
-        if(code==KeyEvent.KEYCODE_1){modelingNumericPending=false;setModelingSelectionMode("Vertex");return true;}
-        if(code==KeyEvent.KEYCODE_2){modelingNumericPending=false;setModelingSelectionMode("Edge");return true;}
-        if(code==KeyEvent.KEYCODE_3){modelingNumericPending=false;setModelingSelectionMode("Face");return true;}
         if(code==KeyEvent.KEYCODE_A){
             if(alt){meshyViewport.clearElementSelection();if(status!=null)status.setText("Modeling | Selection cleared");}
             else {meshyViewport.selectAllElements();if(status!=null)status.setText("Modeling | All "+meshyViewport.getSelectionMode().toLowerCase()+" elements selected");}
@@ -3497,8 +3498,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 if(modelingNumericEntry.length()>0){
                     try{
                         float amount=Float.parseFloat(modelingNumericEntry.toString());
-                        meshyViewport.applyNumericTransform(modelingNumericAxis,amount);
                         checkpointMeshEdit();
+                        meshyViewport.applyNumericTransform(modelingNumericAxis,amount);
                         if(status!=null)status.setText("Modeling | Numeric transform applied: "+modelingNumericEntry);
                     }catch(NumberFormatException ignored){
                         if(status!=null)status.setText("Modeling | Invalid numeric transform");
