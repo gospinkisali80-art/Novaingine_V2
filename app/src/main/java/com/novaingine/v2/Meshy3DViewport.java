@@ -932,6 +932,27 @@ public final class Meshy3DViewport extends View {
     public void bevelSelected(float amount){document.bevelSelectedEdges(amount);syncViewportFromCore();}
     public void loopCutSelected(float factor){document.loopCutSelected(factor);syncViewportFromCore();}
     public void subdivideSelected(){document.subdivide();syncViewportFromCore();}
+    public void subdivideCatmullClark(int levels){document.subdivideCatmullClark(levels);syncViewportFromCore();}
+    public String separateSelectedFacesToObject() {
+        if(objectSceneActiveId==null)throw new IllegalStateException("Select a mesh object first.");
+        syncCoreFromViewport();
+        Meshy3DObjectScene.Object3D source=objectScene.getObject(objectSceneActiveId);
+        if(source==null||source.mesh==null||!"MESH".equals(source.type))
+            throw new IllegalStateException("Separate Selection requires an active mesh object.");
+        Meshy3DCore detached=document.extractSelectedFaces();
+        if(detached==null)return null;
+        syncViewportFromCore();
+        Meshy3DObjectScene.Object3D created=objectScene.createMeshObject(source.name+"_separated",detached);
+        created.transform.x=source.transform.x;created.transform.y=source.transform.y;created.transform.z=source.transform.z;
+        created.transform.rotationX=source.transform.rotationX;created.transform.rotationY=source.transform.rotationY;
+        created.transform.rotationZ=source.transform.rotationZ;
+        created.transform.scaleX=source.transform.scaleX;created.transform.scaleY=source.transform.scaleY;
+        created.transform.scaleZ=source.transform.scaleZ;
+        activateSceneObject(created.id);
+        meshEditMode=false;objectSelectionEnabled=true;
+        invalidate();
+        return created.id;
+    }
     public void extrudeSelected(float amount){document.extrudeSelected(amount);syncViewportFromCore();}
     public void extrudeSelectedAlongNormals(float amount,boolean individual){document.extrudeSelectedAlongNormals(amount,individual);syncViewportFromCore();}
     public void mergeSelected(float distance){document.mergeSelectedByDistance(distance);syncViewportFromCore();}
