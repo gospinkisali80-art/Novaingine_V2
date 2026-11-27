@@ -869,8 +869,14 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     checkpointMeshEdit();meshyViewport.makePlanarSelected();status.setText("Modeling | Selected vertices projected onto a best-fit plane");
                 } else if ("Flip Normals".equals(item)) {
                     checkpointMeshEdit();meshyViewport.flipSelectedNormals();status.setText("Modeling | Selected face winding flipped");
-                } else if ("Fill".equals(item) || "Grid Fill".equals(item)) {
-                    checkpointMeshEdit();meshyViewport.fillSelectedBoundary();status.setText("Modeling | Selected closed boundary filled");
+                } else if ("Fill".equals(item)) {
+                    checkpointMeshEdit();meshyViewport.fillSelectedBoundary();
+                    status.setText("Modeling | Selected closed boundary filled with an n-gon");
+                } else if ("Grid Fill".equals(item)) {
+                    checkpointMeshEdit();
+                    if(meshyViewport.gridFillSelectedBoundary())
+                        status.setText("Modeling | Selected boundary filled with a quad grid");
+                    else Toast.makeText(activity,"Grid Fill requires one selected boundary loop with four equal edge spans.",Toast.LENGTH_LONG).show();
                 } else if ("Bridge".equals(item) || "Bridge Edge Loops".equals(item)) {
                     checkpointMeshEdit();meshyViewport.bridgeSelectedLoops();status.setText("Modeling | Selected equal-count boundary loops bridged");
                 } else if ("Bisect".equals(item)) {
