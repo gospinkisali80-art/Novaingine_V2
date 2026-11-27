@@ -58,6 +58,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private static final int ACCENT = 0xFFFFA52B;
 
     private final Activity activity;
+    private final EngineSurface engineSurface;
     private Meshy3DViewport meshyViewport;
     private int selectedSculptBrush;
     private float sculptRadiusUi=0.18f, sculptStrengthUi=0.40f, sculptFalloffUi=0.5f, sculptPressureUi=1.0f;
@@ -139,6 +140,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
     public ManualSculptWorkspace(Activity activity, EngineSurface engine, Runnable onExit) {
         super(activity);
         this.activity = activity;
+        this.engineSurface = engine;
         this.onExit = onExit;
         float density = getResources().getDisplayMetrics().density;
         float availableHeightDp = getResources().getDisplayMetrics().heightPixels / density;
@@ -223,6 +225,20 @@ public final class ManualSculptWorkspace extends FrameLayout {
             if (!redoMeshEdit()) Toast.makeText(activity, "Nothing to redo", Toast.LENGTH_SHORT).show();
         });
         titleRow.addView(redoHeader, new LinearLayout.LayoutParams(dp(30), LayoutParams.MATCH_PARENT));
+        TextView aiHeader = new TextView(activity);
+        aiHeader.setText("✦ AI");
+        aiHeader.setTextColor(0xFFFFB45C);
+        aiHeader.setTextSize(10);
+        aiHeader.setGravity(Gravity.CENTER);
+        aiHeader.setContentDescription("Open Nova AI for Meshy3D");
+        aiHeader.setOnClickListener(v -> {
+            if (engineSurface == null) {
+                Toast.makeText(activity, "AI connection is unavailable.", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            new AIEditorAssistant(activity, engineSurface, this).show();
+        });
+        titleRow.addView(aiHeader, new LinearLayout.LayoutParams(dp(42), LayoutParams.MATCH_PARENT));
         TextView topMore = new TextView(activity);
         topMore.setText("⋮");
         topMore.setTextColor(0xFFE5EAF0);
@@ -3947,6 +3963,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
         if (savedWorkspace >= 0 && savedWorkspace < WORKSPACE_NAMES.length) setActiveWorkspaceIndex(savedWorkspace);
         return true;
     }
+
+    public Meshy3DViewport getMeshyViewport() { return meshyViewport; }
 
     public int getActiveWorkspaceIndex() { return activeWorkspaceIndex; }
 
