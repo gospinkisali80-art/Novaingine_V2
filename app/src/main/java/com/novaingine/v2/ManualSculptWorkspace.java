@@ -1672,7 +1672,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 button.setOnClickListener(v -> {
                     try {
                         float factor = Float.parseFloat(factorInput.getText().toString().trim());
-                        if (!Float.isFinite(factor) || factor <= 0f || factor > 100f) {
+                        if (Float.isNaN(factor) || Float.isInfinite(factor) || factor <= 0f || factor > 100f) {
                             throw new NumberFormatException();
                         }
                         float x = axis.contains("X") ? factor : 1f;
