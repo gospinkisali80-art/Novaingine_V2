@@ -1446,30 +1446,38 @@ public final class Meshy3DViewport extends View {
         boolean hasActiveTexture=meshEditMode&&document.hasTexture()&&document.hasFaceUvs();
         // Draw only outward-facing faces, sorted far-to-near. This prevents the
         // previous see-through/inverted-looking cube caused by drawing all six sides.
-        int[] order=new int[drawFaces.length];
-        float[] depth=new float[drawFaces.length];
+        // Pack sortable camera depth and face index into primitive longs. Sorting
+        // these keys is O(n log n), avoiding the old O(n^2) nested-loop sort on
+        // every frame (which became prohibitively expensive on dense edit meshes).
+        long[] depthOrder=new long[drawFaces.length];
         int count=0;
         for(int f=0;f<drawFaces.length;f++){
             int[] face=drawFaces[f];
+            if(face==null||face.length<3)continue;
+            boolean valid=true;
+            for(int id:face)if(id<0||id>=drawVertices.length){valid=false;break;}
+            if(!valid)continue;
             float[] a=cameraPoint(drawVertices[face[0]][0],drawVertices[face[0]][1],drawVertices[face[0]][2]);
             float[] b=cameraPoint(drawVertices[face[1]][0],drawVertices[face[1]][1],drawVertices[face[1]][2]);
             float[] c=cameraPoint(drawVertices[face[2]][0],drawVertices[face[2]][1],drawVertices[face[2]][2]);
             float abx=b[0]-a[0], aby=b[1]-a[1], abz=b[2]-a[2];
             float acx=c[0]-a[0], acy=c[1]-a[1], acz=c[2]-a[2];
             float nx=aby*acz-abz*acy, ny=abz*acx-abx*acz, nz=abx*acy-aby*acx;
-            float centerZ=0f;for(int id:face)centerZ+=cameraPoint(drawVertices[id][0],drawVertices[id][1],drawVertices[id][2])[2];centerZ/=face.length;
+            float centerZ=0f;
+            for(int id:face)centerZ+=cameraPoint(drawVertices[id][0],drawVertices[id][1],drawVertices[id][2])[2];
+            centerZ/=face.length;
             // Camera looks toward negative camera-Z; visible outward normals face camera.
             boolean wireFace=!meshEditMode&&renderData.wireFaces!=null
                     &&f<renderData.wireFaces.length&&renderData.wireFaces[f];
             if(wireFace||nx*0f+ny*0f+nz > 0.0001f) {
-                order[count]=f; depth[f]=centerZ; count++;
+                int bits=Float.floatToIntBits(centerZ);
+                int sortable=bits^((bits>>31)&0x7fffffff);
+                depthOrder[count++]=((long)sortable<<32)|(f&0xffffffffL);
             }
         }
-        for(int i=0;i<count;i++) for(int j=i+1;j<count;j++) if(depth[order[i]]>depth[order[j]]){
-            int t=order[i]; order[i]=order[j]; order[j]=t;
-        }
+        java.util.Arrays.sort(depthOrder,0,count);
         for(int n=0;n<count;n++){
-            int f=order[n]; int[] face=drawFaces[f];
+            int f=(int)depthOrder[n]; int[] face=drawFaces[f];
             float[] ca=cameraPoint(drawVertices[face[0]][0],drawVertices[face[0]][1],drawVertices[face[0]][2]);
             float[] cb=cameraPoint(drawVertices[face[1]][0],drawVertices[face[1]][1],drawVertices[face[1]][2]);
             float[] cc=cameraPoint(drawVertices[face[2]][0],drawVertices[face[2]][1],drawVertices[face[2]][2]);
