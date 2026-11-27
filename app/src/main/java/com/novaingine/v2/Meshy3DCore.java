@@ -272,15 +272,33 @@ public final class Meshy3DCore {
     public void transformSelected(float x,float y,float z,int operation){
         BitSet targets=(BitSet)selectedVertices.clone();
         if(targets.isEmpty())targets.set(0,vertices.size());
+        // Edit Mode transforms use the median of the selected components as
+        // their pivot, matching the expected vertex/edge/face editing behavior.
+        float pivotX=0f,pivotY=0f,pivotZ=0f;
+        if(operation==1||operation==2){
+            int count=targets.cardinality();
+            if(count>0)for(int i=targets.nextSetBit(0);i>=0;i=targets.nextSetBit(i+1)){
+                float[] p=vertices.get(i);pivotX+=p[0]/count;pivotY+=p[1]/count;pivotZ+=p[2]/count;
+            }
+        }
         for(int i=targets.nextSetBit(0);i>=0;i=targets.nextSetBit(i+1)){
             float[] p=vertices.get(i);
             if(operation==0){p[0]+=x;p[1]+=y;p[2]+=z;}
-            else if(operation==1){double rx=Math.toRadians(x),ry=Math.toRadians(y),rz=Math.toRadians(z);
-                float yy=(float)(p[1]*Math.cos(rx)-p[2]*Math.sin(rx)),zz=(float)(p[1]*Math.sin(rx)+p[2]*Math.cos(rx));
-                float xx=(float)(p[0]*Math.cos(ry)+zz*Math.sin(ry)),z2=(float)(-p[0]*Math.sin(ry)+zz*Math.cos(ry));
-                p[0]=(float)(xx*Math.cos(rz)-yy*Math.sin(rz));p[1]=(float)(xx*Math.sin(rz)+yy*Math.cos(rz));p[2]=z2;
-            }else if(operation==2){p[0]*=x;p[1]*=y;p[2]*=z;}
-        }revision++;
+            else if(operation==1){
+                float ox=p[0]-pivotX,oy=p[1]-pivotY,oz=p[2]-pivotZ;
+                double rx=Math.toRadians(x),ry=Math.toRadians(y),rz=Math.toRadians(z);
+                float yy=(float)(oy*Math.cos(rx)-oz*Math.sin(rx)),zz=(float)(oy*Math.sin(rx)+oz*Math.cos(rx));
+                float xx=(float)(ox*Math.cos(ry)+zz*Math.sin(ry)),z2=(float)(-ox*Math.sin(ry)+zz*Math.cos(ry));
+                p[0]=pivotX+(float)(xx*Math.cos(rz)-yy*Math.sin(rz));
+                p[1]=pivotY+(float)(xx*Math.sin(rz)+yy*Math.cos(rz));
+                p[2]=pivotZ+z2;
+            }else if(operation==2){
+                p[0]=pivotX+(p[0]-pivotX)*x;
+                p[1]=pivotY+(p[1]-pivotY)*y;
+                p[2]=pivotZ+(p[2]-pivotZ)*z;
+            }
+        }
+        revision++;
     }
     public void markSelectedSeams(boolean clear){
         if(clear){for(int i=selectedEdges.nextSetBit(0);i>=0;i=selectedEdges.nextSetBit(i+1)){Edge e=edges.get(i);seams.remove(edgeKey(e.a,e.b));}}
