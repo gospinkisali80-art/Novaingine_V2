@@ -45,6 +45,7 @@ final class Meshy3DViewportChrome extends FrameLayout {
     private final HorizontalScrollView bottomScroll;
     private final LinearLayout transformTools;
     private boolean navigationVisible = true;
+    private boolean modelingWorkspace;
     private boolean moreMode;
     private int activeTool = 0;
 
@@ -270,6 +271,7 @@ final class Meshy3DViewportChrome extends FrameLayout {
 
     /** Hide floating controls while Modeling docks own the left, right and bottom regions. */
     void setModelingWorkspace(boolean modeling) {
+        modelingWorkspace = modeling;
         if (modeling) {
             leftToolScroll.setVisibility(GONE);
             transformTools.setVisibility(GONE);
@@ -297,6 +299,7 @@ final class Meshy3DViewportChrome extends FrameLayout {
      * Every entry routes to the same viewport/workspace actions as the desktop-style controls.
      */
     void setSculptWorkspace(boolean sculpt) {
+        if (modelingWorkspace) return;
         leftToolScroll.setVisibility(sculpt ? GONE : VISIBLE);
         transformTools.setVisibility(sculpt ? GONE : VISIBLE);
         bottomTools.removeAllViews();
