@@ -459,6 +459,13 @@ public final class AIEditorAssistant {
         t.put(tool("inspect_meshy_scene","Inspect Meshy3D objects, active object, mesh counts, selection mode and selected component count.","{\"type\":\"object\",\"properties\":{}}"));
         t.put(tool("create_mesh_part","Create a real Meshy3D mesh object from local xyz vertices and triangle indices. Positions are flat xyz values; triangles are flat index triplets. Keep parts below 3000 vertices and 6000 triangles.","{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"},\"positions\":{\"type\":\"array\",\"items\":{\"type\":\"number\"},\"minItems\":9,\"maxItems\":9000},\"triangles\":{\"type\":\"array\",\"items\":{\"type\":\"integer\"},\"minItems\":3,\"maxItems\":18000},\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"},\"r\":{\"type\":\"number\"},\"g\":{\"type\":\"number\"},\"b\":{\"type\":\"number\"},\"metallic\":{\"type\":\"number\"},\"roughness\":{\"type\":\"number\"}},\"required\":[\"positions\",\"triangles\"]}"));
         t.put(tool("create_ellipsoid","Create a smooth real Meshy3D ellipsoid mesh object with independent radii.","{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"},\"rx\":{\"type\":\"number\"},\"ry\":{\"type\":\"number\"},\"rz\":{\"type\":\"number\"},\"rings\":{\"type\":\"integer\"},\"segments\":{\"type\":\"integer\"},\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"},\"r\":{\"type\":\"number\"},\"g\":{\"type\":\"number\"},\"b\":{\"type\":\"number\"}}}"));
+        t.put(tool("add_primitive","Add a real Meshy3D primitive object. Supported names include Cube, Plane, UV Sphere, Icosphere, Cylinder, Cone, Torus, Grid and Monkey when available in the primitive factory.","{\"type\":\"object\",\"properties\":{\"primitive\":{\"type\":\"string\"}},\"required\":[\"primitive\"]}"));
+        t.put(tool("add_scene_object","Add a Camera, Light or Empty object to the Meshy3D scene.","{\"type\":\"object\",\"properties\":{\"type\":{\"type\":\"string\",\"enum\":[\"CAMERA\",\"LIGHT\",\"EMPTY\"]}},\"required\":[\"type\"]}"));
+        t.put(tool("duplicate_active_object","Duplicate the active Meshy3D object. linked=true shares the mesh datablock; false creates an independent copy.","{\"type\":\"object\",\"properties\":{\"linked\":{\"type\":\"boolean\"}}}"));
+        t.put(tool("set_active_visibility","Set viewport visibility of the active Meshy3D object.","{\"type\":\"object\",\"properties\":{\"visible\":{\"type\":\"boolean\"}},\"required\":[\"visible\"]}"));
+        t.put(tool("set_scene_cursor","Move the Meshy3D 3D cursor to world coordinates x/y/z.","{\"type\":\"object\",\"properties\":{\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"}}}"));
+        t.put(tool("frame_selected_objects","Frame the selected Meshy3D objects in the viewport.","{\"type\":\"object\",\"properties\":{}}"));
+        t.put(tool("frame_all_objects","Frame all visible Meshy3D objects in the viewport.","{\"type\":\"object\",\"properties\":{}}"));
         t.put(tool("rename_active_object","Rename the active Meshy3D object.","{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"}},\"required\":[\"name\"]}"));
         t.put(tool("transform_active_object","Transform the active object. operation is move, rotate or scale; x/y/z are offsets, radians, or scale multipliers respectively.","{\"type\":\"object\",\"properties\":{\"operation\":{\"type\":\"string\",\"enum\":[\"move\",\"rotate\",\"scale\"]},\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"}},\"required\":[\"operation\"]}"));
         t.put(tool("set_material","Set the active mesh base color and PBR metallic/roughness values. RGB values range from 0 to 1.","{\"type\":\"object\",\"properties\":{\"r\":{\"type\":\"number\"},\"g\":{\"type\":\"number\"},\"b\":{\"type\":\"number\"},\"metallic\":{\"type\":\"number\"},\"roughness\":{\"type\":\"number\"}}}"));
@@ -574,6 +581,25 @@ public final class AIEditorAssistant {
                     int count=viewport.applyAISculptStroke(brushId,points,Math.max(.02f,Math.min(1f,number(args,"radius",.18f))),Math.max(0,Math.min(1,number(args,"strength",.4f))),Math.max(0,Math.min(1,number(args,"falloff",.5f))),symmetry,args.optBoolean("subtract",false));
                     return "Applied "+brush+" sculpt stroke to Meshy3D mesh ("+count+" vertices).";
                 }
+                case "add_primitive": {
+                    meshyWorkspace.checkpointMeshEdit();String id=viewport.addPrimitiveObject(args.optString("primitive","Cube"));return "Added Meshy3D primitive object. Object ID: "+id+".";
+                }
+                case "add_scene_object": {
+                    meshyWorkspace.checkpointMeshEdit();String type=args.optString("type","EMPTY").toUpperCase(java.util.Locale.US);
+                    String id="CAMERA".equals(type)?viewport.addCameraObject():"LIGHT".equals(type)?viewport.addLightObject():viewport.addEmptyObject();
+                    return "Added Meshy3D "+type+" object. Object ID: "+id+".";
+                }
+                case "duplicate_active_object": {
+                    if(scene.getActiveObject()==null)return "No active object to duplicate.";
+                    meshyWorkspace.checkpointMeshEdit();String id=viewport.duplicateActiveObject(args.optBoolean("linked",false));return "Duplicated active Meshy3D object. New object ID: "+id+".";
+                }
+                case "set_active_visibility": {
+                    if(scene.getActiveObject()==null)return "No active object.";
+                    meshyWorkspace.checkpointMeshEdit();viewport.setActiveObjectVisible(args.optBoolean("visible",true));return "Updated active object visibility.";
+                }
+                case "set_scene_cursor": viewport.setSceneCursorLocation(number(args,"x",0),number(args,"y",0),number(args,"z",0));return "Moved the Meshy3D 3D cursor.";
+                case "frame_selected_objects": viewport.frameSelectedObjects();return "Framed selected Meshy3D objects.";
+                case "frame_all_objects": viewport.frameAllObjects();return "Framed all Meshy3D objects.";
                 case "rename_active_object": {
                     String n=args.optString("name","").trim();if(n.isEmpty())return "Name cannot be empty.";
                     meshyWorkspace.checkpointMeshEdit();viewport.renameActiveObject(n);viewport.invalidate();return "Renamed active Meshy3D object to "+n+".";
