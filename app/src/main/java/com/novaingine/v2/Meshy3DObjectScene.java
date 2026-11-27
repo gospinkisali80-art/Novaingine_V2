@@ -107,6 +107,7 @@ public final class Meshy3DObjectScene {
             this.id=id;this.type=type;
             if("BEVEL".equals(type))value=.1f;
             else if("SOLIDIFY".equals(type))value=.1f;
+            else if("WIREFRAME".equals(type))value=.05f;
             else if("SUBDIVIDE".equals(type)||"CATMULL_CLARK".equals(type))levels=1;
             else if("PLANAR_DECIMATE".equals(type))value=15f;
             else if("SMOOTH".equals(type)){value=.25f;levels=2;}
@@ -418,7 +419,7 @@ public final class Meshy3DObjectScene {
             throw new IllegalArgumentException("Modifiers can only be added to mesh objects.");
         String clean=cleanModifierType(type);
         if(("BEVEL".equals(clean)||"SOLIDIFY".equals(clean)||"CATMULL_CLARK".equals(clean)
-                ||"TRIANGULATE".equals(clean)||"PLANAR_DECIMATE".equals(clean))
+                ||"TRIANGULATE".equals(clean)||"PLANAR_DECIMATE".equals(clean)||"WIREFRAME".equals(clean))
                 &&(object.mesh.hasTexture()||object.mesh.copyFaceUvs()!=null))
             throw new IllegalArgumentException(clean+" currently requires a mesh without an image texture or UV map so the existing UV data is not corrupted.");
         Modifier3D modifier=new Modifier3D(UUID.randomUUID().toString(),clean);
@@ -471,6 +472,8 @@ public final class Meshy3DObjectScene {
             throw new IllegalArgumentException("Bevel width must be between 0.001 and 0.49.");
         if("SOLIDIFY".equals(modifier.type)&&Math.abs(value)<.0001f)
             throw new IllegalArgumentException("Solidify thickness must be non-zero.");
+        if("WIREFRAME".equals(modifier.type)&&(value<.001f||value>.5f))
+            throw new IllegalArgumentException("Wireframe thickness must be between 0.001 and 0.5.");
         modifier.axis=axis;modifier.count=count;modifier.levels=levels;modifier.value=value;
         modifier.offsetX=offsetX;modifier.offsetY=offsetY;modifier.offsetZ=offsetZ;revision++;
     }
@@ -480,7 +483,8 @@ public final class Meshy3DObjectScene {
         if(!"MIRROR".equals(clean)&&!"ARRAY".equals(clean)&&!"BEVEL".equals(clean)
                 &&!"SOLIDIFY".equals(clean)&&!"SUBDIVIDE".equals(clean)
                 &&!"CATMULL_CLARK".equals(clean)&&!"TRIANGULATE".equals(clean)
-                &&!"PLANAR_DECIMATE".equals(clean)&&!"SMOOTH".equals(clean))
+                &&!"PLANAR_DECIMATE".equals(clean)&&!"SMOOTH".equals(clean)
+                &&!"WIREFRAME".equals(clean))
             throw new IllegalArgumentException("Unsupported modifier type.");
         return clean;
     }
