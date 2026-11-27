@@ -21,8 +21,46 @@ public final class Meshy3DPrimitiveFactory {
         else if("Grid".equalsIgnoreCase(type))g=grid(16,16);
         else if("Monkey".equalsIgnoreCase(type)||"Suzanne".equalsIgnoreCase(type))g=monkeyHead();
         else throw new IllegalArgumentException("Unsupported primitive: "+type);
+        orientFacesForViewport(g,"Plane".equalsIgnoreCase(type)
+                ||"Circle".equalsIgnoreCase(type)||"Grid".equalsIgnoreCase(type));
         mesh.replaceGeometry(g.vertices,g.faces);
         return mesh;
+    }
+
+    /**
+     * The viewport uses back-face culling. Procedural meshes must therefore have
+     * consistent outward winding or they can be created in the scene but appear
+     * missing. Flat primitives face +Y; closed primitives are oriented outward
+     * using their vertex centroid.
+     */
+    private static void orientFacesForViewport(Geometry geometry,boolean flatSurface) {
+        if(geometry.vertices.length==0||geometry.faces.length==0)return;
+        float cx=0f,cy=0f,cz=0f;
+        for(float[] p:geometry.vertices){cx+=p[0];cy+=p[1];cz+=p[2];}
+        cx/=geometry.vertices.length;cy/=geometry.vertices.length;cz/=geometry.vertices.length;
+        double orientation=0.0;
+        for(int[] face:geometry.faces) {
+            if(face==null||face.length<3)continue;
+            float[] a=geometry.vertices[face[0]];
+            float[] b=geometry.vertices[face[1]];
+            float[] d=geometry.vertices[face[2]];
+            float abx=b[0]-a[0],aby=b[1]-a[1],abz=b[2]-a[2];
+            float acx=d[0]-a[0],acy=d[1]-a[1],acz=d[2]-a[2];
+            float nx=aby*acz-abz*acy;
+            float ny=abz*acx-abx*acz;
+            float nz=abx*acy-aby*acx;
+            if(flatSurface)orientation+=ny;
+            else {
+                float fx=0f,fy=0f,fz=0f;
+                for(int id:face){float[] p=geometry.vertices[id];fx+=p[0];fy+=p[1];fz+=p[2];}
+                float inv=1f/face.length;
+                orientation+=nx*(fx*inv-cx)+ny*(fy*inv-cy)+nz*(fz*inv-cz);
+            }
+        }
+        if(orientation<0.0)for(int[] face:geometry.faces)
+            for(int left=0,right=face.length-1;left<right;left++,right--){
+                int swap=face[left];face[left]=face[right];face[right]=swap;
+            }
     }
 
     private static final class Geometry {
