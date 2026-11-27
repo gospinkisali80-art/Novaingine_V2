@@ -818,6 +818,38 @@ public final class Meshy3DCore {
         }
         faceUvs=copy;rebuildIslands();selectedUvIsland=-1;revision++;
     }
+    /** Append primitive geometry to the active editable mesh in mesh-local coordinates. */
+    public void appendGeometry(float[][] addedVertices,int[][] addedFaces,float offsetX,float offsetY,float offsetZ) {
+        if(addedVertices==null||addedFaces==null)
+            throw new IllegalArgumentException("Added mesh vertices and faces are required.");
+        if(addedVertices.length==0||addedFaces.length==0)
+            throw new IllegalArgumentException("The added primitive has no polygon geometry.");
+        int vertexBase=vertices.size(),faceBase=faces.size();
+        for(float[] point:addedVertices) {
+            if(point==null||point.length<3||!Float.isFinite(point[0])||!Float.isFinite(point[1])
+                    ||!Float.isFinite(point[2]))
+                throw new IllegalArgumentException("Primitive coordinates must be finite XYZ values.");
+            vertices.add(new float[]{point[0]+offsetX,point[1]+offsetY,point[2]+offsetZ});
+        }
+        for(int[] polygon:addedFaces) {
+            if(polygon==null||polygon.length<3)
+                throw new IllegalArgumentException("Primitive polygons need at least three vertices.");
+            int[] copy=polygon.clone();
+            for(int i=0;i<copy.length;i++) {
+                if(copy[i]<0||copy[i]>=addedVertices.length)
+                    throw new IllegalArgumentException("Primitive polygon index is out of range.");
+                copy[i]+=vertexBase;
+            }
+            faces.add(new Face(copy));
+        }
+        faceUvs=null;islands.clear();selectedUvIsland=-1;
+        clearSelection();
+        for(int i=vertexBase;i<vertices.size();i++)selectedVertices.set(i);
+        for(int i=faceBase;i<faces.size();i++)selectedFaces.set(i);
+        rebuildEdges();
+        revision++;
+    }
+
     public void replaceGeometry(float[][] v,int[][] f){replaceGeometry(v,f,null,false);}
     public void replaceGeometry(float[][] v,int[][] f,float[][][] uvs){replaceGeometry(v,f,uvs,true);}
     private void replaceGeometry(float[][] v,int[][] f,float[][][] uvs,boolean replaceUvs){
