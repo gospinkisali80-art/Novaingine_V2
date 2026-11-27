@@ -1583,6 +1583,10 @@ public final class ManualSculptWorkspace extends FrameLayout {
     }
 
     private void showTransformDialog(String operation) {
+        if ("Scale".equals(operation) && meshyViewport.isMeshEditMode()) {
+            showComponentScaleDialog();
+            return;
+        }
         LinearLayout panel = new LinearLayout(activity);
         panel.setPadding(dp(18), dp(8), dp(18), dp(8)); panel.setOrientation(LinearLayout.VERTICAL);
         EditText[] fields = new EditText[3]; String[] axes = {"X", "Y", "Z"};
@@ -1609,6 +1613,90 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         Toast.makeText(activity, "Enter valid X, Y and Z values.", Toast.LENGTH_SHORT).show();
                     }
                 }).setNegativeButton("Cancel", null).show();
+    }
+
+    /**
+     * Scale only the selected vertices (including vertices belonging to selected
+     * edges/faces). Plane buttons leave the perpendicular axis unchanged.
+     */
+    private void showComponentScaleDialog() {
+        if (meshyViewport.getSelectedElementCount() <= 0) {
+            Toast.makeText(activity, "Select vertices, edges or faces first.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        LinearLayout panel = new LinearLayout(activity);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(16), dp(10), dp(16), dp(8));
+        TextView hint = new TextView(activity);
+        hint.setText("Scale selected " + meshyViewport.getSelectionMode().toLowerCase()
+                + " components around their median pivot.");
+        hint.setTextColor(0xFFE0E0E0);
+        hint.setTextSize(13);
+        panel.addView(hint);
+        EditText factorInput = new EditText(activity);
+        factorInput.setSingleLine(true);
+        factorInput.setHint("Scale factor (e.g. 1.5)");
+        factorInput.setInputType(android.text.InputType.TYPE_CLASS_NUMBER
+                | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+                | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+        factorInput.setText("1.5");
+        panel.addView(factorInput);
+        TextView axesHint = new TextView(activity);
+        axesHint.setText("Choose an axis or plane:");
+        axesHint.setTextColor(0xFFB8C2CE);
+        axesHint.setTextSize(12);
+        axesHint.setPadding(0, dp(8), 0, dp(4));
+        panel.addView(axesHint);
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(activity)
+                .setTitle("Scale Selected Components")
+                .setView(panel)
+                .setNegativeButton("Cancel", null)
+                .create();
+        String[] labels = {"X", "Y", "Z", "XY", "XZ", "YZ", "XYZ"};
+        for (int start = 0; start < labels.length; start += 4) {
+            LinearLayout row = new LinearLayout(activity);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER);
+            panel.addView(row);
+            for (int i = start; i < Math.min(labels.length, start + 4); i++) {
+                final String axis = labels[i];
+                TextView button = new TextView(activity);
+                button.setText(axis);
+                button.setTextColor(Color.WHITE);
+                button.setTextSize(12);
+                button.setGravity(Gravity.CENTER);
+                button.setBackground(makePanelBackground(0xFF394653, dp(5)));
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(40), 1f);
+                lp.setMargins(dp(3), dp(3), dp(3), dp(3));
+                row.addView(button, lp);
+                button.setOnClickListener(v -> {
+                    try {
+                        float factor = Float.parseFloat(factorInput.getText().toString().trim());
+                        if (!Float.isFinite(factor) || factor <= 0f || factor > 100f) {
+                            throw new NumberFormatException();
+                        }
+                        float x = axis.contains("X") ? factor : 1f;
+                        float y = axis.contains("Y") ? factor : 1f;
+                        float z = axis.contains("Z") ? factor : 1f;
+                        checkpointMeshEdit();
+                        meshyViewport.transformMesh(2, x, y, z);
+                        status.setText("Modeling | Selected components scaled on " + axis
+                                + " by " + factor);
+                        dialog.dismiss();
+                    } catch (NumberFormatException error) {
+                        factorInput.setError("Enter a scale factor greater than 0 and up to 100.");
+                    }
+                });
+            }
+        }
+        dialog.show();
+    }
+
+    private android.graphics.drawable.Drawable makePanelBackground(int color, float radius) {
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(color);
+        background.setCornerRadius(radius);
+        return background;
     }
 
     /** Entry point used by the viewport Add button and Modeling workspace. */
