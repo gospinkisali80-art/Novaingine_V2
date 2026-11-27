@@ -676,7 +676,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 } else if ("Active Camera".equals(item)) {
                     Meshy3DObjectScene.Object3D camera=meshyViewport.getObjectScene().getActiveCamera();
                     status.setText("Modeling | Active camera: "+(camera==null?"None":camera.name));
-                } else if ("Add Primitive".equals(item)) showPrimitiveDialog();
+                } else if ("Add Menu".equals(item) || "Add Primitive".equals(item)) showAddMenuDialog();
+                else if ("Add → Mesh".equals(item)) showAddMeshMenuDialog();
                 else if ("Add Camera".equals(item)) {
                     checkpointMeshEdit();meshyViewport.addCameraObject();meshyViewport.setMeshEditMode(false);
                     refreshModelingOutliner();status.setText("Modeling | Camera object added");
@@ -1547,23 +1548,91 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 }).setNegativeButton("Cancel", null).show();
     }
 
-    private void showPrimitiveDialog() {
-        String[] primitives={"Cube","Plane","UV Sphere","Icosphere","Cylinder","Cone","Torus",
-                "Camera","Point Light","Sun Light","Spot Light","Area Light","Empty"};
-        new android.app.AlertDialog.Builder(activity).setTitle("Add Object")
-                .setItems(primitives,(dialog,which)->{
-                    checkpointMeshEdit();String type=primitives[which];
-                    if("Camera".equals(type))meshyViewport.addCameraObject();
-                    else if(type.endsWith("Light")){
-                        meshyViewport.addLightObject();
-                        String lightType=type.substring(0,type.indexOf(" Light")).toUpperCase(java.util.Locale.ROOT);
-                        meshyViewport.setActiveLightSettings(lightType,1000f,45f,0xFFFFFFFF);
-                    } else if("Empty".equals(type))meshyViewport.addEmptyObject();
-                    else meshyViewport.addPrimitiveObject(type);
-                    activeEditorMode="Object Mode";if(modeButton!=null)modeButton.setText(activeEditorMode);
-                    meshyViewport.setMeshEditMode(false);meshyViewport.setObjectSelectionEnabled(true);
-                    refreshModelingOutliner();status.setText("Modeling | "+type+" object added");
-                }).setNegativeButton("Cancel",null).show();
+    /** Entry point used by the viewport Add button and Modeling workspace. */
+    private void showPrimitiveDialog() { showAddMenuDialog(); }
+
+    /** Blender-style Add menu: categories first, then a dedicated Mesh submenu. */
+    private void showAddMenuDialog() {
+        String[] categories={"Mesh  ›","Camera","Light","Empty"};
+        new android.app.AlertDialog.Builder(activity).setTitle("Add")
+                .setItems(categories,(dialog,which)->{
+                    switch(which) {
+                        case 0: showAddMeshMenuDialog(); break;
+                        case 1: addSceneObjectAtCursor("Camera"); break;
+                        case 2: showAddLightMenuDialog(); break;
+                        case 3: addSceneObjectAtCursor("Empty"); break;
+                    }
+                }).setNegativeButton("Close",null).show();
+    }
+
+    /** Add → Mesh. These are the currently supported editable mesh primitives. */
+    private void showAddMeshMenuDialog() {
+        String[] meshes={"Plane","Cube","Circle","UV Sphere","Icosphere",
+                "Cylinder","Cone","Torus","Grid","Monkey (Suzanne)"};
+        new android.app.AlertDialog.Builder(activity).setTitle("Add  ›  Mesh")
+                .setItems(meshes,(dialog,which)->{
+                    String primitive=meshes[which];
+                    if("Monkey (Suzanne)".equals(primitive))primitive="Monkey";
+                    addMeshPrimitive(primitive);
+                }).setNegativeButton("Back", (dialog,which)->showAddMenuDialog()).show();
+    }
+
+    private void addMeshPrimitive(String primitive) {
+        boolean editMode=meshyViewport.isMeshEditMode();
+        checkpointMeshEdit();
+        try {
+            String activeId=meshyViewport.addPrimitiveObject(primitive);
+            if(editMode&&activeId!=null) {
+                activeEditorMode="Edit Mode";
+                if(modeButton!=null)modeButton.setText(activeEditorMode);
+                meshyViewport.setMeshEditMode(true);
+                meshyViewport.setObjectSelectionEnabled(false);
+                status.setText("Modeling | "+primitive+" geometry added to active mesh at the 3D Cursor");
+            } else {
+                activeEditorMode="Object Mode";
+                if(modeButton!=null)modeButton.setText(activeEditorMode);
+                meshyViewport.setMeshEditMode(false);
+                meshyViewport.setObjectSelectionEnabled(true);
+                status.setText("Modeling | "+primitive+" object added at the 3D Cursor");
+            }
+            refreshModelingOutliner();
+        } catch(Exception error) {
+            showObjectOperationError(error);
+        }
+    }
+
+    private void showAddLightMenuDialog() {
+        String[] lights={"Point Light","Sun Light","Spot Light","Area Light"};
+        new android.app.AlertDialog.Builder(activity).setTitle("Add  ›  Light")
+                .setItems(lights,(dialog,which)->addSceneObjectAtCursor(lights[which]))
+                .setNegativeButton("Back",(dialog,which)->showAddMenuDialog()).show();
+    }
+
+    private void addSceneObjectAtCursor(String type) {
+        checkpointMeshEdit();
+        try {
+            float[] cursor=meshyViewport.getSceneCursorLocation();
+            String id;
+            if("Camera".equals(type)) {
+                id=meshyViewport.addCameraObject();
+            } else if("Empty".equals(type)) {
+                id=meshyViewport.addEmptyObject();
+            } else {
+                id=meshyViewport.addLightObject();
+                String lightType=type.substring(0,type.indexOf(" Light"))
+                        .toUpperCase(java.util.Locale.ROOT);
+                meshyViewport.setActiveLightSettings(lightType,1000f,45f,0xFFFFFFFF);
+            }
+            if(id!=null)meshyViewport.getObjectScene().setWorldLocation(id,cursor[0],cursor[1],cursor[2]);
+            activeEditorMode="Object Mode";
+            if(modeButton!=null)modeButton.setText(activeEditorMode);
+            meshyViewport.setMeshEditMode(false);
+            meshyViewport.setObjectSelectionEnabled(true);
+            refreshModelingOutliner();
+            status.setText("Modeling | "+type+" added at the 3D Cursor");
+        } catch(Exception error) {
+            showObjectOperationError(error);
+        }
     }
 
     private void showObjectTypeDialog() {
@@ -3052,7 +3121,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         "Bisect", "Bridge", "Fill", "Subdivide", "Merge", "Dissolve", "Separate"};
                 leftTitle = "Modeling Tools";
                 leftItems = new String[]{
-                        "OBJECT MODE", "Select", "Select Box", "Add Primitive", "Add Camera", "Add Light", "Add Empty", "Add Cube",
+                        "OBJECT MODE", "Select", "Select Box", "Add Menu", "Add → Mesh", "Add Camera", "Add Light", "Add Empty", "Add Cube",
                         "Duplicate", "Duplicate Linked", "Delete Object", "Delete Selected Objects", "Delete by Type", "Join Selected Meshes",
                         "Select All Objects", "Deselect Objects", "Invert Selection", "Select Object", "Select By Type",
                         "Select Hierarchy", "Select by Name", "Select Active Camera", "Select Linked Data", "Rename Object", "Hide / Show Object",
