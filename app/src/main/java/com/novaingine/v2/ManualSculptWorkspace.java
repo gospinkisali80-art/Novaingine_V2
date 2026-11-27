@@ -935,7 +935,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                 } else if ("Subdivision Surface".equals(item)) {
                     checkpointMeshEdit();meshyViewport.subdivideCatmullClark(1);
                     status.setText("Modeling | Catmull-Clark subdivision level 1 applied");
-                } else if ("Weighted Normal".equals(item) || "Normals".equals(item)) {
+                } else if ("Recalculate Normals".equals(item) || "Normals".equals(item)) {
                     checkpointMeshEdit();meshyViewport.recalculateNormals();status.setText("Modeling | Face winding and normals recalculated");
                 } else if ("Edge Slide".equals(item) || "Vertex Slide".equals(item)) {
                     showAmountDialog(item+" factor",0f,1f,value->{checkpointMeshEdit();meshyViewport.slideSelected(value,"Edge Slide".equals(item));status.setText("Modeling | Selected elements slid along connected topology");});
@@ -985,7 +985,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
                     activeEditorMode = "Object Mode";if(modeButton!=null)modeButton.setText(activeEditorMode);
                     meshyViewport.setMeshEditMode(false);meshyViewport.setObjectSelectionEnabled(true);
                     status.setText("Modeling | Object Mode");
-                } else if ("Wireframe".equals(item)) meshyViewport.toggleTopology();
+                } else if ("Toggle Topology Overlay".equals(item)) meshyViewport.toggleTopology();
                 else if ("Reset Mesh".equals(item)) {checkpointMeshEdit();meshyViewport.resetMesh();}
                 else showWorkspaceActionInfo(item);
                 break;
@@ -2434,8 +2434,10 @@ public final class ManualSculptWorkspace extends FrameLayout {
     }
 
     private void showObjectModifierTypeChooser() {
-        String[] labels={"Mirror","Array","Bevel (Linear)","Solidify","Subdivision (Linear)"};
-        String[] types={"MIRROR","ARRAY","BEVEL","SOLIDIFY","SUBDIVIDE"};
+        String[] labels={"Mirror","Array","Bevel","Solidify","Linear Subdivide",
+                "Catmull-Clark Subdivision","Triangulate","Planar Decimate","Smooth"};
+        String[] types={"MIRROR","ARRAY","BEVEL","SOLIDIFY","SUBDIVIDE",
+                "CATMULL_CLARK","TRIANGULATE","PLANAR_DECIMATE","SMOOTH"};
         new android.app.AlertDialog.Builder(activity).setTitle("Add Modifier")
                 .setItems(labels,(dialog,which)->{
                     try{
@@ -2496,8 +2498,13 @@ public final class ManualSculptWorkspace extends FrameLayout {
             offsetXField=modifierNumberField(panel,"Offset X",modifier.offsetX,false);
             offsetYField=modifierNumberField(panel,"Offset Y",modifier.offsetY,false);
             offsetZField=modifierNumberField(panel,"Offset Z",modifier.offsetZ,false);
-        }else if("SUBDIVIDE".equals(modifier.type)){
+        }else if("SUBDIVIDE".equals(modifier.type)||"CATMULL_CLARK".equals(modifier.type)){
             levelsField=modifierNumberField(panel,"Levels (1–3)",modifier.levels,true);
+        }else if("PLANAR_DECIMATE".equals(modifier.type)){
+            valueField=modifierNumberField(panel,"Maximum planar angle (0–90°)",modifier.value,false);
+        }else if("SMOOTH".equals(modifier.type)){
+            valueField=modifierNumberField(panel,"Smoothing amount (0–1)",modifier.value,false);
+            levelsField=modifierNumberField(panel,"Iterations (1–20)",modifier.levels,true);
         }else if("BEVEL".equals(modifier.type)){
             valueField=modifierNumberField(panel,"Width (0.001–0.49)",modifier.value,false);
         }else if("SOLIDIFY".equals(modifier.type)){
@@ -3155,8 +3162,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
                         "Rip", "Decimate", "MESH CLEANUP", "Recalculate Normals", "Flip Normals",
                         "Degenerate Dissolve", "Make Planar", "Smooth Vertices", "Randomize",
                         "SYMMETRY & MODIFIERS", "Symmetrize", "Bisect", "Mirror Modifier",
-                        "Subdivision Surface", "Solidify", "Bevel Modifier", "Weighted Normal",
-                        "Remesh", "Weld", "Triangulate", "Wireframe"
+                        "Subdivision Surface", "Solidify", "Bevel Modifier", "Recalculate Normals",
+                        "Remesh", "Weld", "Triangulate", "Toggle Topology Overlay"
                 };
                 rightTitle = "Tool Properties";
                 rightItems = new String[]{"Object Properties", "Object Transform", "Numeric Transform", "Dimensions",
