@@ -119,6 +119,7 @@ public final class ManualSculptWorkspace extends FrameLayout {
     private LinearLayout workspaceLeftDock;
     private LinearLayout workspaceRightDock;
     private LinearLayout workspaceBottomDock;
+    private TextView leftDockTab,rightDockTab;
     private final java.util.ArrayDeque<org.json.JSONObject> meshUndoStack = new java.util.ArrayDeque<>();
     private final java.util.ArrayDeque<org.json.JSONObject> meshRedoStack = new java.util.ArrayDeque<>();
     private final Handler timelineHandler = new Handler(Looper.getMainLooper());
@@ -3101,6 +3102,8 @@ public final class ManualSculptWorkspace extends FrameLayout {
         workspaceLeftDock = null;
         workspaceRightDock = null;
         workspaceBottomDock = null;
+        leftDockTab = null;
+        rightDockTab = null;
         viewportFocusMode = false;
         if (meshyViewport != null) {
             boolean sculptWorkspace = index == 2;
@@ -3281,22 +3284,46 @@ public final class ManualSculptWorkspace extends FrameLayout {
         addDockItems(workspaceLeftDock, leftTitle, leftItems);
         workspaceRightDock = createDock(rightTitle, index == 2 ? 142 : 156, Gravity.RIGHT);
         addDockItems(workspaceRightDock, rightTitle, rightItems);
-        workspacePanelsOpen = index != 0;
+        // Modeling docks start collapsed so the mesh remains unobstructed on a phone.
+        workspacePanelsOpen = index != 0 && index != 1;
         int dockVisibility = workspacePanelsOpen ? View.VISIBLE : View.GONE;
         workspaceLeftDock.setVisibility(dockVisibility);
         workspaceRightDock.setVisibility(dockVisibility);
+        if(index==1){
+            leftDockTab=dockRailTab("TOOLS",Gravity.LEFT|Gravity.CENTER_VERTICAL);
+            rightDockTab=dockRailTab("PROPS",Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+            leftDockTab.setOnClickListener(v->setModelingDockVisibility(true));
+            rightDockTab.setOnClickListener(v->setModelingDockVisibility(true));
+        }
         if (viewportChrome != null) viewportChrome.setNavigationVisible(!workspacePanelsOpen);
         if (bottomTitle != null) {
             workspaceBottomDock = new LinearLayout(activity);
-            workspaceBottomDock.setOrientation(LinearLayout.VERTICAL);
+            workspaceBottomDock.setOrientation(LinearLayout.HORIZONTAL);
+            workspaceBottomDock.setGravity(Gravity.CENTER_VERTICAL);
             workspaceBottomDock.setBackgroundColor(0xF0181D24);
-            workspaceBottomDock.addView(dockHeading(bottomTitle));
-            for (String item : bottomItems) workspaceBottomDock.addView(dockItem(item, false));
+            if(index==1){
+                addModelingBottomButton("VERTEX",()->setModelingSelectionMode("Vertex"));
+                addModelingBottomButton("EDGE",()->setModelingSelectionMode("Edge"));
+                addModelingBottomButton("FACE",()->setModelingSelectionMode("Face"));
+                addModelingBottomButton("ADD MESH",this::showAddMeshMenuDialog);
+                addModelingBottomButton("EXTRUDE",()->handleWorkspaceItem("Extrude Region"));
+                addModelingBottomButton("INSET",()->handleWorkspaceItem("Inset Faces"));
+                addModelingBottomButton("BEVEL",()->handleWorkspaceItem("Bevel Edges"));
+                addModelingBottomButton("SUBDIVIDE",()->handleWorkspaceItem("Subdivide"));
+                addModelingBottomButton("DOCKS",()->setModelingDockVisibility(!workspacePanelsOpen));
+            }else{
+                TextView heading=dockHeading(bottomTitle);
+                workspaceBottomDock.addView(heading,new LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT,LayoutParams.MATCH_PARENT));
+                for(String item:bottomItems){
+                    TextView row=dockItem(item,false);
+                    workspaceBottomDock.addView(row,new LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT,LayoutParams.MATCH_PARENT));
+                }
+            }
             FrameLayout.LayoutParams bottomParams = new FrameLayout.LayoutParams(
-                    LayoutParams.MATCH_PARENT, dp(index == 0 || index == 6 ? 72 : 82), Gravity.BOTTOM);
-            bottomParams.leftMargin = dp(154);
-            bottomParams.rightMargin = dp(166);
-            bottomParams.bottomMargin = dp(8);
+                    LayoutParams.MATCH_PARENT, dp(index==1?48:(index == 0 || index == 6 ? 72 : 82)), Gravity.BOTTOM);
+            bottomParams.leftMargin = dp(index==1?4:154);
+            bottomParams.rightMargin = dp(index==1?4:166);
+            bottomParams.bottomMargin = dp(4);
             workspaceLayoutLayer.addView(workspaceBottomDock, bottomParams);
         }
         if (viewportChrome != null) viewportChrome.setSculptWorkspace(index == 2);
@@ -3306,12 +3333,64 @@ public final class ManualSculptWorkspace extends FrameLayout {
             workspacePanelsOpen = sculptEnabled;
             if (viewportChrome != null) viewportChrome.setNavigationVisible(false);
         }
-        if (index == 0 && workspaceBottomDock != null) workspaceBottomDock.setVisibility(View.GONE);
+        if ((index == 0 || index == 1) && workspaceBottomDock != null) workspaceBottomDock.setVisibility(index==1?View.VISIBLE:View.GONE);
         status.setText("Meshy3D  |  " + WORKSPACE_NAMES[index] + " Workspace");
+    }
+
+    private TextView dockRailTab(String label,int gravity){
+        TextView tab=new TextView(activity);
+        tab.setText(label);
+        tab.setTextColor(0xFFE5EAF0);
+        tab.setTextSize(9);
+        tab.setGravity(Gravity.CENTER);
+        tab.setBackgroundColor(0xEE202833);
+        FrameLayout.LayoutParams lp=new FrameLayout.LayoutParams(dp(30),dp(66),gravity);
+        lp.topMargin=dp(42);lp.bottomMargin=dp(58);
+        workspaceLayoutLayer.addView(tab,lp);
+        tab.setElevation(dp(12));
+        return tab;
+    }
+
+    private void addModelingBottomButton(String label,Runnable action){
+        TextView button=dockItem(label,false);
+        button.setGravity(Gravity.CENTER);
+        button.setTextSize(9);
+        button.setPadding(dp(9),0,dp(9),0);
+        button.setBackgroundColor(0xFF293542);
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT,dp(38));
+        lp.setMargins(dp(2),0,dp(2),0);
+        workspaceBottomDock.addView(button,lp);
+        button.setOnClickListener(v->action.run());
+    }
+
+    private void setModelingDockVisibility(boolean visible){
+        workspacePanelsOpen=visible;
+        int state=visible?View.VISIBLE:View.GONE;
+        if(workspaceLeftDock!=null)workspaceLeftDock.setVisibility(state);
+        if(workspaceRightDock!=null)workspaceRightDock.setVisibility(state);
+        if(leftDockTab!=null)leftDockTab.setVisibility(visible?View.GONE:View.VISIBLE);
+        if(rightDockTab!=null)rightDockTab.setVisibility(visible?View.GONE:View.VISIBLE);
+        if(viewportChrome!=null)viewportChrome.setNavigationVisible(!visible);
+    }
+
+    private void setModelingSelectionMode(String mode){
+        if(!meshyViewport.isMeshEditMode()){
+            activeEditorMode="Edit Mode";
+            if(modeButton!=null)modeButton.setText(activeEditorMode);
+            meshyViewport.setMeshEditMode(true);
+            meshyViewport.setObjectSelectionEnabled(false);
+        }
+        meshyViewport.setSelectionMode(mode);
+        status.setText("Modeling | "+mode+" selection mode — tap mesh elements to select");
     }
 
     private void toggleWorkspacePanels() {
         workspacePanelsOpen = !workspacePanelsOpen;
+        if(activeWorkspaceIndex==1){
+            setModelingDockVisibility(workspacePanelsOpen);
+            status.setText(workspacePanelsOpen?"Modeling | Side docks open":"Modeling | Viewport expanded");
+            return;
+        }
         int visibility = workspacePanelsOpen ? View.VISIBLE : View.GONE;
         if (workspaceLeftDock != null) workspaceLeftDock.setVisibility(visibility);
         if (workspaceRightDock != null) workspaceRightDock.setVisibility(visibility);
