@@ -18,6 +18,8 @@ public final class Meshy3DViewport extends View {
     private float viewRoll;
     private float lastX, lastY, lastPinchDistance, lastPinchCenterX, lastPinchCenterY;
     private float zoom = 1.0f;
+    // Adaptive viewport-camera distance prevents large scaled meshes from crossing the near plane.
+    private float projectionDistance = 5.2f;
     private float viewTargetX,viewTargetY,viewTargetZ;
     private boolean cameraViewActive;
     private int viewportNavigationMode = 0; // 0 = orbit, 1 = pan
@@ -528,7 +530,7 @@ public final class Meshy3DViewport extends View {
                     worldX+=world[0]/face.length;worldY+=world[1]/face.length;worldZ+=world[2]/face.length;
                 }
                 if(pointInsidePolygon(x,y,polyX,polyY)){
-                    float depth=5.2f-cameraPoint(worldX,worldY,worldZ)[2];
+                    float depth=projectionDistance-cameraPoint(worldX,worldY,worldZ)[2];
                     if(depth<bestDepth){best=object;bestDepth=depth;}
                 }
             }
@@ -1214,9 +1216,32 @@ public final class Meshy3DViewport extends View {
 
     private float[] project(float x, float y, float z, float cx, float cy, float unit) {
         float[] q=cameraPoint(x,y,z);
-        float depth=5.2f-q[2];
-        float perspective=5.2f/Math.max(2.0f,depth);
+        float depth=projectionDistance-q[2];
+        float nearLimit=Math.max(0.1f,projectionDistance*0.035f);
+        float perspective=projectionDistance/Math.max(nearLimit,depth);
         return new float[]{cx+q[0]*unit*perspective,cy-q[1]*unit*perspective,q[2]};
+    }
+
+    /** Repositions the virtual viewport camera far enough to contain the largest visible object. */
+    private void updateProjectionCameraDistance() {
+        float maxRadius=0f;
+        for(Meshy3DObjectScene.Object3D object:objectScene.getObjects()) {
+            if(object==null||!objectScene.isVisibleInViewport(object)||!object.renderVisible
+                    ||(localViewActive&&!localViewObjectIds.contains(object.id))) continue;
+            if(object.mesh!=null) {
+                for(float[] vertex:object.mesh.copyVertices()) {
+                    float[] world=objectScene.transformPoint(object.id,vertex[0],vertex[1],vertex[2]);
+                    float[] q=cameraDirectionPoint(world[0]-viewTargetX,world[1]-viewTargetY,world[2]-viewTargetZ);
+                    maxRadius=Math.max(maxRadius,(float)Math.sqrt(q[0]*q[0]+q[1]*q[1]+q[2]*q[2]));
+                }
+            } else {
+                float[] world=objectScene.transformPoint(object.id,0,0,0);
+                float[] q=cameraDirectionPoint(world[0]-viewTargetX,world[1]-viewTargetY,world[2]-viewTargetZ);
+                maxRadius=Math.max(maxRadius,(float)Math.sqrt(q[0]*q[0]+q[1]*q[1]+q[2]*q[2])
+                        +Math.max(0.1f,object.displaySize));
+            }
+        }
+        projectionDistance=Math.max(5.2f,maxRadius*3.0f+2.0f);
     }
 
     public void frameSelectedObjects(){cameraViewActive=false;frameObjects(false);}
@@ -1315,7 +1340,9 @@ public final class Meshy3DViewport extends View {
         if(!found)return;
         viewTargetX=(min[0]+max[0])*.5f;viewTargetY=(min[1]+max[1])*.5f;viewTargetZ=(min[2]+max[2])*.5f;
         float extent=Math.max(max[0]-min[0],Math.max(max[1]-min[1],max[2]-min[2]));
-        zoom=Math.max(.35f,Math.min(3.4f,3.0f/Math.max(.75f,extent)));
+        // Large objects must be allowed to frame below the old 0.35 zoom floor.
+        zoom=Math.max(0.015f,Math.min(3.4f,3.0f/Math.max(.75f,extent)));
+        updateProjectionCameraDistance();
         invalidate();
     }
 
@@ -1327,6 +1354,7 @@ public final class Meshy3DViewport extends View {
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         final float width=getWidth(), height=getHeight();
+        updateProjectionCameraDistance();
         final float cx=width*0.5f, cy=height*0.49f;
         final float unit=Math.min(width,height)*0.235f*zoom;
 
@@ -1870,7 +1898,7 @@ public final class Meshy3DViewport extends View {
     public void zoomBy(float factor) {
         if(!Float.isFinite(factor)||factor<=0f)return;
         cameraViewActive=false;
-        zoom=Math.max(.25f,Math.min(5.0f,zoom*factor));
+        zoom=Math.max(.015f,Math.min(5.0f,zoom*factor));
         invalidate();
     }
 
@@ -2393,7 +2421,7 @@ public final class Meshy3DViewport extends View {
                     float centerX=(event.getX(0)+event.getX(1))*.5f;
                     float centerY=(event.getY(0)+event.getY(1))*.5f;
                     if(lastPinchDistance>0 && distance>0){
-                        zoom=Math.max(0.25f,Math.min(5.0f,zoom*distance/lastPinchDistance));
+                        zoom=Math.max(0.015f,Math.min(5.0f,zoom*distance/lastPinchDistance));
                         panByPixels(centerX-lastPinchCenterX,centerY-lastPinchCenterY);
                         invalidate();
                     }
