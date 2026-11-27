@@ -912,7 +912,15 @@ public final class Meshy3DViewport extends View {
         vertices=document.copyVertices();faces=document.copyFaces();vertexMask=document.getSculptMask();if(vertexMask.length!=vertices.length)vertexMask=new float[vertices.length];
         uvCoordinates=null;invalidate();
     }
-    public void setMeshEditMode(boolean enabled){meshEditMode=enabled;if(enabled)showTopology=true;invalidate();}
+    public void setMeshEditMode(boolean enabled){
+        boolean entering=enabled&&!meshEditMode;
+        meshEditMode=enabled;
+        if(enabled){
+            showTopology=true;
+            if(entering&&document.getSelectedCount()==0)document.selectAll();
+        }
+        invalidate();
+    }
     public boolean isMeshEditMode(){return meshEditMode;}
     public void setSelectionMode(String mode){
         if("Vertex".equalsIgnoreCase(mode))selectionMode=Meshy3DCore.SelectMode.VERTEX;
