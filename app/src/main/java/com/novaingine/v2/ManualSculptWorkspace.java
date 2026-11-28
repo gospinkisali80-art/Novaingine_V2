@@ -152,7 +152,9 @@ public final class ManualSculptWorkspace extends FrameLayout {
         requestFocus();
 
         // Meshy3D owns this viewport and its starter cube; it is not the Novaingine GL scene.
-        meshyViewport = new Meshy3DViewport(activity, this::toggleViewportFocus);
+        // A normal tap in the centre of the viewport must select/sculpt only; it must never hide the editor.
+        // Viewport focus is controlled explicitly from the workspace UI, not by an empty-space tap.
+        meshyViewport = new Meshy3DViewport(activity, null);
         meshyViewport.setObjectSelectionListener(()->{
             if(activeWorkspaceIndex==1)refreshModelingOutliner();
         });
