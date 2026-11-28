@@ -1851,9 +1851,19 @@ public final class Meshy3DViewport extends View {
         float dx=x-editGizmoLastX,dy=y-editGizmoLastY;
         float unit=Math.max(1f,Math.min(getWidth(),getHeight())*.235f*zoom);
         int operation=objectTransformTool<0?0:objectTransformTool;
-        if(editComponentGizmoAxis==3&&operation==0){
-            float[] delta=cameraVectorToWorld(dx/unit,-dy/unit,0f);
-            document.transformSelected(delta[0],delta[1],delta[2],0);
+        if(editComponentGizmoAxis==3){
+            if(operation==0){
+                float[] delta=cameraVectorToWorld(dx/unit,-dy/unit,0f);
+                document.transformSelected(delta[0],delta[1],delta[2],0);
+            }else if(operation==2){
+                float factor=Math.max(.01f,1f-dy/Math.max(40f,Math.min(getWidth(),getHeight())*.35f));
+                document.transformSelected(factor,factor,factor,2);
+            }else{
+                float angle=dx*.8f;
+                float[] viewAxis=cameraVectorToWorld(0f,0f,1f);
+                document.transformSelected(viewAxis[0]*angle,viewAxis[1]*angle,
+                        viewAxis[2]*angle,1);
+            }
         }else{
             float[] pivot=selectedComponentPivot();if(pivot==null)return;
             float cx=getWidth()*.5f,cy=getHeight()*.49f;
