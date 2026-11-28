@@ -3352,6 +3352,16 @@ public final class MainActivity extends Activity
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        if ((activeProjectScene != null && engineSurface != null)
+                || (manualSculptWorkspace != null && activeMeshyDocument != null)) {
+            projectHandler.removeCallbacks(autoSaveTask);
+            projectHandler.postDelayed(autoSaveTask, 5000L);
+        }
+    }
+
+    @Override
     protected void onPause() {
 
         projectHandler.removeCallbacks(autoSaveTask);
