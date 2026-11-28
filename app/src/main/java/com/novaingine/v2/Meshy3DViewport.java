@@ -1777,7 +1777,13 @@ public final class Meshy3DViewport extends View {
         float[][] axes={{1,0,0},{0,1,0},{0,0,1}};
         float nearest=Float.MAX_VALUE;int selectedAxis=-1;float selectedX=0,selectedY=0;
         objectGizmoUniformScale=false;
-        if(objectTransformTool==2
+        // The centre of the Move gizmo is a real free-move handle, not empty viewport space.
+        // Give it priority over the three axis handles so a centre touch can never fall through
+        // to normal viewport selection/navigation.
+        if(objectTransformTool==0
+                &&Math.hypot(x-center[0],y-center[1])<=20f*density) {
+            selectedAxis=3;selectedX=1f;selectedY=0f;
+        } else if(objectTransformTool==2
                 &&Math.hypot(x-center[0],y-center[1])<=16f*density) {
             selectedAxis=3;selectedX=1f;selectedY=0f;objectGizmoUniformScale=true;
         }
@@ -1837,14 +1843,26 @@ public final class Meshy3DViewport extends View {
             float now=(float)Math.atan2(y-center[1],x-center[0]);
             rotation=(float)Math.toDegrees(now-gizmoStartWorldX);
         }
-        float[] axis=active==null?new float[]{0,0,1}:gizmoAxisDirection(active,objectGizmoAxis);
         if(objectTransformTool==0){
+            float[] freeMoveDelta=objectGizmoAxis==3
+                    ?cameraVectorToWorld(dx/Math.max(1f,Math.min(getWidth(),getHeight())*.235f*zoom),
+                            -dy/Math.max(1f,Math.min(getWidth(),getHeight())*.235f*zoom),0f)
+                    :null;
+            float[] axis=objectGizmoAxis==3?null:
+                    (active==null?new float[]{0,0,1}:gizmoAxisDirection(active,objectGizmoAxis));
             for(int i=0;i<gizmoObjectIds.size();i++){
                 String id=gizmoObjectIds.get(i);float[] initial=gizmoInitialWorldLocations.get(i);
-                objectScene.setWorldLocation(id,initial[0]+axis[0]*amount,
-                        initial[1]+axis[1]*amount,initial[2]+axis[2]*amount);
+                if(freeMoveDelta!=null){
+                    objectScene.setWorldLocation(id,initial[0]+freeMoveDelta[0],
+                            initial[1]+freeMoveDelta[1],initial[2]+freeMoveDelta[2]);
+                }else{
+                    objectScene.setWorldLocation(id,initial[0]+axis[0]*amount,
+                            initial[1]+axis[1]*amount,initial[2]+axis[2]*amount);
+                }
             }
         }else{
+            float[] axis=active==null?new float[]{0,0,1}:gizmoAxisDirection(active,
+                    objectGizmoUniformScale?0:objectGizmoAxis);
             double factor=Math.max(.001f,1f+amount);
             double[] localDelta=objectTransformTool==1
                     ?rotationAroundAxisMatrix(axis,Math.toRadians(rotation))
