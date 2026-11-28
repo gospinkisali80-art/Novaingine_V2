@@ -1802,9 +1802,13 @@ public final class Meshy3DViewport extends View {
             paint.setColor(colors[axis]);paint.setStrokeWidth(3f*density);
             paint.setStyle(Paint.Style.STROKE);canvas.drawLine(center[0],center[1],ex,ey,paint);
             paint.setStyle(Paint.Style.FILL);
-            float bx=ex-dx*.18f,by=ey-dy*.18f,px=-dy*.12f,py=dx*.12f;
-            Path arrow=new Path();arrow.moveTo(ex,ey);arrow.lineTo(bx+px,by+py);
-            arrow.lineTo(bx-px,by-py);arrow.close();canvas.drawPath(arrow,paint);
+            if(objectTransformTool==2){
+                canvas.drawRect(ex-5f*density,ey-5f*density,ex+5f*density,ey+5f*density,paint);
+            }else{
+                float bx=ex-dx*.18f,by=ey-dy*.18f,px=-dy*.12f,py=dx*.12f;
+                Path arrow=new Path();arrow.moveTo(ex,ey);arrow.lineTo(bx+px,by+py);
+                arrow.lineTo(bx-px,by-py);arrow.close();canvas.drawPath(arrow,paint);
+            }
             canvas.drawText(labels[axis],ex+4*density,ey-4*density,paint);
         }
         paint.setColor(0xFFFFC34D);paint.setStyle(Paint.Style.FILL);
@@ -1846,7 +1850,8 @@ public final class Meshy3DViewport extends View {
     private void updateEditComponentGizmoDrag(float x,float y) {
         float dx=x-editGizmoLastX,dy=y-editGizmoLastY;
         float unit=Math.max(1f,Math.min(getWidth(),getHeight())*.235f*zoom);
-        if(editComponentGizmoAxis==3){
+        int operation=objectTransformTool<0?0:objectTransformTool;
+        if(editComponentGizmoAxis==3&&operation==0){
             float[] delta=cameraVectorToWorld(dx/unit,-dy/unit,0f);
             document.transformSelected(delta[0],delta[1],delta[2],0);
         }else{
@@ -1859,9 +1864,20 @@ public final class Meshy3DViewport extends View {
             float ax=end[0]-center[0],ay=end[1]-center[1];
             float length=(float)Math.hypot(ax,ay);
             if(length>1f){
-                float amount=(dx*ax+dy*ay)/(length*length);
-                float[] axis={0,0,0};axis[editComponentGizmoAxis]=amount;
-                document.transformSelected(axis[0],axis[1],axis[2],0);
+                float along=dx*ax+dy*ay;
+                if(operation==1){
+                    float angle=(dx*(-ay)+dy*ax)/length*1.4f;
+                    float[] rotation={0,0,0};rotation[editComponentGizmoAxis]=angle;
+                    document.transformSelected(rotation[0],rotation[1],rotation[2],1);
+                }else if(operation==2){
+                    float factor=Math.max(.01f,1f+along/Math.max(1f,length));
+                    float[] scale={1f,1f,1f};scale[editComponentGizmoAxis]=factor;
+                    document.transformSelected(scale[0],scale[1],scale[2],2);
+                }else{
+                    float amount=along/(length*length);
+                    float[] axis={0,0,0};axis[editComponentGizmoAxis]=amount;
+                    document.transformSelected(axis[0],axis[1],axis[2],0);
+                }
             }
         }
         editGizmoLastX=x;editGizmoLastY=y;
