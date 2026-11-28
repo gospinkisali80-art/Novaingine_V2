@@ -80,19 +80,31 @@ public final class MainActivity extends Activity
     private File activeMeshyProjectDirectory;
     private final Runnable autoSaveTask = new Runnable() {
         @Override public void run() {
-            if (activeProjectScene == null || engineSurface == null) return;
-            engineSurface.saveSceneAsync(activeProjectScene.getAbsolutePath(), saved -> {
-                if (statisticsText != null) statisticsText.setText(saved
-                        ? "NOVAINGINE V2  |  AUTO-SAVED" : "NOVAINGINE V2  |  SAVE RETRY");
-                if (saved && activeProjectScene != null) {
-                    File recovery = new File(activeProjectScene.getParentFile(), "Scene.recovery.nova");
-                    engineSurface.saveSceneAsync(recovery.getAbsolutePath(), recovered -> {
-                        if (!recovered && statisticsText != null)
-                            statisticsText.setText("NOVAINGINE V2  |  RECOVERY SAVE RETRY");
-                    });
+            boolean hasActiveWork = false;
+            if (manualSculptWorkspace != null && activeMeshyDocument != null) {
+                hasActiveWork = true;
+                try {
+                    writeMeshyDocumentFile(activeMeshyDocument, false);
+                    if (statisticsText != null) statisticsText.setText("MESHY3D  |  AUTO-SAVED");
+                } catch (Exception error) {
+                    if (statisticsText != null) statisticsText.setText("MESHY3D  |  AUTO-SAVE RETRY");
                 }
-            });
-            projectHandler.postDelayed(this, 5000L);
+            }
+            if (activeProjectScene != null && engineSurface != null) {
+                hasActiveWork = true;
+                engineSurface.saveSceneAsync(activeProjectScene.getAbsolutePath(), saved -> {
+                    if (statisticsText != null && manualSculptWorkspace == null)
+                        statisticsText.setText(saved ? "NOVAINGINE V2  |  AUTO-SAVED" : "NOVAINGINE V2  |  SAVE RETRY");
+                    if (saved && activeProjectScene != null) {
+                        File recovery = new File(activeProjectScene.getParentFile(), "Scene.recovery.nova");
+                        engineSurface.saveSceneAsync(recovery.getAbsolutePath(), recovered -> {
+                            if (!recovered && statisticsText != null)
+                                statisticsText.setText("NOVAINGINE V2  |  RECOVERY SAVE RETRY");
+                        });
+                    }
+                });
+            }
+            if (hasActiveWork) projectHandler.postDelayed(this, 5000L);
         }
     };
 
@@ -680,11 +692,13 @@ public final class MainActivity extends Activity
     private static final int REQUEST_IMPORT_MESHY_GLB = 7421;
     private static final int REQUEST_EXPORT_MESHY_OBJ = 7422;
     private static final int REQUEST_EXPORT_MESHY_STL = 7423;
+    private static final int REQUEST_EXPORT_MESHY_GLB = 7424;
 
     private android.graphics.Bitmap pendingMeshyImage;
     private String pendingMeshyExportJson;
     private String pendingMeshySystemInfo;
     private String pendingMeshyGeometryExport;
+    private byte[] pendingMeshyGlbExport;
     private boolean meshyStatusBarVisible = true;
 
     public void showMeshyApplicationMenu(View anchor) {
@@ -1710,6 +1724,7 @@ public final class MainActivity extends Activity
         super.onActivityResult(requestCode, resultCode, data);
         if ((requestCode == REQUEST_EXPORT_MESHY_OBJ || requestCode == REQUEST_EXPORT_MESHY_STL)
                 && resultCode != RESULT_OK) pendingMeshyGeometryExport = null;
+        if (requestCode == REQUEST_EXPORT_MESHY_GLB && resultCode != RESULT_OK) pendingMeshyGlbExport = null;
         if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
         Uri uri = data.getData();
         if (requestCode == REQUEST_SAVE_MESHY_SYSTEM_INFO) {
@@ -1740,6 +1755,24 @@ public final class MainActivity extends Activity
             } catch (Exception error) {
                 android.widget.Toast.makeText(this, "PNG save failed: " + error.getMessage(), android.widget.Toast.LENGTH_LONG).show();
             }
+            return;
+        }
+        if (requestCode == REQUEST_EXPORT_MESHY_GLB) {
+            byte[] glb = pendingMeshyGlbExport;
+            pendingMeshyGlbExport = null;
+            if (glb == null) return;
+            new Thread(() -> {
+                try (java.io.OutputStream output = getContentResolver().openOutputStream(uri)) {
+                    if (output == null) throw new IllegalStateException("Could not open the selected GLB destination.");
+                    output.write(glb);
+                    output.flush();
+                    runOnUiThread(() -> android.widget.Toast.makeText(this,
+                            "GLB model exported. You can now import it into Novaingine.", android.widget.Toast.LENGTH_LONG).show());
+                } catch (Exception error) {
+                    runOnUiThread(() -> android.widget.Toast.makeText(this,
+                            "GLB export failed: " + error.getMessage(), android.widget.Toast.LENGTH_LONG).show());
+                }
+            }, "Meshy3D-Write-GLB").start();
             return;
         }
         if (requestCode == REQUEST_EXPORT_MESHY_DOCUMENT) {
@@ -2040,6 +2073,8 @@ public final class MainActivity extends Activity
         rootLayout.addView(manualSculptWorkspace, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
+        projectHandler.removeCallbacks(autoSaveTask);
+        projectHandler.postDelayed(autoSaveTask, 5000L);
     }
 
     private void closeManualSculpting() {
@@ -2744,11 +2779,46 @@ public final class MainActivity extends Activity
             return;
         }
         new AlertDialog.Builder(this).setTitle("Export Meshy3D")
-                .setItems(new String[]{"Meshy3D document (.meshy3d)", "Wavefront OBJ (.obj)", "STL mesh (.stl)"},
+                .setItems(new String[]{"Meshy3D document (.meshy3d)", "glTF Binary model (.glb)",
+                        "Wavefront OBJ (.obj)", "STL mesh (.stl)"},
                         (dialog, which) -> {
                             if (which == 0) exportMeshyDocumentToPicker();
-                            else startMeshyGeometryExport(which == 2);
+                            else if (which == 1) startMeshyGlbExport();
+                            else startMeshyGeometryExport(which == 3);
                         }).setNegativeButton("Cancel", null).show();
+    }
+
+    private void startMeshyGlbExport() {
+        if (manualSculptWorkspace == null) {
+            android.widget.Toast.makeText(this, "Open Meshy3D before exporting a GLB model.",
+                    android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        final java.util.List<Meshy3DGeometryExporter.ObjectSnapshot> snapshot;
+        try {
+            snapshot = manualSculptWorkspace.snapshotGeometryForExport();
+        } catch (Exception error) {
+            android.widget.Toast.makeText(this, "Could not prepare GLB export: " + error.getMessage(),
+                    android.widget.Toast.LENGTH_LONG).show();
+            return;
+        }
+        android.widget.Toast.makeText(this, "Preparing GLB model…", android.widget.Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            try {
+                byte[] glb = Meshy3DGlbExporter.export(snapshot);
+                runOnUiThread(() -> {
+                    pendingMeshyGlbExport = glb;
+                    Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);
+                    intent.setType("model/gltf-binary");
+                    intent.putExtra(Intent.EXTRA_TITLE, "Meshy3D_Export.glb");
+                    startActivityForResult(intent, REQUEST_EXPORT_MESHY_GLB);
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> android.widget.Toast.makeText(this,
+                        "GLB export failed: " + error.getMessage(), android.widget.Toast.LENGTH_LONG).show());
+            }
+        }, "Meshy3D-GLB-Export").start();
     }
 
     private void startMeshyGeometryExport(boolean stl) {
@@ -3286,6 +3356,10 @@ public final class MainActivity extends Activity
 
         projectHandler.removeCallbacks(autoSaveTask);
         if (activeProjectScene != null && engineSurface != null) engineSurface.saveScene(activeProjectScene.getAbsolutePath());
+        if (manualSculptWorkspace != null && activeMeshyDocument != null) {
+            try { writeMeshyDocumentFile(activeMeshyDocument, false); }
+            catch (Exception error) { android.util.Log.e("Meshy3D", "Pause autosave failed", error); }
+        }
         if (controllerAgent != null) {
             controllerAgent.close();
             controllerAgent = null;
@@ -3301,6 +3375,10 @@ public final class MainActivity extends Activity
     protected void onDestroy() {
 
         projectHandler.removeCallbacks(autoSaveTask);
+        if (manualSculptWorkspace != null && activeMeshyDocument != null) {
+            try { writeMeshyDocumentFile(activeMeshyDocument, false); }
+            catch (Exception error) { android.util.Log.e("Meshy3D", "Destroy autosave failed", error); }
+        }
         if (controllerAgent != null) {
             controllerAgent.close();
             controllerAgent = null;
