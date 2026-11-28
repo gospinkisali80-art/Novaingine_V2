@@ -693,6 +693,7 @@ public final class MainActivity extends Activity
     private static final int REQUEST_EXPORT_MESHY_OBJ = 7422;
     private static final int REQUEST_EXPORT_MESHY_STL = 7423;
     private static final int REQUEST_EXPORT_MESHY_GLB = 7424;
+    private static final int REQUEST_SAVE_MESHY_DOCUMENT_AS = 7425;
 
     private android.graphics.Bitmap pendingMeshyImage;
     private String pendingMeshyExportJson;
@@ -1725,6 +1726,7 @@ public final class MainActivity extends Activity
         if ((requestCode == REQUEST_EXPORT_MESHY_OBJ || requestCode == REQUEST_EXPORT_MESHY_STL)
                 && resultCode != RESULT_OK) pendingMeshyGeometryExport = null;
         if (requestCode == REQUEST_EXPORT_MESHY_GLB && resultCode != RESULT_OK) pendingMeshyGlbExport = null;
+        if (requestCode == REQUEST_SAVE_MESHY_DOCUMENT_AS && resultCode != RESULT_OK) pendingMeshyExportJson = null;
         if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
         Uri uri = data.getData();
         if (requestCode == REQUEST_SAVE_MESHY_SYSTEM_INFO) {
@@ -1787,6 +1789,26 @@ public final class MainActivity extends Activity
             } catch (Exception error) {
                 android.widget.Toast.makeText(this, "Meshy3D export failed: " + error.getMessage(), android.widget.Toast.LENGTH_LONG).show();
             }
+            return;
+        }
+        if (requestCode == REQUEST_SAVE_MESHY_DOCUMENT_AS) {
+            String json = pendingMeshyExportJson;
+            pendingMeshyExportJson = null;
+            if (json == null) return;
+            new Thread(() -> {
+                try (java.io.OutputStream output = getContentResolver().openOutputStream(uri, "wt")) {
+                    if (output == null) throw new IllegalStateException("Could not open the selected project file.");
+                    output.write(json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    output.flush();
+                    runOnUiThread(() -> android.widget.Toast.makeText(this,
+                            "Editable Meshy3D project saved to your selected Files location.",
+                            android.widget.Toast.LENGTH_LONG).show());
+                } catch (Exception error) {
+                    runOnUiThread(() -> android.widget.Toast.makeText(this,
+                            "Save Project As failed: " + error.getMessage(),
+                            android.widget.Toast.LENGTH_LONG).show());
+                }
+            }, "Meshy3D-Save-Project-As").start();
             return;
         }
         if (requestCode == REQUEST_IMPORT_MESHY_DOCUMENT) {
@@ -2642,37 +2664,25 @@ public final class MainActivity extends Activity
     }
 
     private void saveMeshyDocumentAs() {
-        if(manualSculptWorkspace==null){
-            android.widget.Toast.makeText(this,"Open Meshy3D before using Save As.",android.widget.Toast.LENGTH_SHORT).show();return;
+        if (manualSculptWorkspace == null) {
+            android.widget.Toast.makeText(this, "Open Meshy3D before using Save As.",
+                    android.widget.Toast.LENGTH_SHORT).show();
+            return;
         }
-        EditText input=new EditText(this);input.setSingleLine(true);input.setHint("Project name");
-        if(activeMeshyProjectDirectory!=null)input.setText(activeMeshyProjectDirectory.getName()+" Copy");
-        new AlertDialog.Builder(this).setTitle("Save Meshy3D As")
-                .setMessage("Create a separate project folder and save the current editor state.")
-                .setView(input).setNegativeButton("Cancel",null)
-                .setPositiveButton("Save",(d,w)->{
-                    String name=input.getText().toString().trim().replaceAll("[^A-Za-z0-9 _-]","");
-                    if(name.length()>40)name=name.substring(0,40).trim();
-                    if(name.isEmpty()){android.widget.Toast.makeText(this,"Enter a project name.",android.widget.Toast.LENGTH_SHORT).show();return;}
-                    File root=new File(getFilesDir(),"Meshy3DProjects");
-                    File folder=new File(root,name);
-                    if(folder.exists()){android.widget.Toast.makeText(this,"A project with that name already exists.",android.widget.Toast.LENGTH_LONG).show();return;}
-                    if(!root.exists()&&!root.mkdirs()){android.widget.Toast.makeText(this,"Cannot create project storage.",android.widget.Toast.LENGTH_LONG).show();return;}
-                    if(!folder.mkdirs()){android.widget.Toast.makeText(this,"Could not create project folder.",android.widget.Toast.LENGTH_LONG).show();return;}
-                    File target=new File(folder,name+".meshy3d");
-                    File previousDirectory=activeMeshyProjectDirectory;
-                    File previousDocument=activeMeshyDocument;
-                    try{
-                        activeMeshyProjectDirectory=folder;activeMeshyDocument=target;
-                        writeMeshyDocumentFile(target,false);
-                        recordRecentMeshyDocument(target);
-                        android.widget.Toast.makeText(this,"Saved new Meshy3D document: "+target.getName(),android.widget.Toast.LENGTH_LONG).show();
-                    }catch(Exception error){
-                        activeMeshyProjectDirectory=previousDirectory;activeMeshyDocument=previousDocument;
-                        target.delete();folder.delete();
-                        android.widget.Toast.makeText(this,"Save As failed: "+error.getMessage(),android.widget.Toast.LENGTH_LONG).show();
-                    }
-                }).show();
+        try {
+            pendingMeshyExportJson = buildMeshyDocumentSnapshot().toString(2) + "\n";
+            String filename = activeMeshyDocument == null
+                    ? "Meshy3D_Project.meshy3d" : activeMeshyDocument.getName();
+            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("application/json");
+            intent.putExtra(Intent.EXTRA_TITLE, filename);
+            startActivityForResult(intent, REQUEST_SAVE_MESHY_DOCUMENT_AS);
+        } catch (Exception error) {
+            pendingMeshyExportJson = null;
+            android.widget.Toast.makeText(this, "Could not prepare project for saving: "
+                    + error.getMessage(), android.widget.Toast.LENGTH_LONG).show();
+        }
     }
 
     private void saveMeshyDocumentCopy() {
