@@ -67,6 +67,10 @@ public final class Meshy3DViewport extends View {
     private int objectPivotMode=0;
     private boolean objectTransformLocalOrientation;
     private boolean objectGizmoDragging;
+    // Edit Mode component transform gizmo state.
+    private boolean editComponentGizmoDragging;
+    private int editComponentGizmoAxis=-1;
+    private float editGizmoLastX,editGizmoLastY;
     private boolean objectGizmoRotationRing;
     private boolean objectGizmoUniformScale;
     private boolean objectBoxSelectEnabled;
@@ -1627,6 +1631,7 @@ public final class Meshy3DViewport extends View {
             while(paint.measureText(warning)>width-24f*d&&warning.length()>12)warning=warning.substring(0,warning.length()-4)+"…";
             canvas.drawText(warning,12f*d,height-12f*d,paint);
         }
+        if(meshEditMode)drawEditComponentGizmo(canvas,cx,cy,unit);
         if(!meshEditMode&&objectSelectionEnabled&&objectTransformTool>=0)drawObjectTransformGizmo(canvas,cx,cy,unit);
         drawNavigationGizmo(canvas, width, 18f*getResources().getDisplayMetrics().density);
     }
@@ -1764,6 +1769,103 @@ public final class Meshy3DViewport extends View {
             canvas.drawCircle(center[0],center[1],11f*density,paint);
         }
         paint.setStyle(Paint.Style.FILL);
+    }
+
+    /** Centre of the currently selected edit components, in mesh-local coordinates. */
+    private float[] selectedComponentPivot() {
+        float[][] points=document.copyVertices();
+        float sx=0f,sy=0f,sz=0f;int count=0;
+        for(int i=0;i<points.length;i++)if(document.isVertexSelected(i)){
+            sx+=points[i][0];sy+=points[i][1];sz+=points[i][2];count++;
+        }
+        if(count==0)return null;
+        return new float[]{sx/count,sy/count,sz/count};
+    }
+
+    private void drawEditComponentGizmo(Canvas canvas,float cx,float cy,float unit) {
+        if(!meshEditMode||document.getSelectedCount()==0)return;
+        float[] pivot=selectedComponentPivot();if(pivot==null)return;
+        float[] center=project(pivot[0],pivot[1],pivot[2],cx,cy,unit);
+        float density=getResources().getDisplayMetrics().density;
+        float length=58f*density;
+        float[][] axes={{1,0,0},{0,1,0},{0,0,1}};
+        int[] colors={0xFFE45C5C,0xFF5CBD83,0xFF6AA7F5};
+        String[] labels={"X","Y","Z"};
+        paint.setTextSize(11f*density);
+        for(int axis=0;axis<3;axis++){
+            float[] end=project(pivot[0]+axes[axis][0],pivot[1]+axes[axis][1],
+                    pivot[2]+axes[axis][2],cx,cy,unit);
+            float dx=end[0]-center[0],dy=end[1]-center[1];
+            float len=(float)Math.hypot(dx,dy);if(len<1f)continue;
+            dx=dx/len*length;dy=dy/len*length;
+            float ex=center[0]+dx,ey=center[1]+dy;
+            paint.setColor(colors[axis]);paint.setStrokeWidth(3f*density);
+            paint.setStyle(Paint.Style.STROKE);canvas.drawLine(center[0],center[1],ex,ey,paint);
+            paint.setStyle(Paint.Style.FILL);
+            float bx=ex-dx*.18f,by=ey-dy*.18f,px=-dy*.12f,py=dx*.12f;
+            Path arrow=new Path();arrow.moveTo(ex,ey);arrow.lineTo(bx+px,by+py);
+            arrow.lineTo(bx-px,by-py);arrow.close();canvas.drawPath(arrow,paint);
+            canvas.drawText(labels[axis],ex+4*density,ey-4*density,paint);
+        }
+        paint.setColor(0xFFFFC34D);paint.setStyle(Paint.Style.FILL);
+        canvas.drawCircle(center[0],center[1],6f*density,paint);
+        paint.setColor(0xFFF5F7FA);paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(1.5f*density);canvas.drawCircle(center[0],center[1],9f*density,paint);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    /** Captures component gizmo hits before viewport selection/navigation can consume them. */
+    private boolean beginEditComponentGizmo(float x,float y) {
+        if(!meshEditMode||document.getSelectedCount()==0)return false;
+        float[] pivot=selectedComponentPivot();if(pivot==null)return false;
+        float cx=getWidth()*.5f,cy=getHeight()*.49f;
+        float unit=Math.max(1f,Math.min(getWidth(),getHeight())*.235f*zoom);
+        float[] center=project(pivot[0],pivot[1],pivot[2],cx,cy,unit);
+        float density=getResources().getDisplayMetrics().density;
+        float hit=13f*density,handle=58f*density;
+        int axis=-1;float nearest=Float.MAX_VALUE;
+        if(Math.hypot(x-center[0],y-center[1])<=hit)axis=3; // free move in view plane
+        for(int i=0;i<3&&axis<0;i++){
+            float[] end=project(pivot[0]+(i==0?1:0),pivot[1]+(i==1?1:0),
+                    pivot[2]+(i==2?1:0),cx,cy,unit);
+            float dx=end[0]-center[0],dy=end[1]-center[1];
+            float len=(float)Math.hypot(dx,dy);if(len<1f)continue;
+            dx=dx/len*handle;dy=dy/len*handle;
+            float t=((x-center[0])*dx+(y-center[1])*dy)/(handle*handle);
+            t=Math.max(0f,Math.min(1f,t));
+            float distance=(float)Math.hypot(x-(center[0]+dx*t),y-(center[1]+dy*t));
+            if(distance<hit&&distance<nearest){nearest=distance;axis=i;}
+        }
+        if(axis<0)return false;
+        editComponentGizmoDragging=true;editComponentGizmoAxis=axis;
+        editGizmoLastX=x;editGizmoLastY=y;moved=true;
+        if(onObjectTransformStart!=null)onObjectTransformStart.run();
+        return true;
+    }
+
+    private void updateEditComponentGizmoDrag(float x,float y) {
+        float dx=x-editGizmoLastX,dy=y-editGizmoLastY;
+        float unit=Math.max(1f,Math.min(getWidth(),getHeight())*.235f*zoom);
+        if(editComponentGizmoAxis==3){
+            float[] delta=cameraVectorToWorld(dx/unit,-dy/unit,0f);
+            document.transformSelected(delta[0],delta[1],delta[2],0);
+        }else{
+            float[] pivot=selectedComponentPivot();if(pivot==null)return;
+            float cx=getWidth()*.5f,cy=getHeight()*.49f;
+            float[] center=project(pivot[0],pivot[1],pivot[2],cx,cy,unit);
+            float[] end=project(pivot[0]+(editComponentGizmoAxis==0?1:0),
+                    pivot[1]+(editComponentGizmoAxis==1?1:0),
+                    pivot[2]+(editComponentGizmoAxis==2?1:0),cx,cy,unit);
+            float ax=end[0]-center[0],ay=end[1]-center[1];
+            float length=(float)Math.hypot(ax,ay);
+            if(length>1f){
+                float amount=(dx*ax+dy*ay)/(length*length);
+                float[] axis={0,0,0};axis[editComponentGizmoAxis]=amount;
+                document.transformSelected(axis[0],axis[1],axis[2],0);
+            }
+        }
+        editGizmoLastX=x;editGizmoLastY=y;
+        syncViewportFromCore();invalidate();
     }
 
     private boolean beginObjectGizmoDrag(float x,float y) {
@@ -2522,6 +2624,7 @@ public final class Meshy3DViewport extends View {
                 }
                 if(!sculpting&&!meshEditMode&&objectSelectionEnabled&&objectTransformTool>=0
                         &&beginObjectGizmoDrag(event.getX(),event.getY()))return true;
+                if(!sculpting&&meshEditMode&&beginEditComponentGizmo(event.getX(),event.getY()))return true;
                 if(sculpting){
                     if(onSculptStrokeStart!=null)onSculptStrokeStart.run();
                     strokeActive=true;
@@ -2558,6 +2661,9 @@ public final class Meshy3DViewport extends View {
                 }
                 if(objectGizmoDragging&&event.getPointerCount()==1){
                     updateObjectGizmoDrag(event.getX(),event.getY());return true;
+                }
+                if(editComponentGizmoDragging&&event.getPointerCount()==1){
+                    updateEditComponentGizmoDrag(event.getX(),event.getY());return true;
                 }
                 if(sculpting && strokeActive && event.getPointerCount()==1){
                     float sx=event.getX(), sy=event.getY();
@@ -2615,6 +2721,8 @@ public final class Meshy3DViewport extends View {
                     objectBoxSelecting=false;performObjectBoxSelection(downX,downY,event.getX(),event.getY());
                     invalidate();performClick();return true;
                 }
+                if(editComponentGizmoDragging){editComponentGizmoDragging=false;editComponentGizmoAxis=-1;
+                    syncCoreFromViewport();invalidate();performClick();return true;}
                 if(objectGizmoDragging){objectGizmoDragging=false;objectGizmoAxis=-1;objectGizmoRotationRing=false;
                     gizmoObjectIds.clear();gizmoInitialTransforms.clear();gizmoInitialWorldLocations.clear();
                     gizmoInitialWorldMatrices.clear();
